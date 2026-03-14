@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ranking Areas – Faculty Evaluation System</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green-dark:  #1a5c30;
+      --green-mid:   #1e6e38;
+      --green-btn:   #1e7a3e;
+      --sidebar-w:   200px;
+      --white:       #ffffff;
+      --bg:          #f4f6f8;
+      --text:        #1f2937;
+      --muted:       #6b7280;
+      --border:      #e5e7eb;
+      --blue:        #3b82f6;
+      --shadow-sm:   0 1px 4px rgba(0,0,0,0.07);
+    }
+
+    html, body { height: 100%; font-family: 'DM Sans', sans-serif; background: #111; }
+
+    .app { display: flex; height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--green-dark);
+      background-image: radial-gradient(ellipse at 10% 90%, rgba(0,0,0,0.25) 0%, transparent 60%);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      padding: 0 0 24px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 12px;
+    }
+
+    .brand-seal {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--white);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .brand-seal svg { width: 52px; height: 52px; }
+
+    .sidebar-brand h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.95rem;
+      color: #fff;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .sidebar-brand span {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.55);
+      margin-top: 4px;
+    }
+
+    .nav { flex: 1; padding: 0 10px; }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.82rem;
+      font-weight: 400;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      margin-bottom: 2px;
+      text-decoration: none;
+    }
+
+    .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .nav-item.active { background: rgba(255,255,255,0.15); color: #fff; font-weight: 500; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    .sidebar-footer {
+      padding: 16px 10px 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .user-info { padding: 10px 14px; color: #fff; }
+    .user-info strong { display: block; font-size: 0.82rem; font-weight: 600; }
+    .user-info small { font-size: 0.72rem; color: rgba(255,255,255,0.55); }
+
+    .logout-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.6);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      border: none; background: transparent; width: 100%;
+    }
+    .logout-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .logout-btn svg { width: 16px; height: 16px; }
+
+    /* ── Main ── */
+    .main {
+      flex: 1;
+      background: var(--white);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .content { padding: 32px 40px; flex: 1; }
+
+    /* ── Page Header ── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .page-header h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .semester-tag {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    /* ── Table ── */
+    .table-wrap { width: 100%; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead tr {
+      border-bottom: 1px solid var(--border);
+    }
+
+    thead th {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      text-transform: uppercase;
+      padding: 10px 16px 10px 0;
+      text-align: left;
+    }
+
+    thead th:first-child { padding-left: 0; width: 48px; }
+    thead th.col-title   { width: 180px; }
+    thead th.col-tpl     { width: 120px; }
+    thead th.col-pts     { width: 90px; }
+    thead th.col-act     { width: 60px; text-align: center; }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+
+    tbody tr:hover { background: #fafafa; }
+
+    tbody td {
+      padding: 22px 16px 22px 0;
+      vertical-align: middle;
+      font-size: 0.82rem;
+      color: var(--text);
+    }
+
+    tbody td:first-child {
+      padding-left: 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      width: 48px;
+    }
+
+    .area-title {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+      text-transform: uppercase;
+      line-height: 1.4;
+    }
+
+    .area-desc {
+      font-size: 0.8rem;
+      color: #4b5563;
+      line-height: 1.6;
+    }
+
+    /* Template status */
+    .tpl-uploaded {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #16a34a;
+    }
+
+    .tpl-uploaded svg { width: 15px; height: 15px; }
+
+    .tpl-upload {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--blue);
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: 'DM Sans', sans-serif;
+      padding: 0;
+      transition: opacity 0.15s;
+    }
+
+    .tpl-upload:hover { opacity: 0.75; }
+    .tpl-upload svg { width: 15px; height: 15px; }
+
+    .points-val {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .edit-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+      padding: 4px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    .edit-btn:hover { background: #eff6ff; }
+    .edit-btn svg { width: 15px; height: 15px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-seal">
+        <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="26" cy="26" r="24" fill="#1a5c30"/>
+          <circle cx="26" cy="26" r="20" fill="none" stroke="#fff" stroke-width="1"/>
+          <text x="26" y="22" text-anchor="middle" fill="#fff" font-size="5.5" font-family="serif" font-weight="bold">GORDON</text>
+          <text x="26" y="29" text-anchor="middle" fill="#ffd700" font-size="4.5" font-family="serif">COLLEGE</text>
+          <text x="26" y="36" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="3.5" font-family="serif">OLONGAPO CITY</text>
+        </svg>
+      </div>
+      <h1>Gordon College</h1>
+      <span>HR Admin Portal</span>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item" href="dashboard.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-item active" href="ranking.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+        Ranking Areas
+      </a>
+      <a class="nav-item" href="review.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Review &amp; Score
+      </a>
+      <a class="nav-item" href="usermanagement.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        User Management
+      </a>
+      <a class="nav-item" href="submission.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/></svg>
+        Submission Settings
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <strong>Dr. Maria Santos</strong>
+        <small>HR Director</small>
+      </div>
+      <button class="logout-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <div class="content">
+      <div class="page-header">
+        <h2>Ranking Criteria</h2>
+        <div class="semester-tag">1st Semester AY 2026–2027</div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Area #</th>
+              <th class="col-title">Title</th>
+              <th class="col-desc">Description</th>
+              <th class="col-tpl">Template</th>
+              <th class="col-pts">Points</th>
+              <th class="col-act">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rankingTableBody">
+            <!-- Rows rendered by JS from rankingAreas variable -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // TODO: Replace with real data from the database
+  const rankingAreas = [
+    { id: area_id_1, title: area_title_1, description: area_description_1, points: area_points_1, templateUploaded: area_template_uploaded_1 },
+    { id: area_id_2, title: area_title_2, description: area_description_2, points: area_points_2, templateUploaded: area_template_uploaded_2 },
+    { id: area_id_3, title: area_title_3, description: area_description_3, points: area_points_3, templateUploaded: area_template_uploaded_3 },
+    { id: area_id_4, title: area_title_4, description: area_description_4, points: area_points_4, templateUploaded: area_template_uploaded_4 },
+    { id: area_id_5, title: area_title_5, description: area_description_5, points: area_points_5, templateUploaded: area_template_uploaded_5 },
+  ];
+
+  const iconEdit = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  const iconUploaded = `<svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>`;
+  const iconUpload = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>`;
+
+  function renderTable() {
+    const tbody = document.getElementById('rankingTableBody');
+    tbody.innerHTML = rankingAreas.map((area, index) => {
+      const templateCell = area.templateUploaded
+        ? `<span class="tpl-uploaded">${iconUploaded} Uploaded</span>`
+        : `<button class="tpl-upload">${iconUpload} Upload</button>`;
+
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td><div class="area-title">${area.title}</div></td>
+          <td><div class="area-desc">${area.description}</div></td>
+          <td>${templateCell}</td>
+          <td><span class="points-val">${area.points}</span></td>
+          <td><button class="edit-btn">${iconEdit}</button></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  renderTable();
+</script>
+</body>
+</html>
