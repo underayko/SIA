@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../global.css';
+import './Login.css';
 
 export default function Login() {
   const [email, setEmail]       = useState('');
@@ -9,14 +9,12 @@ export default function Login() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // TODO: replace with real auth logic
-    navigate('/dashboard');
+    navigate('/dashboard'); // TODO: replace with real auth
   };
 
   return (
     <div className="split">
 
-      {/* ── LEFT PANEL ── */}
       <aside className="login-left">
         <div className="left-content">
 
@@ -29,7 +27,7 @@ export default function Login() {
             </p>
           </div>
 
-        
+          <div className="login-divider" />
 
           <div className="login-section">
             <div className="section-label">Mission</div>
@@ -40,7 +38,7 @@ export default function Login() {
             </p>
           </div>
 
-     
+          <div className="login-divider" />
 
           <div className="login-section">
             <div className="section-label">Core Values</div>
@@ -54,7 +52,6 @@ export default function Login() {
         </div>
       </aside>
 
-      {/* ── RIGHT PANEL ── */}
       <main className="login-right">
         <div className="brand">
           <h2>Faculty Evaluation System</h2>
@@ -63,12 +60,10 @@ export default function Login() {
 
         <div className="login-card">
           <form onSubmit={handleSubmit}>
-
             <div className="form-group">
               <label htmlFor="email">Email Address</label>
               <input
-                type="email"
-                id="email"
+                type="email" id="email"
                 placeholder="admin@gordoncollege.edu"
                 autoComplete="email"
                 value={email}
@@ -76,12 +71,10 @@ export default function Login() {
                 required
               />
             </div>
-
             <div className="form-group">
               <label htmlFor="password">Password</label>
               <input
-                type="password"
-                id="password"
+                type="password" id="password"
                 placeholder="••••••••"
                 autoComplete="current-password"
                 value={password}
@@ -89,11 +82,8 @@ export default function Login() {
                 required
               />
             </div>
-
             <button type="submit" className="btn-sign-in">Sign In</button>
-
             <a href="#" className="forgot">Forgot Password?</a>
-
           </form>
         </div>
 

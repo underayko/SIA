@@ -1,5 +1,8 @@
 import { NavLink } from 'react-router-dom';
-import '../global.css';
+
+// NOTE: No CSS import here.
+// The page that uses <Sidebar /> is responsible for importing
+// the CSS that contains the sidebar styles (e.g. Dashboard.css).
 
 const GordonSeal = () => (
   <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +48,7 @@ const navLinks = [
     ),
   },
   {
-    to: '/users',
+    to: '/usermanagement',
     label: 'User Management',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -69,23 +72,21 @@ const navLinks = [
 
 export default function Sidebar() {
   return (
-    <aside className={styles.sidebar}>
-      <div className={styles.brand}>
-        <div className={styles.seal}>
+    <aside className="sidebar">
+      <div className="sidebar-brand">
+        <div className="brand-seal">
           <GordonSeal />
         </div>
-        <h1 className={styles.brandName}>Gordon College</h1>
-        <span className={styles.brandSub}>HR Admin Portal</span>
+        <h1>Gordon College</h1>
+        <span>HR Admin Portal</span>
       </div>
 
-      <nav className={styles.nav}>
+      <nav className="nav">
         {navLinks.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
-            className={({ isActive }) =>
-              `${styles.navItem}${isActive ? ' ' + styles.active : ''}`
-            }
+            className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}
           >
             {link.icon}
             {link.label}
@@ -93,12 +94,12 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className={styles.footer}>
-        <div className={styles.userInfo}>
+      <div className="sidebar-footer">
+        <div className="user-info">
           <strong>Dr. Maria Santos</strong>
           <small>HR Director</small>
         </div>
-        <button className={styles.logoutBtn}>
+        <button className="logout-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
             <polyline points="16 17 21 12 16 7"/>
