@@ -1,121 +1,51 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from "react";
+import Login from "./pages/auth/Login";
+import ChangePassword from "./pages/auth/ChangePassword";
 
 function App() {
-  const [count, setCount] = useState(0)
+    const [page, setPage] = useState("login");
+    const [user, setUser] = useState(null);
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    // After login, check if first login → go to change password, else → go to dashboard
+    const handleLogin = (firebaseUser) => {
+        setUser(firebaseUser);
+        // TODO: check firebaseUser.metadata.lastSignInTime === firebaseUser.metadata.creationTime
+        // to detect first login. For now, always goes to change password for testing.
+        setPage("changePassword");
+    };
 
-      <div className="ticks"></div>
+    const handlePasswordChanged = () => {
+        // TODO: redirect to dashboard based on role
+        setPage("dashboard");
+    };
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+    if (page === "login") {
+        return <Login onLogin={handleLogin} />;
+    }
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    if (page === "changePassword") {
+        return <ChangePassword user={user} onSuccess={handlePasswordChanged} />;
+    }
+
+    // TODO: replace this placeholder with actual dashboard routing
+    return (
+        <div style={{ padding: 40, fontFamily: "sans-serif" }}>
+            Dashboard coming soon.
+        </div>
+    );
 }
 
-export default App
+export default App;
+
+// import ChangePassword from "./pages/auth/ChangePassword";
+
+// function App() {
+//     const mockUser = {
+//         displayName: "David Bryan B. Candido",
+//         email: "202011090@gordoncollege.edu.ph",
+//     };
+
+//     return <ChangePassword user={mockUser} onSuccess={() => {}} />;
+// }
+
+// export default App;
