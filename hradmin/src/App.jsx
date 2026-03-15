@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login      from './pages/login';
 import Dashboard  from './pages/dashboard';
-// import Ranking    from './pages/ranking';
-// import Review     from './pages/review';
-// import UserMgmt   from './pages/usermanagement';
+import Ranking    from './pages/ranking';
+import Review     from './pages/review';
+import UserMgmt   from './pages/usermanagement';
+import PerformanceEvaluation   from './pages/perfeval';
 // import Submission from './pages/submission';
 
 function App() {
@@ -13,10 +14,11 @@ function App() {
         <Route path="/"               element={<Navigate to="/login" replace />} />
         <Route path="/login"          element={<Login />} />
         <Route path="/dashboard"      element={<Dashboard />} />
-        {/* <Route path="/ranking"        element={<Ranking />} />
+        <Route path="/ranking"        element={<Ranking />} />
         <Route path="/review"         element={<Review />} />
         <Route path="/usermanagement" element={<UserMgmt />} />
-        <Route path="/submission"     element={<Submission />} /> */}
+        <Route path="/perfeval"      element={<PerformanceEvaluation />} />
+        {/* <Route path="/submission"     element={<Submission />} /> */}
       </Routes>
     </BrowserRouter>
   );
