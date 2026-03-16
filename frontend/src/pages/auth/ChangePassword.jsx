@@ -1,5 +1,6 @@
 import { useState } from "react";
 import gcLogo from "../../assets/gclogo.png";
+import studentHat from "../../assets/student-hat.png";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Source+Sans+3:wght@300;400;500;600&display=swap');
@@ -524,7 +525,9 @@ export default function ChangePassword({ user, onSuccess }) {
                 {/* LEFT — Security notice + requirements */}
                 <div className="cp-left">
                     <div className="school-header">
-                        <div className="school-logo-circle">🎓</div>
+                        <div className="school-logo-circle">
+                            <img src={studentHat} alt="Student Hat" />
+                        </div>
                         <div className="school-name">
                             <h1>Gordon College</h1>
                             <p>Olongapo City</p>

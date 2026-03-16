@@ -1,5 +1,6 @@
 import { useState } from "react";
 import gcLogo from "../../assets/gclogo.png";
+import studentHat from "../../assets/student-hat.png";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Source+Sans+3:wght@300;400;500;600&display=swap');
@@ -77,7 +78,7 @@ const styles = `
   }
   .school-logo-circle img {
     width: 100%; height: 100%;
-    object-fit: cover;
+    object-fit: contain;
   }
   .school-name h1 {
     font-family: 'Playfair Display', serif;
@@ -248,12 +249,6 @@ const styles = `
     text-align: center;
     margin-bottom: 24px;
   }
-  .form-title h3 {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-dark);
-    margin-bottom: 4px;
-  }
   .form-title p { font-size: 13px; color: var(--text-muted); }
 
   .form-group { margin-bottom: 18px; }
@@ -371,27 +366,171 @@ const styles = `
     color: #a0aca5;
   }
 
+  /* ── FORGOT PASSWORD MODAL ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+    animation: fadeIn 0.2s ease both;
+  }
+  .modal {
+    background: var(--white);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 480px;
+    overflow: hidden;
+    animation: modalUp 0.25s ease both;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+  }
+  .modal-header {
+    background: linear-gradient(135deg, var(--gc-green-dark), var(--gc-green));
+    padding: 22px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .modal-header-icon {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .modal-header h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    color: var(--white);
+    font-weight: 600;
+  }
+  .modal-header p {
+    font-size: 12px;
+    color: rgba(255,255,255,0.65);
+    margin-top: 2px;
+  }
+  .modal-close {
+    background: rgba(255,255,255,0.12);
+    border: none;
+    color: var(--white);
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .modal-close:hover { background: rgba(255,255,255,0.22); }
+
+  .modal-body {
+    padding: 28px;
+  }
+  .modal-body p {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 20px;
+  }
+  .modal-body p strong {
+    color: var(--gc-green);
+  }
+
+  .modal-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  .email-format-card {
+    background: var(--off-white);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gc-gold);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+  }
+  .email-format-card .format-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--gc-gold);
+    margin-bottom: 12px;
+  }
+  .format-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .format-item {
+    font-size: 13.5px;
+    color: var(--text-dark);
+    line-height: 1.5;
+  }
+  .format-item span {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+  .format-item em {
+    font-style: normal;
+    color: var(--gc-green);
+  }
+
+  .modal-note {
+    background: #fff8e8;
+    border: 1px solid #e8c96b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #7a5c00;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  .modal-footer-note {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin-bottom: 0 !important;
+  }
+
+  .btn-modal-close {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, var(--gc-green), var(--gc-green-light));
+    color: var(--white);
+    border: none;
+    border-radius: 8px;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: opacity 0.2s, transform 0.15s;
+    box-shadow: 0 4px 16px rgba(26,107,60,0.25);
+  }
+  .btn-modal-close:hover { opacity: 0.92; transform: translateY(-1px); }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 900px) {
     .login-left { width: 45%; padding: 48px 36px; }
     .login-right { width: 55%; padding: 48px 36px; }
     .vmg-text { font-size: 13px; }
   }
-
   @media (max-width: 640px) {
     .login-root { flex-direction: column; overflow-y: auto; }
-    .login-right {
-      width: 100%;
-      padding: 40px 24px 36px;
-      order: 1;
-    }
-    .login-left {
-      width: 100%;
-      padding: 32px 24px 40px;
-      justify-content: flex-start;
-      order: 2;
-    }
-    .login-card { max-width: 100%; }
+    .login-right { width: 100%; padding: 40px 24px 36px; order: 1; }
+    .login-left  { width: 100%; padding: 32px 24px 40px; justify-content: flex-start; order: 2; }
+    .login-card  { max-width: 100%; }
     .login-logo-img { width: 64px; height: 64px; }
     .login-logo h2 { font-size: 16px; }
     .school-header { margin-bottom: 24px; }
@@ -416,6 +555,14 @@ const styles = `
     from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes modalUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 `;
 
 export default function Login({ onLogin }) {
@@ -423,6 +570,7 @@ export default function Login({ onLogin }) {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [showForgot, setShowForgot] = useState(false);
 
     const fullEmail = `${employeeId}@gordoncollege.edu.ph`;
 
@@ -458,7 +606,9 @@ export default function Login({ onLogin }) {
                 {/* LEFT — Vision / Mission / Core Values */}
                 <div className="login-left">
                     <div className="school-header">
-                        <div className="school-logo-circle">🎓</div>
+                        <div className="school-logo-circle">
+                            <img src={studentHat} alt="Student Hat" />
+                        </div>
                         <div className="school-name">
                             <h1>Gordon College</h1>
                             <p>Olongapo City</p>
@@ -466,11 +616,6 @@ export default function Login({ onLogin }) {
                     </div>
 
                     <div className="divider-gold" />
-
-                    <div className="system-badge">
-                        <div className="badge-dot" />
-                        <span>GCFARES</span>
-                    </div>
 
                     <div className="vmg-block">
                         <div className="vmg-label">Vision</div>
@@ -566,7 +711,9 @@ export default function Login({ onLogin }) {
                         </div>
 
                         <div className="forgot">
-                            <a>Forgot Password?</a>
+                            <a onClick={() => setShowForgot(true)}>
+                                Forgot Password?
+                            </a>
                         </div>
 
                         <button
@@ -582,6 +729,103 @@ export default function Login({ onLogin }) {
                         </p>
                     </div>
                 </div>
+
+                {/* FORGOT PASSWORD MODAL */}
+                {showForgot && (
+                    <div
+                        className="modal-overlay"
+                        onClick={() => setShowForgot(false)}
+                    >
+                        <div
+                            className="modal"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="modal-header">
+                                <div className="modal-header-left">
+                                    <div className="modal-header-icon">🔑</div>
+                                    <div>
+                                        <h4>Password Reset</h4>
+                                        <p>
+                                            Follow the steps below to reset your
+                                            password
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    className="modal-close"
+                                    onClick={() => setShowForgot(false)}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="modal-body">
+                                <p>
+                                    To request a password reset, send an email
+                                    to{" "}
+                                    <strong>
+                                        [webadmin@gordoncollege.edu.ph]
+                                    </strong>{" "}
+                                    using your Gordon College domain email or
+                                    your registered personal email account.
+                                </p>
+
+                                <div className="email-format-card">
+                                    <div className="format-title">
+                                        Email Format
+                                    </div>
+                                    <div className="format-row">
+                                        <div className="format-item">
+                                            <span>Subject: </span>
+                                            <em>
+                                                Password Reset Request — GCFARES
+                                            </em>
+                                        </div>
+                                        <div className="format-item">
+                                            <span>Employee ID: </span>
+                                            <em>[your employee ID number]</em>
+                                        </div>
+                                        <div className="format-item">
+                                            <span>Full Name (LN, FN MI): </span>
+                                            <em>
+                                                [lastname, firstname, middle
+                                                initial]
+                                            </em>
+                                        </div>
+                                        <div className="format-item">
+                                            <span>Reason: </span>
+                                            <em>[state your reason]</em>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="modal-note">
+                                    ⚠️ Attach a clear screenshot of the issue
+                                    you are experiencing to help process your
+                                    request faster.
+                                </div>
+
+                                <div className="modal-divider" />
+
+                                <p className="modal-footer-note">
+                                    Once verified, you will receive an email
+                                    with your new temporary credentials. Only
+                                    emails sent from your GC domain account or
+                                    registered personal email will be processed.
+                                    Otherwise, proceed to the{" "}
+                                    <strong>MIS Office</strong> in person.
+                                </p>
+
+                                <button
+                                    className="btn-modal-close"
+                                    onClick={() => setShowForgot(false)}
+                                >
+                                    Got it
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </>
     );
