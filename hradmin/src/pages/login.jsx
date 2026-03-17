@@ -3,13 +3,31 @@ import { useNavigate } from 'react-router-dom';
 import './Login.css';
 
 export default function Login() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const navigate                = useNavigate();
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    navigate('/dashboard'); // TODO: replace with real auth
+    setError('');
+    try {
+      const response = await fetch('http://localhost:5000/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!response.ok) {
+        throw new Error('Invalid credentials');
+      }
+      const data = await response.json();
+      // Optionally store token: localStorage.setItem('token', data.token);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -82,6 +100,7 @@ export default function Login() {
                 required
               />
             </div>
+            {error && <div className="login-error">{error}</div>}
             <button type="submit" className="btn-sign-in">Sign In</button>
             <a href="#" className="forgot">Forgot Password?</a>
           </form>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../components/sidenav';
 import './userManagement.css';
 
@@ -154,7 +154,7 @@ function EditPanel({ onClose }) {
 }
 
 // ── Faculty Row ──────────────────────────────────────────────
-function FacultyRow({ faculty, onEdit }) {
+function FacultyRow({ faculty, onEdit, onDelete }) {
   return (
     <tr>
       <td className="faculty-name">{faculty.name}</td>
@@ -166,11 +166,20 @@ function FacultyRow({ faculty, onEdit }) {
           {faculty.status === 'ranking' ? 'For Ranking' : 'Inactive'}
         </span>
       </td>
+      <td>{faculty.createdAt}</td>
       <td>
         <button className="edit-btn" onClick={onEdit}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button className="delete-btn" onClick={onDelete}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4h6v2"/>
           </svg>
         </button>
       </td>
@@ -179,11 +188,10 @@ function FacultyRow({ faculty, onEdit }) {
 }
 
 // ── User Management Page ─────────────────────────────────────
+
 export default function UserManagement() {
   const [panelOpen, setPanelOpen] = useState(false);
-
-  // TODO: Replace with real data from the database
-  const facultyList = [
+  const [facultyList, setFacultyList] = useState([
     { id: 'f1', name: 'faculty_name_1', email: 'faculty_email_1', department: 'faculty_dept_1', rank: 'faculty_rank_1', status: 'ranking' },
     { id: 'f2', name: 'faculty_name_2', email: 'faculty_email_2', department: 'faculty_dept_2', rank: 'faculty_rank_2', status: 'ranking' },
     { id: 'f3', name: 'faculty_name_3', email: 'faculty_email_3', department: 'faculty_dept_3', rank: 'faculty_rank_3', status: 'ranking' },
@@ -192,7 +200,23 @@ export default function UserManagement() {
     { id: 'f6', name: 'faculty_name_6', email: 'faculty_email_6', department: 'faculty_dept_6', rank: 'faculty_rank_6', status: 'ranking' },
     { id: 'f7', name: 'faculty_name_7', email: 'faculty_email_7', department: 'faculty_dept_7', rank: 'faculty_rank_7', status: 'inactive' },
     { id: 'f8', name: 'faculty_name_8', email: 'faculty_email_8', department: 'faculty_dept_8', rank: 'faculty_rank_8', status: 'ranking' },
-  ];
+  ]);
+
+  const handleAddFaculty = () => {
+  const newId = `f${facultyList.length + 1}`;
+  setFacultyList([
+    ...facultyList,
+    {
+      id: newId,
+      name: `faculty_name_${newId}`,
+      email: `faculty_email_${newId}`,
+      department: 'faculty_dept_new',
+      rank: 'faculty_rank_new',
+      status: 'ranking',
+      createdAt: new Date().toLocaleDateString(), // <-- Add this
+    },
+  ]);
+};
 
   return (
     <div className="app">
@@ -221,7 +245,7 @@ export default function UserManagement() {
                 <select><option>For Ranking</option><option>Inactive</option><option>All Status</option></select>
               </div>
             </div>
-            <button className="btn btn-add">
+            <button className="btn btn-add" onClick={handleAddFaculty}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Faculty
             </button>
@@ -236,12 +260,18 @@ export default function UserManagement() {
                 <th>Department</th>
                 <th>Current Rank</th>
                 <th>Current Takers</th>
+                <th>Created At</th>  {/* <-- New column */}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {facultyList.map((faculty) => (
-                <FacultyRow key={faculty.id} faculty={faculty} onEdit={() => setPanelOpen(true)} />
+                <FacultyRow 
+                  key={faculty.id} 
+                  faculty={faculty} 
+                  onEdit={() => setPanelOpen(true)} 
+                  onDelete={() => setFacultyList(facultyList.filter(f => f.id !== faculty.id))} 
+                />
               ))}
             </tbody>
           </table>
