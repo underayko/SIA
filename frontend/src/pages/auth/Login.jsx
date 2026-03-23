@@ -209,7 +209,7 @@ const styles = `
     margin-bottom: 32px;
   }
   .login-logo-img {
-    width: 80px; height: 80px;
+    width: 100px; height: 100px;
     border-radius: 50%;
     overflow: hidden;
     margin-bottom: 14px;
@@ -577,7 +577,7 @@ export default function Login({ onLogin }) {
     const handleLogin = async () => {
         setError("");
         if (!employeeId || !password) {
-            setError("Please enter your Employee ID and password.");
+            setError("Please enter your GC email address and password.");
             return;
         }
         setLoading(true);
@@ -589,7 +589,7 @@ export default function Login({ onLogin }) {
             // if (onLogin) onLogin(user);
             console.log("Logging in as:", fullEmail);
         } catch (err) {
-            setError("Invalid Employee ID or password. Please try again.");
+            setError("Invalid GC email address or password. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -671,18 +671,14 @@ export default function Login({ onLogin }) {
                             </span>
                         </div>
 
-                        <div className="form-title">
-                            <p>Enter your credentials to continue</p>
-                        </div>
-
                         {error && <div className="error-msg">{error}</div>}
 
                         <div className="form-group">
-                            <label>Employee ID Number</label>
+                            <label>GC Email Address</label>
                             <div className="id-input-row">
                                 <input
                                     type="text"
-                                    placeholder="e.g 202011111"
+                                    placeholder="e.g john.doe"
                                     value={employeeId}
                                     onChange={(e) =>
                                         setEmployeeId(e.target.value)
@@ -782,8 +778,8 @@ export default function Login({ onLogin }) {
                                             </em>
                                         </div>
                                         <div className="format-item">
-                                            <span>Employee ID: </span>
-                                            <em>[your employee ID number]</em>
+                                            <span>GC EMAIL: </span>
+                                            <em>[your GC email address]</em>
                                         </div>
                                         <div className="format-item">
                                             <span>Full Name (LN, FN MI): </span>

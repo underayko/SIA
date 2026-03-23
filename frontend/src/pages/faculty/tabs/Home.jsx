@@ -1,9 +1,18 @@
 // 📄 SIA/frontend/src/pages/faculty/tabs/Home.jsx
+//
+// ── REVISION NOTES (Midterm Demo Feedback) ──────────────────────────────────
+// • Removed Score Breakdown sidebar — faculty no longer sees per-area scores.
+//     Scores are visible to HR only. Score sidebar moved to HR Portal.
+// • "What to Submit" is now always visible per area — no more dropdown toggle.
+//     (Per Sir Dom: faculty should immediately see what to submit without clicking)
+// • Added Ranking Summary bar below the hero — shows current rank, target rank,
+//     score threshold needed, and last cycle result.
+//     (Per VPAA: faculty should be able to track their rank in the summary)
+// • Content grid is now single-column since score sidebar was removed.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
 import {
-    ChevronDown,
-    ChevronUp,
     Lock,
     Trophy,
     Send,
@@ -23,6 +32,7 @@ import {
     X,
     Calendar,
     Megaphone,
+    TrendingUp,
 } from "lucide-react";
 
 const styles = `
@@ -54,7 +64,7 @@ const styles = `
     background: linear-gradient(135deg, var(--gc-green-dark) 0%, var(--gc-green) 55%, #22704a 100%);
     border-radius: 16px; padding: 26px 28px;
     display: flex; align-items: center; justify-content: space-between; gap: 20px;
-    margin-bottom: 20px; position: relative; overflow: hidden;
+    margin-bottom: 16px; position: relative; overflow: hidden;
     box-shadow: 0 8px 32px rgba(26,107,60,0.22);
     animation: hmFadeUp 0.5s 0.1s ease both;
   }
@@ -114,6 +124,49 @@ const styles = `
   .hm-deadline-label  { font-size:10px; color:rgba(255,255,255,0.6); }
   .hm-deadline-date   { font-size:12px; font-weight:600; color:var(--gc-gold-light); margin-top:2px; }
 
+  /* ── RANKING SUMMARY ── */
+  /* Per VPAA: faculty should be able to track their rank in the summary */
+  .hm-rank-summary {
+    background:var(--white); border-radius:12px; border:1px solid var(--border);
+    padding:16px 20px; margin-bottom:16px;
+    display:flex; align-items:stretch; gap:0;
+    box-shadow:0 2px 6px rgba(0,0,0,0.04);
+    animation:hmFadeUp 0.5s 0.15s ease both;
+    overflow:hidden;
+  }
+  .hm-rs-item {
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    padding:0 20px; gap:4px;
+  }
+  .hm-rs-item:first-child { padding-left:0; }
+  .hm-rs-item:last-child  { padding-right:0; }
+  .hm-rs-divider {
+    width:1px; background:var(--border); flex-shrink:0;
+    margin:0;
+  }
+  .hm-rs-label {
+    font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    color:var(--text-muted); margin-bottom:2px;
+  }
+  .hm-rs-value {
+    font-family:'Playfair Display',serif; font-size:15px; font-weight:600;
+    color:var(--text-dark); line-height:1.2;
+    display:flex; align-items:center; gap:6px;
+  }
+  .hm-rs-value.gold { color:var(--gc-green-dark); }
+  .hm-rs-sub {
+    font-size:11px; color:var(--text-muted); margin-top:1px;
+  }
+  .hm-rs-badge {
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:8px;
+  }
+  .hm-rs-badge-retained { background:#fdf0ee; color:var(--danger); }
+  .hm-rs-badge-promoted { background:#eafaf1; color:#1e8449; }
+  .hm-rs-badge-open     { background:var(--gc-green-pale); color:var(--gc-green); }
+  .hm-rs-threshold-bar  { height:5px; background:var(--border); border-radius:4px; overflow:hidden; margin-top:5px; }
+  .hm-rs-threshold-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--gc-green),var(--gc-green-light)); transition:width 0.6s ease; }
+
   /* ── SUBMIT ALL BAR ── */
   .hm-submit-bar {
     background:var(--white); border-radius:12px; border:1px solid var(--border);
@@ -139,78 +192,16 @@ const styles = `
   }
   .hm-btn-submit-all:hover { opacity:0.9; transform:translateY(-1px); }
 
-  /* ── CONTENT GRID ── */
-  .hm-content-grid { display:grid; grid-template-columns:290px 1fr; gap:18px; margin-bottom:20px; }
-
-  /* ── SCORE SIDEBAR ── */
-  .hm-score-sidebar {
+  /* ── AREAS MAIN (now full-width, score sidebar removed) ── */
+  .hm-areas-main {
     background:var(--white); border-radius:14px; border:1px solid var(--border);
     padding:20px; box-shadow:0 2px 6px rgba(0,0,0,0.04);
+    margin-bottom:20px;
     animation:hmFadeUp 0.5s 0.25s ease both;
-    display:flex; flex-direction:column;
   }
   .hm-panel-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; gap:8px; }
   .hm-panel-title  { font-family:'Playfair Display',serif; font-size:15px; font-weight:600; color:var(--text-dark); }
   .hm-panel-sub    { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
-  .hm-preview-btn  {
-    font-size:10px; padding:3px 9px; border-radius:8px;
-    border:1.5px solid var(--border); background:var(--off-white);
-    cursor:pointer; color:var(--text-muted);
-    font-family:'Source Sans 3',sans-serif; font-weight:600;
-    display:flex; align-items:center; gap:4px; white-space:nowrap; flex-shrink:0;
-  }
-
-  /* Score locked */
-  .hm-score-locked {
-    background:var(--gc-green-pale); border:1px solid rgba(26,107,60,0.15);
-    border-radius:10px; padding:14px 16px; margin-bottom:14px;
-    display:flex; align-items:flex-start; gap:10px;
-  }
-  .hm-score-locked p { font-size:12.5px; color:var(--gc-green-dark); line-height:1.6; }
-
-  /* Total score box */
-  .hm-total-box {
-    background:linear-gradient(135deg,var(--gc-green-dark),var(--gc-green));
-    border-radius:12px; padding:18px; text-align:center; margin-bottom:14px;
-  }
-  .hm-ts-label { font-size:10px; color:rgba(255,255,255,0.6); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:6px; }
-  .hm-ts-value { font-family:'Playfair Display',serif; font-size:28px; font-weight:700; color:var(--white); line-height:1; }
-  .hm-ts-max   { font-size:11px; color:rgba(255,255,255,0.5); margin-top:5px; }
-
-  /* Area score rows */
-  .hm-area-scores { display:flex; flex-direction:column; gap:10px; }
-  .hm-asr-top  { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
-  .hm-asr-name { font-size:11.5px; color:var(--text-mid); font-weight:500; }
-  .hm-asr-pts  { font-size:12px; font-weight:700; color:var(--gc-green-dark); }
-  .hm-asr-hidden { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-muted); }
-  .hm-asr-track { height:4px; background:var(--border); border-radius:4px; overflow:hidden; margin-bottom:2px; }
-  .hm-asr-fill  { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--gc-green),var(--gc-green-light)); transition:width 0.6s ease; }
-  .hm-asr-max   { font-size:10.5px; color:var(--text-muted); }
-
-  /* Reviewer comments */
-  .hm-rcb { background:var(--off-white); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:8px; }
-  .hm-rcb-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .hm-rcb-avatar {
-    width:28px; height:28px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    font-size:10px; font-weight:700; color:var(--white); flex-shrink:0;
-  }
-  .hm-rcb-hr   { background:var(--gc-green); }
-  .hm-rcb-vpaa { background:#8e44ad; }
-  .hm-rcb-name  { font-size:12px; font-weight:600; color:var(--text-dark); }
-  .hm-rcb-label { font-size:10.5px; color:var(--text-muted); }
-  .hm-rcb-status { margin-left:auto; font-size:10px; font-weight:700; padding:2px 8px; border-radius:8px; }
-  .hm-rcb-locked { background:#f0f0f0; color:#888; }
-  .hm-rcb-done   { background:#eafaf1; color:#1e8449; }
-  .hm-rcb-body   { font-size:12.5px; color:var(--text-muted); line-height:1.6; }
-  .hm-rcb-body.locked { color:#aaa; font-style:italic; }
-
-  /* ── AREAS MAIN ── */
-  .hm-areas-main {
-    background:var(--white); border-radius:14px; border:1px solid var(--border);
-    padding:20px; box-shadow:0 2px 6px rgba(0,0,0,0.04);
-    animation:hmFadeUp 0.5s 0.3s ease both;
-  }
   .hm-badge-green {
     background:var(--gc-green-pale); color:var(--gc-green-dark);
     font-size:11px; font-weight:700; padding:3px 10px; border-radius:8px; white-space:nowrap;
@@ -231,8 +222,10 @@ const styles = `
   .hm-tab-dot.d { background:var(--gc-gold); }
   .hm-tab-dot.e { background:#bbb; }
 
-  /* Area cards grid */
-  .hm-area-cards { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+  /* Area cards grid — 3 columns now that score sidebar is gone */
+  .hm-area-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+
+  /* Area card */
   .hm-area-card {
     border-radius:12px; border:1.5px solid var(--border);
     padding:16px; transition:box-shadow 0.2s;
@@ -258,14 +251,17 @@ const styles = `
   .hm-area-name { font-size:13px; font-weight:600; color:var(--text-dark); line-height:1.3; }
   .hm-area-pts  { font-size:11px; color:var(--text-muted); }
 
-  .hm-desc-toggle {
-    display:flex; align-items:center; gap:5px;
-    font-size:11.5px; color:var(--gc-green); font-weight:600;
-    background:none; border:none; cursor:pointer; padding:0;
-    font-family:'Source Sans 3',sans-serif;
+  /* "What to submit" — always visible, no toggle */
+  /* Per Sir Dom: show immediately without dropdown */
+  .hm-area-desc {
+    font-size:12px; color:var(--text-muted); line-height:1.6;
+    background:var(--off-white); border-radius:6px; padding:8px 10px;
+    border-left:3px solid var(--gc-gold);
   }
-  .hm-area-desc { font-size:12px; color:var(--text-muted); line-height:1.6; display:none; margin-top:2px; }
-  .hm-area-desc.open { display:block; }
+  .hm-area-desc-label {
+    font-size:9.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    color:var(--gc-gold); margin-bottom:4px; display:block;
+  }
 
   /* Template row */
   .hm-template-row {
@@ -331,8 +327,8 @@ const styles = `
   /* ── ACTIVITY LOG ── */
   .hm-activity-panel {
     background:var(--white); border-radius:14px; border:1px solid var(--border);
-    padding:20px; margin-top:20px; box-shadow:0 2px 6px rgba(0,0,0,0.04);
-    animation:hmFadeUp 0.5s 0.35s ease both;
+    padding:20px; box-shadow:0 2px 6px rgba(0,0,0,0.04);
+    animation:hmFadeUp 0.5s 0.3s ease both;
   }
   .hm-activity-list { display:flex; flex-direction:column; }
   .hm-act-item {
@@ -351,14 +347,18 @@ const styles = `
   .hm-act-meta  { font-size:11.5px; color:var(--text-muted); }
 
   /* ── RESPONSIVE ── */
-  @media (max-width: 900px) {
-    .hm-content-grid    { grid-template-columns: 1fr; }
-    .hm-area-cards      { grid-template-columns: 1fr; }
-    .hm-submit-bar      { flex-direction: column; align-items: stretch; gap: 12px; }
-    .hm-prog-track      { width: 100%; margin: 0; }
-    .hm-btn-submit-all  { justify-content: center; }
+  @media (max-width: 1100px) {
+    .hm-area-cards { grid-template-columns: repeat(2,1fr); }
   }
-
+  @media (max-width: 900px) {
+    .hm-area-cards     { grid-template-columns: 1fr; }
+    .hm-rank-summary   { flex-wrap: wrap; gap: 12px; }
+    .hm-rs-divider     { display: none; }
+    .hm-rs-item        { padding: 0; flex: 1 1 calc(50% - 12px); }
+    .hm-submit-bar     { flex-direction: column; align-items: stretch; gap: 12px; }
+    .hm-prog-track     { width: 100%; margin: 0; }
+    .hm-btn-submit-all { justify-content: center; }
+  }
   @media (max-width: 640px) {
     .hm-hero            { flex-direction: column; align-items: flex-start; padding: 20px; }
     .hm-hero-left       { gap: 14px; }
@@ -372,9 +372,9 @@ const styles = `
     .hm-deadline-date   { font-size: 13px; }
     .hm-rank-flow       { gap: 5px; }
     .hm-rank-chip       { font-size: 11px; padding: 2px 8px; }
+    .hm-rs-item         { flex: 1 1 100%; }
     .hm-panel-header    { flex-wrap: wrap; }
   }
-    
   @media (max-width: 360px) {
     .hm-rank-flow { flex-direction: column; align-items: flex-start; }
     .hm-rank-chip { font-size: 10px; }
@@ -426,7 +426,7 @@ const AREAS = [
         status: "submitted",
         file: "PerformanceEval_AY2025.pdf",
         date: "Feb 23, 2026 at 9:00 AM",
-        desc: "Faculty performance rating from student evaluations. This area is auto-scored from the CSV uploaded by HR.",
+        desc: "Faculty performance rating from student evaluations. This area is auto-scored from the CSV uploaded by HR — no manual submission needed.",
     },
     {
         num: "Area V",
@@ -484,34 +484,6 @@ const AREAS = [
     },
 ];
 
-// TODO: fetch from Firestore — area max points from the areas collection
-const AREA_SCORES_PENDING = [
-    { name: "Area I · Educational Qualifications", max: "85.00" },
-    { name: "Area II · Research & Publications", max: "20.00" },
-    { name: "Area III · Teaching Experience", max: "20.00" },
-    { name: "Area IV · Performance Evaluation", max: "10.00" },
-    { name: "Area V · Training & Seminars", max: "10.00" },
-    { name: "Area VI · Expert Services Rendered", max: "20.00" },
-    { name: "Area VII · Professional Organizations", max: "10.00" },
-    { name: "Area VIII · Awards of Distinction", max: "10.00" },
-    { name: "Area IX · Community Outreach", max: "5.00" },
-    { name: "Area X · Professional Examinations", max: "10.00" },
-];
-
-// TODO: fetch from Firestore — areasubmissions scores once application status is "Published"
-const AREA_SCORES_PUBLISHED = [
-    { name: "Area I · Educational Qualifications", pts: 40, max: 85, pct: 47 },
-    { name: "Area II · Research & Publications", pts: 12, max: 20, pct: 60 },
-    { name: "Area III · Teaching Experience", pts: 15, max: 20, pct: 75 },
-    { name: "Area IV · Performance Evaluation", pts: 8, max: 10, pct: 80 },
-    { name: "Area V · Training & Seminars", pts: 4, max: 10, pct: 40 },
-    { name: "Area VI · Expert Services Rendered", pts: 4, max: 20, pct: 20 },
-    { name: "Area VII · Professional Organizations", pts: 1, max: 10, pct: 10 },
-    { name: "Area VIII · Awards of Distinction", pts: 0, max: 10, pct: 0 },
-    { name: "Area IX · Community Outreach", pts: 2, max: 5, pct: 40 },
-    { name: "Area X · Professional Examinations", pts: 0, max: 10, pct: 0 },
-];
-
 // TODO: fetch from Firestore — applicationlogs collection, filter by current cycle's application_id
 const ACTIVITY_LOG = [
     {
@@ -546,9 +518,10 @@ const ACTIVITY_LOG = [
     },
 ];
 
+// ── Area Card ──
+// NOTE: "What to submit" is always visible — no dropdown.
+// Per Sir Dom's feedback during the midterm demo.
 function AreaCard({ area }) {
-    const [descOpen, setDescOpen] = useState(false);
-
     const cardClass =
         area.status === "submitted"
             ? "hm-area-card hm-ac-submitted"
@@ -577,14 +550,11 @@ function AreaCard({ area }) {
 
             <div className="hm-area-name">{area.name}</div>
 
-            <button
-                className="hm-desc-toggle"
-                onClick={() => setDescOpen((v) => !v)}
-            >
-                {descOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                What to submit
-            </button>
-            {descOpen && <div className="hm-area-desc open">{area.desc}</div>}
+            {/* What to submit — always visible, no toggle */}
+            <div className="hm-area-desc">
+                <span className="hm-area-desc-label">What to submit</span>
+                {area.desc}
+            </div>
 
             <div className="hm-area-pts">
                 Max: <strong>{area.pts} pts</strong> · Excess points applicable
@@ -671,7 +641,6 @@ function AreaCard({ area }) {
 }
 
 export default function Home({ user }) {
-    const [scoreView, setScoreView] = useState("pending");
     const [areaFilter, setAreaFilter] = useState("all");
 
     const filteredAreas = AREAS.filter((a) =>
@@ -692,10 +661,10 @@ export default function Home({ user }) {
 
             {/* ── HERO CARD ── */}
             {/* TODO: replace hardcoded cycle, rank, status, department, deadline with Firestore data
-          - cycle info    : rankingcycles collection (current open cycle)
-          - rank + dept   : users collection (current faculty doc)
-          - app status    : applications collection (current cycle application)
-          - deadline      : rankingcycles.deadline field */}
+                - cycle info    : rankingcycles collection (current open cycle)
+                - rank + dept   : users collection (current faculty doc)
+                - app status    : applications collection (current cycle application)
+                - deadline      : rankingcycles.deadline field */}
             <div className="hm-hero">
                 <div className="hm-hero-left">
                     <div className="hm-hero-info">
@@ -728,8 +697,7 @@ export default function Home({ user }) {
                 <div className="hm-hero-right">
                     {/* TODO: calculate daysLeft and totalDays from rankingcycles.deadline
                         and rankingcycles.start_date fetched from Firestore.
-                        dashOffset = circumference * (1 - daysLeft / totalDays) 
-                    */}
+                        dashOffset = circumference * (1 - daysLeft / totalDays) */}
                     <div className="hm-deadline-ring">
                         <svg viewBox="0 0 96 96">
                             <circle
@@ -757,9 +725,60 @@ export default function Home({ user }) {
                 </div>
             </div>
 
+            {/* ── RANKING SUMMARY ── */}
+            {/* Per VPAA: faculty should be able to track their rank in the summary.
+                TODO: fetch from Firestore:
+                - current_rank         : users.current_rank
+                - target_rank          : applications.target_position_id → positions.position_name
+                - threshold            : positions.minimum_score for target position
+                - last_cycle_score     : applications (previous cycle, status="Published") → total_score
+                - last_cycle_result    : applications (previous cycle) → status, promoted/retained */}
+            <div className="hm-rank-summary">
+                <div className="hm-rs-item">
+                    <div className="hm-rs-label">Current Rank</div>
+                    <div className="hm-rs-value">
+                        <School size={14} color="var(--gc-green)" />
+                        Instructor I
+                    </div>
+                    <div className="hm-rs-sub">Since June 2020</div>
+                </div>
+                <div className="hm-rs-divider" />
+                <div className="hm-rs-item">
+                    <div className="hm-rs-label">Applying For</div>
+                    <div className="hm-rs-value gold">
+                        <TrendingUp size={14} color="var(--gc-green)" />
+                        Instructor II
+                    </div>
+                    <div className="hm-rs-sub">This cycle's target</div>
+                </div>
+                <div className="hm-rs-divider" />
+                <div className="hm-rs-item">
+                    <div className="hm-rs-label">Score Needed</div>
+                    <div className="hm-rs-value">120 / 200 pts</div>
+                    {/* TODO: compute dynamically — (submitted_areas_count / 10) * 100 for fill width */}
+                    <div className="hm-rs-threshold-bar">
+                        <div
+                            className="hm-rs-threshold-fill"
+                            style={{ width: "43%" /* last score: 86/200 */ }}
+                        />
+                    </div>
+                    <div className="hm-rs-sub">Last score: 86 pts · 34 pts short</div>
+                </div>
+                <div className="hm-rs-divider" />
+                <div className="hm-rs-item">
+                    <div className="hm-rs-label">Last Cycle Result</div>
+                    <div className="hm-rs-value">
+                        <span className="hm-rs-badge hm-rs-badge-retained">
+                            Rank Retained
+                        </span>
+                    </div>
+                    <div className="hm-rs-sub">2nd Sem AY 2025–2026 · 86 pts</div>
+                </div>
+            </div>
+
             {/* ── SUBMIT ALL BAR ── */}
             {/* TODO: submit application — update applications doc status to "Submitted" in Firestore
-          disable button until all 10 areas are submitted */}
+                disable button until all 10 areas are submitted */}
             <div className="hm-submit-bar">
                 <div className="hm-submit-info">
                     <h4>Ready to submit your application?</h4>
@@ -783,302 +802,55 @@ export default function Home({ user }) {
                 </button>
             </div>
 
-            {/* ── CONTENT GRID ── */}
-            <div className="hm-content-grid">
-                {/* Score Sidebar */}
-                <div className="hm-score-sidebar">
-                    <div className="hm-panel-header">
-                        <div>
-                            <div className="hm-panel-title">
-                                Score Breakdown
-                            </div>
-                            <div className="hm-panel-sub">
-                                200-point ranking system
-                            </div>
+            {/* ── AREAS ── */}
+            <div className="hm-areas-main">
+                <div className="hm-panel-header">
+                    <div>
+                        <div className="hm-panel-title">
+                            Career Advancement Areas
                         </div>
-                        {/* TODO: REMOVE IN PRODUCTION — dev-only toggle to preview published score state
-                In production, scoreView is driven by application.status from Firestore:
-                "Published" → show published state, anything else → pending/locked state */}
-                        <button
-                            className="hm-preview-btn"
-                            onClick={() =>
-                                setScoreView((v) =>
-                                    v === "pending" ? "published" : "pending",
-                                )
-                            }
-                        >
-                            <Eye size={11} />
-                            {scoreView === "pending"
-                                ? "Preview Published"
-                                : "Back to Pending"}
-                        </button>
+                        <div className="hm-panel-sub">
+                            Download template → fill → upload · Submit each
+                            area individually
+                        </div>
                     </div>
-
-                    {scoreView === "pending" ? (
-                        <>
-                            <div className="hm-score-locked">
-                                <Lock
-                                    size={16}
-                                    color="var(--gc-green)"
-                                    style={{ flexShrink: 0, marginTop: 2 }}
-                                />
-                                <p>
-                                    Scores are visible only after{" "}
-                                    <strong>HR scoring</strong> is verified and
-                                    approved by the <strong>VPAA</strong>.
-                                </p>
-                            </div>
-                            <div
-                                className="hm-total-box"
-                                style={{
-                                    opacity: 0.4,
-                                    filter: "blur(2px)",
-                                    userSelect: "none",
-                                }}
-                            >
-                                <div className="hm-ts-label">Final Score</div>
-                                <div className="hm-ts-value">— / 200</div>
-                                <div className="hm-ts-max">Pending review</div>
-                            </div>
-                            <div className="hm-area-scores">
-                                {AREA_SCORES_PENDING.map((a, i) => (
-                                    <div key={i}>
-                                        <div className="hm-asr-top">
-                                            <span className="hm-asr-name">
-                                                {a.name}
-                                            </span>
-                                            <span className="hm-asr-hidden">
-                                                <Lock size={10} /> Hidden
-                                            </span>
-                                        </div>
-                                        <div className="hm-asr-track">
-                                            <div
-                                                className="hm-asr-fill"
-                                                style={{ width: "0%" }}
-                                            />
-                                        </div>
-                                        <div className="hm-asr-max">
-                                            Max: {a.max} pts
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="hm-rcb">
-                                <div className="hm-rcb-header">
-                                    <div className="hm-rcb-avatar hm-rcb-hr">
-                                        HR
-                                    </div>
-                                    <div>
-                                        <div className="hm-rcb-name">
-                                            HR Department
-                                        </div>
-                                        <div className="hm-rcb-label">
-                                            Scoring Comment
-                                        </div>
-                                    </div>
-                                    <span className="hm-rcb-status hm-rcb-locked">
-                                        Locked
-                                    </span>
-                                </div>
-                                <div className="hm-rcb-body locked">
-                                    Visible only after VPAA fully approves the
-                                    application.
-                                </div>
-                            </div>
-                            <div className="hm-rcb">
-                                <div className="hm-rcb-header">
-                                    <div className="hm-rcb-avatar hm-rcb-vpaa">
-                                        VP
-                                    </div>
-                                    <div>
-                                        <div className="hm-rcb-name">
-                                            VPAA Office
-                                        </div>
-                                        <div className="hm-rcb-label">
-                                            Verification Comment
-                                        </div>
-                                    </div>
-                                    <span className="hm-rcb-status hm-rcb-locked">
-                                        Locked
-                                    </span>
-                                </div>
-                                <div className="hm-rcb-body locked">
-                                    Visible only after VPAA fully approves the
-                                    application.
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 10,
-                                    background: "#eafaf1",
-                                    border: "1.5px solid #a9dfbf",
-                                    borderRadius: 10,
-                                    padding: "12px 14px",
-                                    marginBottom: 12,
-                                }}
-                            >
-                                <Trophy size={20} color="#1e8449" />
-                                <div>
-                                    <div
-                                        style={{
-                                            fontSize: 12,
-                                            fontWeight: 700,
-                                            color: "#1e8449",
-                                            marginBottom: 2,
-                                        }}
-                                    >
-                                        Score Published
-                                    </div>
-                                    <div
-                                        style={{
-                                            fontSize: 11,
-                                            color: "#2e7d52",
-                                        }}
-                                    >
-                                        Approved by VPAA · Mar 20, 2026
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="hm-total-box">
-                                <div className="hm-ts-label">Final Score</div>
-                                <div className="hm-ts-value">86 / 200</div>
-                                <div className="hm-ts-max">
-                                    Instructor II threshold: 120 pts
-                                </div>
-                            </div>
-                            <div className="hm-area-scores">
-                                {AREA_SCORES_PUBLISHED.map((a, i) => (
-                                    <div key={i}>
-                                        <div className="hm-asr-top">
-                                            <span className="hm-asr-name">
-                                                {a.name}
-                                            </span>
-                                            <span className="hm-asr-pts">
-                                                {a.pts}.00
-                                            </span>
-                                        </div>
-                                        <div className="hm-asr-track">
-                                            <div
-                                                className="hm-asr-fill"
-                                                style={{ width: `${a.pct}%` }}
-                                            />
-                                        </div>
-                                        <div className="hm-asr-max">
-                                            Max: {a.max}.00 pts
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="hm-rcb">
-                                <div className="hm-rcb-header">
-                                    <div className="hm-rcb-avatar hm-rcb-hr">
-                                        HR
-                                    </div>
-                                    <div>
-                                        <div className="hm-rcb-name">
-                                            HR Department
-                                        </div>
-                                        <div className="hm-rcb-label">
-                                            Scoring Comment · Mar 18, 2026
-                                        </div>
-                                    </div>
-                                    <span className="hm-rcb-status hm-rcb-done">
-                                        ✓ Done
-                                    </span>
-                                </div>
-                                <div className="hm-rcb-body">
-                                    Documents verified. Area I score reflects
-                                    highest earned degree (Masters). Areas VIII
-                                    and X have no supporting documents — scored
-                                    0.
-                                </div>
-                            </div>
-                            <div className="hm-rcb">
-                                <div className="hm-rcb-header">
-                                    <div className="hm-rcb-avatar hm-rcb-vpaa">
-                                        VP
-                                    </div>
-                                    <div>
-                                        <div className="hm-rcb-name">
-                                            VPAA Office
-                                        </div>
-                                        <div className="hm-rcb-label">
-                                            Verification Comment · Mar 20, 2026
-                                        </div>
-                                    </div>
-                                    <span className="hm-rcb-status hm-rcb-done">
-                                        ✓ Approved
-                                    </span>
-                                </div>
-                                <div className="hm-rcb-body">
-                                    Score verified and approved. Total of 86/200
-                                    does not meet the 120-point threshold for
-                                    Instructor II promotion. Current rank
-                                    retained.
-                                </div>
-                            </div>
-                        </>
-                    )}
+                    <span className="hm-badge-green">10 Areas</span>
                 </div>
 
-                {/* Areas Main */}
-                <div className="hm-areas-main">
-                    <div
-                        className="hm-panel-header"
-                        style={{ marginBottom: 14 }}
-                    >
-                        <div>
-                            <div className="hm-panel-title">
-                                Career Advancement Areas
-                            </div>
-                            <div className="hm-panel-sub">
-                                Download template → fill → upload · Submit each
-                                area individually
-                            </div>
-                        </div>
-                        <span className="hm-badge-green">10 Areas</span>
-                    </div>
+                <div className="hm-area-tabs">
+                    {[
+                        { key: "all", label: "All (10)" },
+                        {
+                            key: "submitted",
+                            label: "Submitted (7)",
+                            dot: "s",
+                        },
+                        { key: "draft", label: "Draft (1)", dot: "d" },
+                        { key: "empty", label: "Pending (2)", dot: "e" },
+                    ].map((t) => (
+                        <button
+                            key={t.key}
+                            className={`hm-area-tab${areaFilter === t.key ? " active" : ""}`}
+                            onClick={() => setAreaFilter(t.key)}
+                        >
+                            {t.dot && (
+                                <span className={`hm-tab-dot ${t.dot}`} />
+                            )}
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
 
-                    <div className="hm-area-tabs">
-                        {[
-                            { key: "all", label: "All (10)" },
-                            {
-                                key: "submitted",
-                                label: "Submitted (7)",
-                                dot: "s",
-                            },
-                            { key: "draft", label: "Draft (1)", dot: "d" },
-                            { key: "empty", label: "Pending (2)", dot: "e" },
-                        ].map((t) => (
-                            <button
-                                key={t.key}
-                                className={`hm-area-tab${areaFilter === t.key ? " active" : ""}`}
-                                onClick={() => setAreaFilter(t.key)}
-                            >
-                                {t.dot && (
-                                    <span className={`hm-tab-dot ${t.dot}`} />
-                                )}
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="hm-area-cards">
-                        {filteredAreas.map((area, i) => (
-                            <AreaCard key={i} area={area} />
-                        ))}
-                    </div>
+                <div className="hm-area-cards">
+                    {filteredAreas.map((area, i) => (
+                        <AreaCard key={i} area={area} />
+                    ))}
                 </div>
             </div>
 
             {/* ── ACTIVITY LOG ── */}
             <div className="hm-activity-panel">
-                <div className="hm-panel-header" style={{ marginBottom: 14 }}>
+                <div className="hm-panel-header">
                     <div>
                         <div className="hm-panel-title">Application Log</div>
                         <div className="hm-panel-sub">

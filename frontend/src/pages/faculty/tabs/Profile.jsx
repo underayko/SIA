@@ -1,4 +1,13 @@
 // 📄 SIA/frontend/src/pages/faculty/tabs/Profile.jsx
+//
+// ── REVISION NOTES (Midterm Demo Feedback) ──────────────────────────────────
+// • Removed "Current Salary" field — salary must not be disclosed to faculty
+// • Removed "Applying For" field — HR manages target position, not faculty
+// • Removed "Faculty Performance Rating" card from profile —
+//     rating is now shown in the Dashboard hero only (see Home.jsx)
+// • Added Data Privacy Provision section at the bottom
+// • Added last-cycle performance rating chip in the hero (read-only)
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
 import {
@@ -24,6 +33,7 @@ import {
     Clock,
     AlertCircle,
     Upload,
+    Shield,
 } from "lucide-react";
 
 const styles = `
@@ -106,6 +116,10 @@ const styles = `
     display:inline-flex; align-items:center; gap:5px;
     background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.2);
     border-radius:20px; padding:4px 12px; font-size:12px; color:var(--white); font-weight:500;
+  }
+  .pf-chip.gold {
+    background:rgba(201,168,76,0.22); border-color:rgba(201,168,76,0.45);
+    color:var(--gc-gold-light);
   }
   .pf-status-box { text-align:right; flex-shrink:0; position:relative; z-index:1; }
   .psb-label  { font-size:10px; color:rgba(255,255,255,0.55); letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
@@ -238,15 +252,22 @@ const styles = `
   }
   .pf-elig-add:hover { border-color:var(--gc-green); color:var(--gc-green); }
 
-  /* ── PERFORMANCE RATING ── */
-  .pf-rating-num {
-    font-family:'Playfair Display',serif; font-size:28px; font-weight:700;
-    color:var(--gc-green-dark); line-height:1;
+  /* ── DATA PRIVACY ── */
+  .pf-privacy-body {
+    font-size:13.5px; color:var(--text-mid); line-height:1.75;
   }
-  .pf-rating-badge {
-    display:inline-flex; align-items:center; gap:5px;
-    background:#eafaf1; color:#1e8449;
-    font-size:12px; font-weight:700; padding:4px 12px; border-radius:8px;
+  .pf-privacy-body p { margin-bottom:12px; }
+  .pf-privacy-body p:last-child { margin-bottom:0; }
+  .pf-privacy-list {
+    list-style:none; display:flex; flex-direction:column; gap:7px;
+    margin:10px 0 12px 0;
+  }
+  .pf-privacy-list li {
+    display:flex; align-items:flex-start; gap:8px;
+    font-size:13px; color:var(--text-mid); line-height:1.5;
+  }
+  .pf-privacy-list li::before {
+    content:'▸'; color:var(--gc-gold); flex-shrink:0; font-size:11px; margin-top:2px;
   }
 
   /* ── NOTICES ── */
@@ -475,7 +496,7 @@ export default function Profile({ user }) {
     const handleFieldSave = (field, value) => {
         // TODO: write to Firestore — profile_change_requests collection
         // doc structure: { user_id, field, old_value, new_value, status:"pending", requested_at: serverTimestamp() }
-        // HR portal will show this as a pending change to review
+        // HR portal will show this as a pending change to review and approve or reject
         setPendingFields((prev) => ({ ...prev, [field]: value }));
     };
 
@@ -576,6 +597,13 @@ export default function Profile({ user }) {
                         <span className="pf-chip">
                             <Mail size={12} />{" "}
                             {user?.email || "202011090@gordoncollege.edu.ph"}
+                        </span>
+                        {/* Performance rating chip — read-only, sourced from last published cycle */}
+                        {/* TODO: fetch from Firestore — areasubmissions where area_id = Area IV
+                            for the most recently published cycle of this faculty member.
+                            Show csv_total_average_rate (e.g. "4.52 · Outstanding") */}
+                        <span className="pf-chip gold">
+                            <Star size={12} /> 4.52 · Outstanding
                         </span>
                     </div>
                 </div>
@@ -715,8 +743,10 @@ export default function Profile({ user }) {
                     </span>
                 </div>
                 {/* TODO: fetch from Firestore — users collection fields:
-            current_rank, nature_of_appointment, current_salary,
-            date_of_last_promotion, applying_for */}
+                    current_rank, nature_of_appointment, date_of_last_promotion
+                    Note: current_salary and applying_for are intentionally NOT shown here.
+                    Salary is not disclosed to faculty per system policy.
+                    Target rank (applying_for) is visible in the Dashboard only. */}
                 <div className="pf-fields">
                     <div className="pf-row">
                         <div className="pf-item">
@@ -735,29 +765,16 @@ export default function Profile({ user }) {
                             <div className="pf-value">Full-time Permanent</div>
                         </div>
                         <div className="pf-item">
-                            <div className="pf-label">Current Salary</div>
-                            <div className="pf-value">₱ 32,053.00</div>
-                        </div>
-                        <div className="pf-item">
                             <div className="pf-label">
                                 <Calendar size={11} /> Date of Last Promotion
                             </div>
                             <div className="pf-value">June 12, 2020</div>
                         </div>
-                        <div className="pf-item">
-                            <div className="pf-label">
-                                Applying For (current cycle)
-                            </div>
-                            {/* TODO: fetch from applications.target_position_id → positions.position_name */}
-                            <div>
-                                <span className="pf-tag">Instructor II</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* ── ROW 3: Education + Eligibility & Performance ── */}
+            {/* ── ROW 3: Education + Eligibility (stacked) ── */}
             <div className="pf-grid-2-asym">
                 {/* Educational Attainment — faculty can add entries */}
                 <div className="pf-card" style={{ marginBottom: 0 }}>
@@ -773,8 +790,8 @@ export default function Profile({ user }) {
                         </span>
                     </div>
                     {/* TODO: fetch from Firestore — users.educational_attainment
-              new entries go to profile_change_requests with field="educational_attainment"
-              pending entries shown with orange badge until HR approves */}
+                        new entries go to profile_change_requests with field="educational_attainment"
+                        pending entries shown with orange badge until HR approves */}
                     <div className="pf-edu-list">
                         {eduList.map((edu, i) => (
                             <div className="pf-edu-item" key={i}>
@@ -808,108 +825,44 @@ export default function Profile({ user }) {
                     </div>
                 </div>
 
-                {/* Eligibility + Performance stacked */}
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 18,
-                    }}
-                >
-                    {/* Eligibility — faculty can add entries */}
-                    <div className="pf-card" style={{ marginBottom: 0 }}>
-                        <div className="pf-card-header">
-                            <div className="pf-card-icon">
-                                <ClipboardList size={16} />
-                            </div>
-                            <div className="pf-card-title">
-                                Eligibility &amp; Licensure
-                            </div>
-                            <span className="pf-card-editable-badge">
-                                <Plus size={10} /> Can add
-                            </span>
+                {/* Eligibility only — Performance Rating removed from profile */}
+                {/* NOTE: Faculty Performance Rating is displayed in the Dashboard (Home.jsx hero) only.
+                    It was removed from Profile per midterm feedback — rating should not appear here. */}
+                <div className="pf-card" style={{ marginBottom: 0 }}>
+                    <div className="pf-card-header">
+                        <div className="pf-card-icon">
+                            <ClipboardList size={16} />
                         </div>
-                        {/* TODO: fetch from Firestore — users.eligibility_exams
-                new entries go to profile_change_requests with field="eligibility_exams" */}
-                        <div className="pf-elig-list">
-                            {eligList.map((e, i) => (
-                                <div className="pf-elig-item" key={i}>
-                                    <span className="pf-elig-dot" />
-                                    <span className="pf-elig-text">
-                                        {e.text}
-                                    </span>
-                                    {e.pending && (
-                                        <div
-                                            className="pf-pending-badge"
-                                            style={{ flexShrink: 0 }}
-                                        >
-                                            <Clock size={10} /> Pending
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                            <button
-                                className="pf-elig-add"
-                                onClick={handleAddElig}
-                            >
-                                <Plus size={14} /> Add eligibility or board exam
-                            </button>
+                        <div className="pf-card-title">
+                            Eligibility &amp; Licensure
                         </div>
+                        <span className="pf-card-editable-badge">
+                            <Plus size={10} /> Can add
+                        </span>
                     </div>
-
-                    {/* Performance Rating — read only, HR managed */}
-                    <div className="pf-card" style={{ marginBottom: 0 }}>
-                        <div className="pf-card-header">
-                            <div className="pf-card-icon">
-                                <Star size={16} />
-                            </div>
-                            <div className="pf-card-title">
-                                Faculty Performance Rating
-                            </div>
-                            <span className="pf-card-readonly-badge">
-                                <Lock size={10} /> HR managed
-                            </span>
-                        </div>
-                        {/* TODO: fetch from areasubmissions where area_id = Area IV
-                csv_total_average_rate = auto-scored from student evaluation CSV uploaded by HR */}
-                        <div className="pf-fields">
-                            <div className="pf-row">
-                                <div className="pf-item">
-                                    <div className="pf-label">
-                                        Overall Rating{" "}
-                                        <span className="pf-label-required">
-                                            <Star size={10} /> Required
-                                        </span>
-                                    </div>
-                                    <div className="pf-rating-num">4.52</div>
-                                </div>
-                                <div className="pf-item">
-                                    <div className="pf-label">
-                                        Rating Description
-                                    </div>
-                                    <div style={{ marginTop: 4 }}>
-                                        <span className="pf-rating-badge">
-                                            <BadgeCheck size={13} /> Outstanding
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="pf-row">
-                                <div className="pf-item full">
-                                    <div className="pf-label">Source</div>
+                    {/* TODO: fetch from Firestore — users.eligibility_exams
+                        new entries go to profile_change_requests with field="eligibility_exams" */}
+                    <div className="pf-elig-list">
+                        {eligList.map((e, i) => (
+                            <div className="pf-elig-item" key={i}>
+                                <span className="pf-elig-dot" />
+                                <span className="pf-elig-text">{e.text}</span>
+                                {e.pending && (
                                     <div
-                                        className="pf-value"
-                                        style={{
-                                            fontSize: 12,
-                                            color: "var(--text-muted)",
-                                        }}
+                                        className="pf-pending-badge"
+                                        style={{ flexShrink: 0 }}
                                     >
-                                        Auto-populated from student evaluation
-                                        CSV · AY 2025–2026, 1st Semester
+                                        <Clock size={10} /> Pending
                                     </div>
-                                </div>
+                                )}
                             </div>
-                        </div>
+                        ))}
+                        <button
+                            className="pf-elig-add"
+                            onClick={handleAddElig}
+                        >
+                            <Plus size={14} /> Add eligibility or board exam
+                        </button>
                     </div>
                 </div>
             </div>
@@ -923,6 +876,76 @@ export default function Profile({ user }) {
                     For corrections, contact HR directly. Editable fields
                     require HR verification before changes become visible.
                 </p>
+            </div>
+
+            {/* ── DATA PRIVACY PROVISION ── */}
+            {/* Added per midterm feedback — required by VPAA */}
+            <div className="pf-card">
+                <div className="pf-card-header">
+                    <div className="pf-card-icon">
+                        <Shield size={16} />
+                    </div>
+                    <div className="pf-card-title">
+                        Faculty Data Privacy Provision
+                    </div>
+                    <span className="pf-card-readonly-badge">
+                        <Lock size={10} /> Read only
+                    </span>
+                </div>
+                {/* TODO (backend): store a faculty's data privacy acknowledgement flag in Firestore
+                    — users.privacy_acknowledged: boolean
+                    — users.privacy_acknowledged_at: timestamp
+                    When this field is false (new users), show a prompt to accept before proceeding.
+                    This screen is read-only for now; acknowledgement logic to be implemented later. */}
+                <div className="pf-privacy-body">
+                    <p>
+                        Gordon College is committed to protecting the privacy
+                        and confidentiality of all personal information
+                        collected through the <strong>GCFARES</strong> system,
+                        in accordance with <strong>Republic Act No. 10173</strong>,
+                        otherwise known as the <em>Data Privacy Act of 2012</em>.
+                    </p>
+
+                    <p>By using this system, you acknowledge that:</p>
+
+                    <ul className="pf-privacy-list">
+                        <li>
+                            Your personal and professional information (name,
+                            educational background, employment records) is
+                            collected solely for the purpose of faculty ranking
+                            and advancement evaluation.
+                        </li>
+                        <li>
+                            Your data will only be accessible to authorized
+                            personnel — specifically the <strong>HR Department</strong> and
+                            the <strong>Office of the VPAA</strong> — for the
+                            duration of an active evaluation cycle.
+                        </li>
+                        <li>
+                            Uploaded documents submitted for evaluation are
+                            stored securely and will not be shared outside of
+                            the ranking process without your written consent.
+                        </li>
+                        <li>
+                            <strong>Salary information</strong> is classified
+                            and is not disclosed within the faculty-facing
+                            portal. Only authorized HR personnel may view salary
+                            records.
+                        </li>
+                        <li>
+                            You have the right to request access to, correction
+                            of, or deletion of your personal data by contacting
+                            the MIS Office or the Data Privacy Officer of Gordon
+                            College.
+                        </li>
+                    </ul>
+
+                    <p>
+                        For questions or concerns regarding your data, contact
+                        the <strong>Gordon College MIS Office</strong> or email{" "}
+                        <strong>[dpo@gordoncollege.edu.ph]</strong>.
+                    </p>
+                </div>
             </div>
 
             {/* ── CHANGE PASSWORD ── */}
@@ -1095,7 +1118,7 @@ export default function Profile({ user }) {
                                 Cancel
                             </button>
                             {/* TODO: connect Firebase — reauthenticateWithCredential + updatePassword
-                  Password change does NOT go through profile_change_requests — it's instant via Firebase Auth */}
+                                Password change does NOT go through profile_change_requests — it's instant via Firebase Auth */}
                             <button
                                 className="pf-cp-save"
                                 onClick={handleCpSubmit}

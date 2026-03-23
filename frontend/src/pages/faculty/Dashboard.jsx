@@ -106,8 +106,8 @@ const PAGE_TITLES = {
     notifications: "Notifications",
 };
 
-export default function Dashboard({ user, onLogout }) {
-    const [activeTab, setActiveTab] = useState("home");
+export default function Dashboard({ user, onLogout, _devInitialTab }) {
+    const [activeTab, setActiveTab] = useState(_devInitialTab || "home");
     const [showLogout, setShowLogout] = useState(false);
     const [notifCount, setNotifCount] = useState(2);
 
