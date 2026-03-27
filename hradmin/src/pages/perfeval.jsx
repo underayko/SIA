@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Sidebar from '../components/sidenav';
 import './perfeval.css';
+import '../styles/layout.css';
 
 /* ── Icons ───────────────────────────────── */
 const Icons = {
@@ -381,16 +382,17 @@ export default function PerfEval() {
   const [showPanel, setShowPanel] = useState(true);
 
   return (
-    <div className="pe-layout">
+    <div className="app">
       <Sidebar />
 
-      <main className="pe-main">
-        <div className="rk-card-header">
+      <div className="main">
+        <div className="content">
+          <div className="rk-card-header">
             <span className="rk-card-title">Performance Evaluation</span>
             <span className="rk-semester">1st Semester AY 2026–2027</span>
           </div>
 
-        <div className="pe-body">
+          <div className="pe-body">
           <FacultyInfoCard />
 
           <div className="pe-summary-row">
@@ -408,8 +410,9 @@ export default function PerfEval() {
           </div>
 
           {showPanel && <SubmittedAreaPanel />}
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

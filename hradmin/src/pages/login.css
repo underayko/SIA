@@ -137,6 +137,14 @@ html, body, #root {
 }
 .btn-sign-in:hover  { background: #175e2f; }
 .btn-sign-in:active { transform: scale(0.99); }
+.btn-sign-in:disabled { opacity: 0.65; cursor: not-allowed; }
+
+.login-error {
+  margin-top: 10px; padding: 8px 12px;
+  background: #fef2f2; border: 1px solid #fca5a5;
+  color: #b91c1c; border-radius: 6px;
+  font-size: 0.82rem; text-align: center;
+}
 
 .forgot {
   display: block; text-align: center; margin-top: 16px;

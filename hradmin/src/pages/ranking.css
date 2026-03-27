@@ -4,64 +4,20 @@
    a global.css
    ============================================ */
 
-/* ── Base resets (safe — scoped via * inside layout) ── */
+/* ── Base resets ─────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body, #root {
-  height: 100%;
-  width: 100%;
-}
+/* Body styles now handled by shared layout.css */
 
-body {
-  font-family: 'DM Sans', 'Segoe UI', sans-serif;
-  background: #eef0ed;
-  color: #3a4a3a;
-  -webkit-font-smoothing: antialiased;
-}
+/* ── Ranking-specific styles ─────────────── */
+/* Layout now handled by shared layout.css */
 
-/* ── Layout shell ─────────────────────────── */
-.rk-layout {
-  display: flex;
-  min-height: 100vh;
-  width: 100%;
-  background: #eef0ed;
-  font-family: 'DM Sans', 'Segoe UI', sans-serif;
-  font-size: 13px;
-  color: #3a4a3a;
-  position: relative;
-}
-
-/* ── Force sidebar fixed ──────────────────── */
-.rk-layout .sidebar {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 220px !important;
-  height: 100vh !important;
-  overflow-y: auto;
-  z-index: 200;
-  flex-shrink: 0;
-}
-
-/* ── Main content (offset by sidebar width) ─ */
-.rk-main {
-  margin-left: 220px;
-  width: calc(100% - 220px);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-}
-
-/* ── Body/content area ────────────────────── */
-.rk-body {
-  flex: 1;
-  padding: 28px 32px 48px;
-}
+/* ── Card header styles ──────────────────── */
+/* Content padding now handled by shared layout.css */
 
 /* ── Card header: title + semester ───────── */
 .rk-card-header {
@@ -72,7 +28,7 @@ body {
 }
 
 .rk-card-title {
-  font-family: 'Georgia', serif;
+  font-family: 'DM Sans', sans-serif;
   font-size: 20px;
   font-weight: 700;
   color: #1a3c2b;
@@ -217,6 +173,117 @@ body {
 .rk-edit-btn:hover {
   background: #eaf2fb;
   color: #1f6fad;
+}
+
+/* ── Edit actions ────────────────────────── */
+.rk-edit-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rk-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #22c55e;
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+}
+.rk-save-btn:hover {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.rk-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  transition: background 0.13s, color 0.13s;
+}
+.rk-cancel-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ── Edit textarea ───────────────────────── */
+.rk-edit-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #374151;
+  background: #ffffff;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.rk-edit-textarea:focus {
+  border-color: #5a9bd5;
+  box-shadow: 0 0 0 3px rgba(90, 155, 213, 0.1);
+}
+
+/* ── Badge styles ────────────────────────── */
+.rk-badge.resubmit {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fbbf24;
+}
+
+.rk-badge-clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.rk-badge-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.rk-badge.upload.rk-badge-clickable:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.rk-badge.resubmit.rk-badge-clickable:hover {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #f59e0b;
+}
+
+/* File upload feedback */
+.rk-uploading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.rk-upload-success {
+  animation: uploadSuccess 0.5s ease-in-out;
+}
+
+@keyframes uploadSuccess {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 /* ── Responsive ──────────────────────────── */

@@ -1,9 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../components/sidenav';
+import '../styles/layout.css';
 import './review.css';
+import { db } from '../firebase';
+import {
+  collection, doc, getDocs, getDoc, updateDoc,
+  query, where, orderBy, writeBatch
+} from 'firebase/firestore';
 
 // ══ FACULTY INFO CARD (shared) ═══════════════════════════════
-function FacultyInfoCard() {
+function FacultyInfoCard({ facultyData, applicationData }) {
+  if (!facultyData || !applicationData) {
+    return (
+      <div className="faculty-card">
+        <div className="faculty-card-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Faculty Information
+        </div>
+        <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+          Loading faculty information...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="faculty-card">
       <div className="faculty-card-header">
@@ -13,33 +33,32 @@ function FacultyInfoCard() {
       <div className="faculty-info-grid">
         <div>
           <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Personal Details</div>
-          <div className="fi-field"><label>Name</label><span>Jenkins, Sarah A.</span></div>
-          <div className="fi-field"><label>Department</label><span>CCS</span></div>
+          <div className="fi-field"><label>Name</label><span>{facultyData.name_last}, {facultyData.name_first} {facultyData.name_middle}.</span></div>
+          <div className="fi-field"><label>Department</label><span>{facultyData.department_name || 'N/A'}</span></div>
         </div>
         <div>
-          <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>Employment Status</div>
-          <div className="fi-field"><label>Present Rank</label><span>Instructor II</span></div>
-          <div className="fi-field"><label>Nature of Appointment</label><span>Permanent</span></div>
-          <div className="fi-field"><label>Current Salary</label><span>₱45,000.00</span></div>
+          <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2-2v2"/></svg>Employment Status</div>
+          <div className="fi-field"><label>Present Rank</label><span>{facultyData.current_rank || 'N/A'}</span></div>
+          <div className="fi-field"><label>Nature of Appointment</label><span>{facultyData.nature_of_appointment || 'N/A'}</span></div>
+          <div className="fi-field"><label>Current Salary</label><span>₱{facultyData.current_salary ? Number(facultyData.current_salary).toLocaleString('en-PH', {minimumFractionDigits: 2}) : 'N/A'}</span></div>
         </div>
         <div>
           <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Experience &amp; Rating</div>
-          <div className="fi-field"><label>Teaching Exp.</label><span>8 years</span></div>
-          <div className="fi-field"><label>Industry Exp.</label><span>3 years</span></div>
-          <div className="fi-field"><label>Performance Rating</label><span>4.8</span></div>
-          <div className="fi-field"><label>Rating Description</label><span>Very Satisfactory</span></div>
+          <div className="fi-field"><label>Teaching Exp.</label><span>{facultyData.teaching_experience_years || 0} years</span></div>
+          <div className="fi-field"><label>Industry Exp.</label><span>{facultyData.industry_experience_years || 0} years</span></div>
+          <div className="fi-field"><label>Final Score</label><span>{applicationData.final_score || 'Not scored'}</span></div>
+          <div className="fi-field"><label>Status</label><span>{applicationData.status?.replace(/_/g, ' ') || 'N/A'}</span></div>
         </div>
         <div>
           <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>Educational Attainment</div>
-          <div className="fi-edu"><strong>Bachelor's in Computer Science</strong><small>State University</small></div>
-          <div className="fi-edu"><strong>Master's in Computer Science</strong><small>Tech Institute</small></div>
+          <div className="fi-edu"><strong>{facultyData.educational_attainment || 'Not specified'}</strong><small>Educational Background</small></div>
           <div className="fi-label" style={{ marginTop: '10px' }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Eligibility &amp; Exams</div>
-          <div className="fi-field"><span>Civil Service Professional</span></div>
+          <div className="fi-field"><span>{facultyData.eligibility_exams || 'None specified'}</span></div>
         </div>
         <div>
           <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Application Details</div>
-          <div className="fi-field"><label>Applying For</label><span>Instructor III</span></div>
-          <div className="fi-field"><label>Last Promotion</label><span>05 12, 21</span></div>
+          <div className="fi-field"><label>Applying For</label><span>{facultyData.applying_for || 'N/A'}</span></div>
+          <div className="fi-field"><label>Last Promotion</label><span>{facultyData.date_of_last_promotion ? new Date(facultyData.date_of_last_promotion).toLocaleDateString() : 'N/A'}</span></div>
         </div>
       </div>
     </div>
@@ -192,60 +211,175 @@ function SummaryView({ onBack }) {
 // ══ MAIN COMPONENT ═══════════════════════════════════════════
 export default function Review() {
   const [view, setView] = useState('list'); // 'list' | 'detail' | 'summary'
+  const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState([]);
+  const [selectedApplication, setSelectedApplication] = useState(null);
+  const [selectedFaculty, setSelectedFaculty] = useState(null);
+  const [areaSubmissions, setAreaSubmissions] = useState([]);
+  const [areas, setAreas] = useState([]);
+  const [currentCycle, setCurrentCycle] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  // TODO: Replace with real DB data
-  const facultyList = [
-    { id: 'r1', rank: 1, name: 'review_name_1', department: 'review_dept_1', currentRank: 'review_rank_1', totalPoints: 'review_points_1', status: 'reviewed' },
-    { id: 'r2', rank: 2, name: 'review_name_2', department: 'review_dept_2', currentRank: 'review_rank_2', totalPoints: 'review_points_2', status: 'reviewed' },
-    { id: 'r3', rank: 3, name: 'review_name_3', department: 'review_dept_3', currentRank: 'review_rank_3', totalPoints: 'review_points_3', status: 'reviewed' },
-    { id: 'r4', rank: 4, name: 'review_name_4', department: 'review_dept_4', currentRank: 'review_rank_4', totalPoints: 'review_points_4', status: 'reviewed' },
-    { id: 'r5', rank: 5, name: 'review_name_5', department: 'review_dept_5', currentRank: 'review_rank_5', totalPoints: 'review_points_5', status: 'pending' },
-    { id: 'r6', rank: 6, name: 'review_name_6', department: 'review_dept_6', currentRank: 'review_rank_6', totalPoints: 'review_points_6', status: 'pending' },
-    { id: 'r7', rank: 7, name: 'review_name_7', department: 'review_dept_7', currentRank: 'review_rank_7', totalPoints: 'review_points_7', status: 'pending' },
-    { id: 'r8', rank: 8, name: 'review_name_8', department: 'review_dept_8', currentRank: 'review_rank_8', totalPoints: 'review_points_8', status: 'pending' },
-  ];
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchApplicationsData();
+  }, []);
 
-  // TODO: Replace with real DB data
-  const submittedAreas = [
-    {
-      label: 'AREA I: Educational Qualifications', max: '85.00', score: '50.00',
-      criteria: [
-        { label: 'A. Associate Courses/Program (2 years)',          max: '25.00', score: '25.50' },
-        { label: "B. Bachelor's Degree (4 years to 5 years)",       max: '45.00', score: '00.00' },
-        { label: "C. Diploma course (Above Bachelor's Degree)",     max: '46.00', score: '25.50' },
-        { label: "D. Master's Program",                             max: '—',     score: '—'     },
-        { label: 'D. 1 MA/MS Units (6–12 units)',                   max: '47.00', score: '00.00' },
-      ],
-    },
-    {
-      label: 'AREA IV: Performance Evaluation', max: '10.00', score: '10.00',
-      criteria: [
-        { label: '1.00 - 1.39 · Poor',  max: '1.00', score: '00.00' },
-        { label: '1.40 - 1.79 · Poor',  max: '2.00', score: '00.00' },
-        { label: '1.80 - 2.19 · Fair',  max: '3.00', score: '00.00' },
-        { label: '2.20 - 2.29 · Fair',  max: '4.00', score: '00.00' },
-      ],
-    },
-    {
-      label: 'AREA II: Research and Publications', max: '85.00', score: '50.00',
-      criteria: [],
-    },
-    {
-      label: 'AREA V: Training and Seminars', max: '85.00', score: '50.00',
-      criteria: [],
-    },
-  ];
+  const fetchApplicationsData = async () => {
+    try {
+      setLoading(true);
+      console.log('📊 Fetching applications data...');
+
+      // Get active cycle first
+      const cyclesQuery = query(collection(db, 'ranking_cycles'), where('status', '==', 'open'));
+      const cyclesSnapshot = await getDocs(cyclesQuery);
+      let activeCycle = null;
+      if (!cyclesSnapshot.empty) {
+        activeCycle = { id: cyclesSnapshot.docs[0].id, ...cyclesSnapshot.docs[0].data() };
+        setCurrentCycle(activeCycle);
+      }
+
+      // Get areas for lookup
+      const areasSnapshot = await getDocs(collection(db, 'areas'));
+      const areasData = [];
+      areasSnapshot.forEach((doc) => {
+        areasData.push({ id: doc.id, ...doc.data() });
+      });
+      setAreas(areasData);
+
+      // Get applications with faculty data
+      const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+      const applicationsWithFaculty = [];
+
+      for (const appDoc of applicationsSnapshot.docs) {
+        const appData = appDoc.data();
+        
+        // Get faculty data
+        const facultyDoc = await getDoc(doc(db, 'users', appData.faculty_id));
+        if (facultyDoc.exists()) {
+          const facultyData = facultyDoc.data();
+
+          applicationsWithFaculty.push({
+            id: appDoc.id,
+            ...appData,
+            faculty: {
+              ...facultyData,
+              department_name: facultyData.department || 'Unknown'
+            }
+          });
+        }
+      }
+
+      setApplications(applicationsWithFaculty);
+      console.log('✅ Fetched applications:', applicationsWithFaculty.length);
+
+    } catch (error) {
+      console.error('❌ Error fetching applications:', error);
+      alert('Error loading applications data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAreaSubmissions = async (applicationId) => {
+    try {
+      console.log('📄 Fetching area submissions for application:', applicationId);
+      
+      const submissionsQuery = query(
+        collection(db, 'areasubmissions'),
+        where('application', '==', applicationId)
+      );
+      const submissionsSnapshot = await getDocs(submissionsQuery);
+      
+      const submissions = [];
+      submissionsSnapshot.forEach((doc) => {
+        const submissionData = doc.data();
+        const area = areas.find(a => a.id === submissionData.area_id);
+        
+        submissions.push({
+          id: doc.id,
+          ...submissionData,
+          area: area || { area_name: 'Unknown Area', max_possible_points: 0 }
+        });
+      });
+
+      setAreaSubmissions(submissions);
+      console.log('✅ Fetched area submissions:', submissions.length);
+    } catch (error) {
+      console.error('❌ Error fetching area submissions:', error);
+    }
+  };
+
+  const handleReviewClick = async (application) => {
+    setSelectedApplication(application);
+    setSelectedFaculty(application.faculty);
+    await fetchAreaSubmissions(application.id);
+    setView('detail');
+  };
+
+  const handleBackToList = () => {
+    setView('list');
+    setSelectedApplication(null);
+    setSelectedFaculty(null);
+    setAreaSubmissions([]);
+  };
+
+  const handleBackToDetail = () => {
+    setView('detail');
+  };
+
+  // Filter applications based on search and filters
+  const filteredApplications = applications.filter(app => {
+    const matchesSearch = !searchTerm || 
+      app.faculty.name_first.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.faculty.name_last.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesDepartment = departmentFilter === 'all' || 
+      app.faculty.department === departmentFilter;
+    
+    const matchesStatus = statusFilter === 'all' ||
+      (statusFilter === 'pending' && ['Draft', 'Submitted', 'Under_HR_Review'].includes(app.status)) ||
+      (statusFilter === 'reviewed' && ['Under_VPAA_Review', 'For_Publishing', 'Published'].includes(app.status));
+
+    return matchesSearch && matchesDepartment && matchesStatus;
+  });
+
+  // Convert area submissions to the format expected by AreaCard
+  const submittedAreas = areaSubmissions.map(submission => ({
+    label: `AREA ${submission.area.area_name}`,
+    max: submission.area.max_possible_points?.toString() || '0.00',
+    score: submission.hr_points?.toString() || '0.00',
+    criteria: [] // For now, we'll keep this empty since criteria would need separate implementation
+  }));
+
+  if (loading) {
+    return (
+      <div className="app">
+        <Sidebar />
+        <div className="main">
+          <div className="content">
+            <div style={{ padding: '40px', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', marginBottom: '10px' }}>Loading applications...</div>
+              <div style={{ color: '#666' }}>Please wait while we fetch the data from the database.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
       <Sidebar />
 
-      <div className="main-white">
+      <div className="main">
         <div className="content">
 
           <div className="rk-card-header">
-            <span className="rk-card-title">Review and Score </span>
-            <span className="rk-semester">1st Semester AY 2026–2027</span>
+            <span className="rk-card-title">Review and Score</span>
+            <span className="rk-semester">{currentCycle ? `${currentCycle.semester} ${currentCycle.year}` : '1st Semester AY 2026–2027'}</span>
           </div>
 
           {/* ── LIST VIEW ── */}
@@ -253,65 +387,151 @@ export default function Review() {
             <>
               <div className="toolbar">
                 <div className="toolbar-left">
-                  <span className="toolbar-label">Faculty Users</span>
+                  <span className="toolbar-label">Faculty Applications ({filteredApplications.length})</span>
                   <div className="search-wrap">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input type="text" placeholder="Search faculty name" />
+                    <input 
+                      type="text" 
+                      placeholder="Search faculty name" 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                   </div>
                   <div className="filter-wrap">
-                    <select><option>All Departments</option><option>CEAS</option><option>CCS</option><option>CBA</option><option>BSA</option></select>
+                    <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}>
+                      <option value="all">All Departments</option>
+                      <option value="CCS">CCS</option>
+                      <option value="CEAS">CEAS</option>
+                      <option value="CBA">CBA</option>
+                      <option value="BSA">BSA</option>
+                    </select>
                   </div>
                   <div className="filter-wrap">
-                    <select><option>Pending</option><option>Reviewed</option><option>All</option></select>
+                    <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                      <option value="all">All Status</option>
+                      <option value="pending">Pending Review</option>
+                      <option value="reviewed">Reviewed</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              <table>
-                <thead>
-                  <tr>
-                    <th>Rank</th><th>Name</th><th>Department</th>
-                    <th>Current Rank</th><th>Total Points: 200.00</th>
-                    <th>Status</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {facultyList.map((f) => (
-                    <ReviewRow key={f.id} faculty={f} onReview={() => setView('detail')} />
-                  ))}
-                </tbody>
-              </table>
+              {filteredApplications.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+                  <div style={{ fontSize: '16px', marginBottom: '8px' }}>No applications found</div>
+                  <div style={{ fontSize: '14px' }}>Try adjusting your search or filter criteria.</div>
+                </div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Rank</th><th>Name</th><th>Department</th>
+                      <th>Current Rank</th><th>Final Score</th>
+                      <th>Status</th><th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredApplications.map((application, index) => (
+                      <tr key={application.id}>
+                        <td>{index + 1}</td>
+                        <td className="faculty-name">{application.faculty.name_last}, {application.faculty.name_first}</td>
+                        <td>{application.faculty.department_name}</td>
+                        <td>{application.faculty.current_rank}</td>
+                        <td>{application.final_score || 'Not scored'}</td>
+                        <td>
+                          <span className={`badge ${
+                            ['Under_VPAA_Review', 'For_Publishing', 'Published'].includes(application.status) 
+                              ? 'badge-reviewed' 
+                              : 'badge-pending'
+                          }`}>
+                            {['Under_VPAA_Review', 'For_Publishing', 'Published'].includes(application.status) 
+                              ? 'Reviewed' 
+                              : 'Pending'
+                            }
+                          </span>
+                        </td>
+                        <td>
+                          <button className="review-btn" onClick={() => handleReviewClick(application)}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="3" y="3" width="7" height="7" rx="1"/>
+                              <rect x="14" y="3" width="7" height="7" rx="1"/>
+                              <rect x="3" y="14" width="7" height="7" rx="1"/>
+                              <path d="M14 17h7M17 14v7"/>
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </>
           )}
 
           {/* ── DETAIL VIEW ── */}
           {view === 'detail' && (
             <>
-              <FacultyInfoCard />
-              <div className="submitted-label">Submitted Areas</div>
+              {/* Back Button */}
+              <div style={{ marginBottom: '20px' }}>
+                <button 
+                  className="btn-nav btn-nav-prev" 
+                  onClick={handleBackToList}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    padding: '8px 16px',
+                    background: '#f8f9fa',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '6px',
+                    color: '#495057',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}>
+                    <polyline points="15 18 9 12 15 6"/>
+                  </svg>
+                  Back to Applications List
+                </button>
+              </div>
+
+              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplication} />
+              <div className="submitted-label">Submitted Areas ({submittedAreas.length})</div>
 
               <div className="detail-grid">
                 <div>
-                  {submittedAreas.map((area, i) => (
-                    <AreaCard key={i} area={area} />
-                  ))}
-                  <div className="area-nav">
-                    <button className="btn-nav btn-nav-prev">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                      Previous Area
-                    </button>
-                    <button className="btn-nav btn-nav-next" onClick={() => setView('summary')}>
-                      Next Area
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                  </div>
+                  {submittedAreas.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#666', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+                      <div style={{ fontSize: '16px', marginBottom: '8px' }}>No area submissions found</div>
+                      <div style={{ fontSize: '14px' }}>This faculty member has not submitted any areas for review.</div>
+                    </div>
+                  ) : (
+                    submittedAreas.map((area, i) => (
+                      <AreaCard key={i} area={area} />
+                    ))
+                  )}
+                  
+                  {submittedAreas.length > 0 && (
+                    <div className="area-nav">
+                      <button className="btn-nav btn-nav-prev" onClick={handleBackToList}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        Back to List
+                      </button>
+                      <button className="btn-nav btn-nav-next" onClick={() => setView('summary')}>
+                        Review Summary
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pdf-panel">
                   <div className="pdf-panel-header">
                     <div className="pdf-panel-title">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      Submitted PDF
+                      Submitted Documents
                     </div>
                     <div className="pdf-actions">
                       <button className="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
@@ -320,7 +540,7 @@ export default function Review() {
                   </div>
                   <div className="pdf-no-submission">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    No Submission
+                    {areaSubmissions.length > 0 ? `${areaSubmissions.length} files submitted` : 'No submissions yet'}
                   </div>
                 </div>
               </div>
@@ -330,9 +550,9 @@ export default function Review() {
           {/* ── SUMMARY / QUALIFICATION VIEW ── */}
           {view === 'summary' && (
             <>
-              <FacultyInfoCard />
-              <div className="submitted-label">Submitted Areas</div>
-              <SummaryView onBack={() => setView('detail')} />
+              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplication} />
+              <div className="submitted-label">Qualification Review</div>
+              <SummaryView onBack={handleBackToDetail} />
             </>
           )}
 

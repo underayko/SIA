@@ -4,10 +4,10 @@
 
 /* ── Sidebar Shell ────────────────────────── */
 .sidebar {
-  position: fixed;          /* stays put when page scrolls */
+  position: fixed !important;  /* Force fixed positioning */
   top: 0;
   left: 0;
-  width: 220px;
+  width: 220px !important;     /* Force exact width */
   height: 100vh;
   background: #1a3c2b;
   display: flex;
@@ -48,20 +48,22 @@
 }
 
 .sidebar-brand h1 {
-  font-size: 14px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
   margin: 0 0 2px 0;
   text-align: center;
   letter-spacing: 0.02em;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
 .sidebar-brand span {
-  font-size: 10px;
-  color: #c9a84c;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 10px !important;
+  color: #c9a84c !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
   text-align: center;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
 /* ── Nav ──────────────────────────────────── */
@@ -79,8 +81,9 @@
   gap: 10px;
   padding: 10px 20px;
   color: rgba(255, 255, 255, 0.60);
-  font-size: 13px;
-  font-weight: 400;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  font-family: 'DM Sans', sans-serif !important;
   text-decoration: none;
   border-left: 3px solid transparent;
   transition: background 0.18s, color 0.18s, border-color 0.18s;
@@ -131,17 +134,20 @@
   flex-direction: column;
   gap: 2px;
   padding: 0 4px;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
 .user-info strong {
   font-size: 12px;
   font-weight: 600;
   color: #ffffff;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
 .user-info small {
   font-size: 10px;
   color: #c9a84c;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
 .logout-btn {
@@ -156,9 +162,9 @@
   color: rgba(255, 255, 255, 0.50);
   font-size: 12px;
   font-weight: 500;
+  font-family: 'DM Sans', sans-serif !important;
   cursor: pointer;
   transition: background 0.18s, color 0.18s, border-color 0.18s;
-  font-family: inherit;
 }
 
 .logout-btn svg {

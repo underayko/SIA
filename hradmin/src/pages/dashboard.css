@@ -9,7 +9,7 @@
   --green-dark: #1a5c30;
   --green-mid:  #1e6e38;
   --green-btn:  #1e7a3e;
-  --sidebar-w:  200px;
+  --sidebar-w:  220px;
   --white:      #ffffff;
   --bg:         #f4f6f8;
   --text:       #1f2937;
@@ -27,31 +27,18 @@ html, body, #root {
 }
 
 /* ══ LAYOUT ══════════════════════════════ */
-.app  { display: flex; height: 100vh; }
-.main { flex: 1; background: var(--bg); overflow-y: auto; display: flex; flex-direction: column; }
-
 .topbar {
   background: #111; color: #6b7280;
   font-size: 0.72rem; letter-spacing: 0.06em;
   padding: 6px 28px; flex-shrink: 0; text-transform: uppercase;
 }
 
-.content    { padding: 28px 32px; flex: 1; }
 .page-title { font-size: 1.1rem; font-weight: 600; color: var(--text); margin-bottom: 20px; }
 
 /* ══ SIDEBAR ══════════════════════════════ */
-.sidebar {
-  width: var(--sidebar-w);
-  background: var(--green-dark);
-  background-image: radial-gradient(ellipse at 10% 90%, rgba(0,0,0,0.25) 0%, transparent 60%);
-  display: flex; flex-direction: column; flex-shrink: 0;
-  padding: 0 0 24px; position: relative; z-index: 10;
-}
-.sidebar-brand {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 28px 16px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px;
-}
+/* Sidebar styles now handled by sidenav.css */
+
+/* ══ DASHBOARD CARDS ══════════════════════ */
 .brand-seal {
   width: 70px;
   height: 70px;
@@ -66,36 +53,17 @@ html, body, #root {
   height: auto;
   object-fit: contain;
 }
-.sidebar-brand h1   { font-family: 'Playfair Display', serif; font-size: 0.95rem; color: #fff; text-align: center; line-height: 1.3; }
-.sidebar-brand span { font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-top: 4px; }
-.nav                { flex: 1; padding: 0 10px; }
-.nav-item {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-radius: 8px; color: rgba(255,255,255,0.7); font-size: 0.82rem;
-  font-weight: 400; cursor: pointer; transition: background 0.15s, color 0.15s;
-  margin-bottom: 2px; text-decoration: none;
-}
-.nav-item:hover  { background: rgba(255,255,255,0.08); color: #fff; }
-.nav-item.active { background: rgba(255,255,255,0.15); color: #fff; font-weight: 500; }
-.nav-item svg    { width: 16px; height: 16px; flex-shrink: 0; }
-.sidebar-footer  { padding: 16px 10px 0; border-top: 1px solid rgba(255,255,255,0.1); }
-.user-info        { padding: 10px 14px; color: #fff; }
-.user-info strong { display: block; font-size: 0.82rem; font-weight: 600; }
-.user-info small  { font-size: 0.72rem; color: rgba(255,255,255,0.55); }
-.logout-btn {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-radius: 8px; color: rgba(255,255,255,0.6); font-size: 0.82rem;
-  cursor: pointer; transition: background 0.15s; border: none;
-  background: transparent; width: 100%; font-family: 'DM Sans', sans-serif;
-}
-.logout-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.logout-btn svg   { width: 16px; height: 16px; }
+/* Sidebar brand styles now handled by sidenav.css */
 
 /* ══ BADGES ══════════════════════════════ */
+/* ══ BADGES ══════════════════════════════ */
+/* Navigation styles now handled by sidenav.css */
 .badge           { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px; border-radius: 100px; }
 .badge-closed    { background: var(--red); color: #fff; }
 .badge-progress  { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
 .badge-published { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.badge-inactive  { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+.badge-warning   { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
 
 /* ══ BUTTONS ══════════════════════════════ */
 .btn        { padding: 8px 18px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 500; cursor: pointer; border: none; transition: opacity 0.15s, transform 0.1s; }
@@ -103,6 +71,7 @@ html, body, #root {
 .btn:active { transform: scale(0.98); }
 .btn-edit   { background: var(--blue); color: #fff; }
 .btn-open   { background: var(--green-btn); color: #fff; }
+.btn-close  { background: var(--red); color: #fff; }
 .btn-save   { background: var(--blue); color: #fff; display: flex; align-items: center; gap: 6px; }
 .btn-group  { display: flex; gap: 8px; }
 

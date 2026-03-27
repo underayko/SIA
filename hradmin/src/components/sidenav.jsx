@@ -1,5 +1,8 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 import logo from "../assets/gclogo-Photoroom.png";
+import './sidenav.css';
 
 const navLinks = [
   {
@@ -16,7 +19,7 @@ const navLinks = [
   },
   {
     to: '/ranking',
-    label: 'Ranking Areas',
+    label: 'Ranking Rubrics',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
@@ -35,15 +38,6 @@ const navLinks = [
     ),
   },
   {
-    to: '/perfeval',
-    label: 'Performance Evaluation',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-      </svg>
-    ),
-  },
-  {
     to: '/usermanagement',
     label: 'User Management',
     icon: (
@@ -54,19 +48,23 @@ const navLinks = [
       </svg>
     ),
   },
-  {
-    to: '/submission',
-    label: 'Submission Settings',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/>
-      </svg>
-    ),
-  },
 ];
 
 export default function Sidebar() {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      console.log('🔄 Logging out...');
+      await signOut(auth);
+      console.log('✅ Logout successful');
+      navigate('/login');
+    } catch (error) {
+      console.error('❌ Logout error:', error);
+      alert('Error logging out: ' + error.message);
+    }
+  };
+
   return (
     <aside className="sidebar">
 
@@ -98,11 +96,11 @@ export default function Sidebar() {
 
       <div className="sidebar-footer">
         <div className="user-info">
-          <strong>Dr. Maria Santos</strong>
-          <small>HR Director</small>
+          <strong>Administrator</strong>
+          <small>HR Admin Portal</small>
         </div>
 
-        <button className="logout-btn">
+        <button className="logout-btn" onClick={handleLogout}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
             <polyline points="16 17 21 12 16 7"/>
