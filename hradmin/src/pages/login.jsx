@@ -5,15 +5,21 @@ import { auth } from '../firebase';
 import './Login.css';
 
 export default function Login() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+<<<<<<< HEAD
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const navigate                = useNavigate();
+=======
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+>>>>>>> 6c9ccdd57ad8c4fa37a05722770ab6e658c1d005
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+<<<<<<< HEAD
     setLoading(true);
 
     try {
@@ -41,6 +47,24 @@ export default function Login() {
       }
     } finally {
       setLoading(false);
+=======
+    try {
+      const response = await fetch('http://localhost:5000/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!response.ok) {
+        throw new Error('Invalid credentials');
+      }
+      const data = await response.json();
+      // Optionally store token: localStorage.setItem('token', data.token);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message);
+>>>>>>> 6c9ccdd57ad8c4fa37a05722770ab6e658c1d005
     }
   };
 
@@ -114,10 +138,15 @@ export default function Login() {
                 required
               />
             </div>
+<<<<<<< HEAD
             <button type="submit" className="btn-sign-in" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
             {error && <p className="login-error">{error}</p>}
+=======
+            {error && <div className="login-error">{error}</div>}
+            <button type="submit" className="btn-sign-in">Sign In</button>
+>>>>>>> 6c9ccdd57ad8c4fa37a05722770ab6e658c1d005
             <a href="#" className="forgot">Forgot Password?</a>
           </form>
         </div>
