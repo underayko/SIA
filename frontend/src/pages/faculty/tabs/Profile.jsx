@@ -352,6 +352,16 @@ const styles = `
   }
 `;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE EDIT WINDOW FLAG
+// TODO (backend): fetch from Firestore — rankingcycles collection (same doc as submission_open)
+//   const cycleDoc = await getDoc(doc(db, "rankingcycles", currentCycleId));
+//   const profileEditOpen = cycleDoc.data().profile_edit_open; // boolean
+//   HR sets this independently from submission_open — faculty can only edit their
+//   profile during the window HR defines, typically at the start of a new cycle.
+// ─────────────────────────────────────────────────────────────────────────────
+const MOCK_PROFILE_EDIT_OPEN = false; // TODO: replace with Firestore value above
+
 function getStrength(pw) {
     if (!pw) return { label: "", color: "", pct: "0%" };
     let s = 0;
@@ -366,7 +376,7 @@ function getStrength(pw) {
 }
 
 // ── Reusable editable field component ──
-function EditableField({ label, value, onSave, pending }) {
+function EditableField({ label, value, onSave, pending, disabled }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
 
@@ -414,7 +424,8 @@ function EditableField({ label, value, onSave, pending }) {
                     <div className="pf-value" style={{ flex: 1 }}>
                         {value}
                     </div>
-                    {!pending && (
+                    {/* Pencil hidden when: field has a pending change, or the edit window is closed */}
+                    {!pending && !disabled && (
                         <button
                             className="pf-edit-btn pf-edit-btn-pencil"
                             onClick={() => setEditing(true)}
@@ -434,6 +445,8 @@ function EditableField({ label, value, onSave, pending }) {
 }
 
 export default function Profile({ user }) {
+    // TODO: replace with Firestore fetch — see MOCK_PROFILE_EDIT_OPEN comment above
+    const profileEditOpen = MOCK_PROFILE_EDIT_OPEN;
     // ── Editable field states ──
     // TODO: fetch all initial values from Firestore — users collection, doc ID = auth.currentUser.uid
     const [middleName, setMiddleName] = useState("B.");
@@ -564,7 +577,12 @@ export default function Profile({ user }) {
             {/* TODO: fetch profile data from Firestore — users collection, doc ID = auth.currentUser.uid */}
             <div className="pf-hero">
                 {/* Profile picture — faculty can request change, requires HR approval */}
-                <div className="pf-avatar-wrap" onClick={handleAvatarChange}>
+                {/* Avatar click is only active when the profile edit window is open */}
+                <div
+                    className="pf-avatar-wrap"
+                    onClick={profileEditOpen ? handleAvatarChange : undefined}
+                    style={!profileEditOpen ? { cursor: "default" } : undefined}
+                >
                     <div className="pf-hero-avatar">
                         {/* TODO: show users.profile_picture if exists, else show default icon */}
                         <User size={34} />
@@ -621,6 +639,28 @@ export default function Profile({ user }) {
                 </div>
             </div>
 
+            {/* Profile edit window closed notice */}
+            {/* TODO (backend): shown when rankingcycles.profile_edit_open = false */}
+            {!profileEditOpen && (
+                <div
+                    className="pf-notice"
+                    style={{
+                        background: "#fdf8ec",
+                        border: "1px solid rgba(201,168,76,0.35)",
+                        color: "#7d5a10",
+                        marginBottom: 18,
+                    }}
+                >
+                    <Lock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <p>
+                        <strong>Profile editing is currently closed.</strong> HR
+                        has not yet opened the profile edit window for this
+                        cycle. You will be notified when you can update your
+                        information.
+                    </p>
+                </div>
+            )}
+
             {/* Pending changes notice */}
             {hasPendingChanges && (
                 <div className="pf-notice pf-notice-pending">
@@ -666,6 +706,7 @@ export default function Profile({ user }) {
                             value={pendingFields.middleName || middleName}
                             pending={!!pendingFields.middleName}
                             onSave={(v) => handleFieldSave("middleName", v)}
+                            disabled={!profileEditOpen}
                         />
                         <div className="pf-row">
                             <div className="pf-item">
@@ -692,6 +733,7 @@ export default function Profile({ user }) {
                             }
                             pending={!!pendingFields.altEmail}
                             onSave={(v) => handleFieldSave("altEmail", v)}
+                            disabled={!profileEditOpen}
                         />
                     </div>
                 </div>
@@ -720,12 +762,14 @@ export default function Profile({ user }) {
                             value={pendingFields.teachingYears || teachingYears}
                             pending={!!pendingFields.teachingYears}
                             onSave={(v) => handleFieldSave("teachingYears", v)}
+                            disabled={!profileEditOpen}
                         />
                         <EditableField
                             label="Industry Experience"
                             value={pendingFields.industryYears || industryYears}
                             pending={!!pendingFields.industryYears}
                             onSave={(v) => handleFieldSave("industryYears", v)}
+                            disabled={!profileEditOpen}
                         />
                     </div>
                 </div>
@@ -819,9 +863,15 @@ export default function Profile({ user }) {
                                 </div>
                             </div>
                         ))}
-                        <button className="pf-edu-add" onClick={handleAddEdu}>
-                            <Plus size={14} /> Add degree or credential
-                        </button>
+                        {/* Add button hidden when profile edit window is closed */}
+                        {profileEditOpen && (
+                            <button
+                                className="pf-edu-add"
+                                onClick={handleAddEdu}
+                            >
+                                <Plus size={14} /> Add degree or credential
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -857,10 +907,7 @@ export default function Profile({ user }) {
                                 )}
                             </div>
                         ))}
-                        <button
-                            className="pf-elig-add"
-                            onClick={handleAddElig}
-                        >
+                        <button className="pf-elig-add" onClick={handleAddElig}>
                             <Plus size={14} /> Add eligibility or board exam
                         </button>
                     </div>
@@ -902,8 +949,9 @@ export default function Profile({ user }) {
                         Gordon College is committed to protecting the privacy
                         and confidentiality of all personal information
                         collected through the <strong>GCFARES</strong> system,
-                        in accordance with <strong>Republic Act No. 10173</strong>,
-                        otherwise known as the <em>Data Privacy Act of 2012</em>.
+                        in accordance with{" "}
+                        <strong>Republic Act No. 10173</strong>, otherwise known
+                        as the <em>Data Privacy Act of 2012</em>.
                     </p>
 
                     <p>By using this system, you acknowledge that:</p>
@@ -917,8 +965,9 @@ export default function Profile({ user }) {
                         </li>
                         <li>
                             Your data will only be accessible to authorized
-                            personnel — specifically the <strong>HR Department</strong> and
-                            the <strong>Office of the VPAA</strong> — for the
+                            personnel — specifically the{" "}
+                            <strong>HR Department</strong> and the{" "}
+                            <strong>Office of the VPAA</strong> — for the
                             duration of an active evaluation cycle.
                         </li>
                         <li>
