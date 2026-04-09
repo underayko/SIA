@@ -2,13 +2,8 @@ import { useState, useEffect } from 'react';
 import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './dashboard.css';
-import { db } from '../firebase';
-import {
-  collection, doc,
-  getDocs, addDoc, updateDoc, deleteDoc,
-  query, orderBy, where, limit,
-  Timestamp,
-} from 'firebase/firestore';
+import { supabase } from '../supabase';
+
 
 // ── Cycle Card ───────────────────────────────────────────────
 function CycleCard({ cycle, onEdit, onCycleAction }) {
@@ -42,7 +37,7 @@ function CycleCard({ cycle, onEdit, onCycleAction }) {
 
   const getStatusBadge = () => {
     // Use the cycle's status field first, then fall back to date logic
-    if (cycle.status === 'close') {
+    if (cycle.status === 'closed') {
       return { class: 'badge-closed', text: 'Closed' };
     }
 
@@ -190,10 +185,51 @@ function TimelineModal({ cycle, onClose, onSaved }) {
 
   const handleSave = async () => {
     const title = form.title || generateTitle();
-    
-    // Convert date strings to Timestamps
-    const startTimestamp = form.start_date ? Timestamp.fromDate(new Date(form.start_date)) : Timestamp.now();
-    const deadlineTimestamp = form.deadline ? Timestamp.fromDate(new Date(form.deadline + 'T' + form.deadline_time)) : Timestamp.now();
+    // Use ISO strings for Supabase
+    const startTimestamp = form.start_date ? new Date(form.start_date).toISOString() : new Date().toISOString();
+    const deadlineTimestamp = form.deadline ? new Date(form.deadline + 'T' + form.deadline_time).toISOString() : new Date().toISOString();
+
+    // Get the current logged-in user
+    const {
+      data: { user: sessionUser },
+      error: userError
+    } = await supabase.auth.getUser();
+    if (userError || !sessionUser) {
+      alert('Could not get current user. Please log in again.');
+      return;
+    }
+
+    // Fetch the user's row from the users table to get the integer id
+    let userId;
+    let userRows, userRowError;
+    ({ data: userRows, error: userRowError } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('domain_email', sessionUser.email)
+      .limit(1));
+    if (!userRowError && userRows && userRows.length > 0) {
+      userId = userRows[0].user_id;
+    } else {
+      // If not found, create a new profile row for this user
+      const { data: inserted, error: insertError } = await supabase
+        .from('users')
+        .insert([
+          {
+            name_last: 'Admin',
+            name_first: 'System',
+            domain_email: sessionUser.email,
+            password_hash: 'supabase-auth',
+            role: 'HR',
+            created_at: new Date().toISOString(),
+          }
+        ])
+        .select('user_id');
+      if (insertError || !inserted || inserted.length === 0) {
+        alert('Could not create user profile in database.');
+        return;
+      }
+      userId = inserted[0].user_id;
+    }
 
     const cycleData = {
       title,
@@ -202,16 +238,16 @@ function TimelineModal({ cycle, onClose, onSaved }) {
       start_date: startTimestamp,
       deadline: deadlineTimestamp,
       status: form.status,
-      created_by: 'admin_user', // TODO: Get from auth context
+      created_by: userId, // Use integer user_id
     };
 
     // Add timestamps
-    if (cycle?.id) {
+    if (cycle?.cycle_id) {
       // Updating existing cycle - preserve created_at or set it if missing
-      cycleData.created_at = cycle.created_at || Timestamp.now();
+      cycleData.created_at = cycle.created_at || new Date().toISOString();
     } else {
       // New cycle
-      cycleData.created_at = Timestamp.now();
+      cycleData.created_at = new Date().toISOString();
     }
 
     // Clean undefined values from the data
@@ -232,11 +268,20 @@ function TimelineModal({ cycle, onClose, onSaved }) {
       console.log('💾 Saving cycle data:', cleanedData);
       
       if (cycle?.id) {
-        await updateDoc(doc(db, 'ranking_cycles', cycle.id), cleanedData);
+        // Update cycle in Supabase
+        const { error } = await supabase
+          .from('ranking_cycles')
+          .update(cleanedData)
+          .eq('cycle_id', cycle.cycle_id);
+        if (error) throw error;
         console.log('✅ Cycle updated successfully');
       } else {
-        const docRef = await addDoc(collection(db, 'ranking_cycles'), cleanedData);
-        console.log('✅ New cycle created with ID:', docRef.id);
+        // Insert new cycle in Supabase
+        const { data, error } = await supabase
+          .from('ranking_cycles')
+          .insert([cleanedData]);
+        if (error) throw error;
+        console.log('✅ New cycle created:', data);
       }
       onSaved();
     } catch (err) {
@@ -359,84 +404,66 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      console.log('🔄 Starting data fetch...');
-      
-      // First, try to get ALL cycles to test basic connectivity
-      const allCyclesTestQuery = query(collection(db, 'ranking_cycles'));
-      const allCyclesTestSnap = await getDocs(allCyclesTestQuery);
-      console.log('✅ Successfully connected to ranking_cycles:', allCyclesTestSnap.size, 'total documents');
-      
-      // Log all cycles for debugging
-      const allCyclesData = allCyclesTestSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      console.log('All cycles found:', allCyclesData);
-      
-      // Find the open cycle manually
-      const openCycle = allCyclesData.find(c => c.status === 'open');
+      console.log('🔄 Starting data fetch (Supabase)...');
+
+      // Fetch all cycles
+      const { data: allCycles, error: cyclesError } = await supabase
+        .from('ranking_cycles')
+        .select('*');
+      if (cyclesError) throw cyclesError;
+      console.log('All cycles found:', allCycles);
+
+      // Find the open cycle
+      const openCycle = allCycles.find(c => c.status === 'open');
       if (openCycle) {
-        console.log('✅ Found open cycle manually:', openCycle);
         setCurrentCycle(openCycle);
       } else {
-        console.log('❌ No open cycle found in results');
         setCurrentCycle(null);
       }
 
-      // Fetch all cycles for history (excluding current) - simplified query
-      const historyCyclesQuery = query(collection(db, 'ranking_cycles'));
-      const historyCyclesSnap = await getDocs(historyCyclesQuery);
-      const allHistoryCycles = historyCyclesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      // Filter out the current cycle from history and sort by created_at if available
-      const history = allHistoryCycles
+      // History: closed cycles, sorted by created_at desc
+      const history = allCycles
         .filter(c => c.status !== 'open')
-        .sort((a, b) => {
-          // Handle different timestamp formats
-          const getTime = (cycle) => {
-            if (cycle.created_at?.toDate) return cycle.created_at.toDate().getTime();
-            if (cycle.created_at) return new Date(cycle.created_at).getTime();
-            return 0;
-          };
-          return getTime(b) - getTime(a); // Descending order
-        })
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(0, 10);
       setCycleHistory(history);
 
-      // Fetch faculty stats from multiple collections
-      const usersQuery = query(collection(db, 'users'), where('role', '==', 'faculty'));
-      const usersSnap = await getDocs(usersQuery);
-      const facultyUsersCount = usersSnap.size;
+      // Faculty stats
+      const { count: facultyUsersCount, error: usersError } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'faculty');
+      if (usersError) throw usersError;
 
-      // Also count from the 'faculty' collection (main table)
-      const facultyQuery = query(collection(db, 'faculty'));
-      const facultySnap = await getDocs(facultyQuery);
-      const facultyRecordsCount = facultySnap.size;
+      // If you do not have a separate 'faculty' table, use 'users' for both counts
+      const facultyRecordsCount = facultyUsersCount;
 
-      // Get applications for current cycle stats
+      // Applications for current cycle
       let pendingCount = 0;
       let completedCount = 0;
-      
       if (openCycle) {
-        const applicationsQuery = query(
-          collection(db, 'applications'), 
-          where('cycle_id', '==', openCycle.id)
-        );
-        const applicationsSnap = await getDocs(applicationsQuery);
-        
-        applicationsSnap.forEach(doc => {
-          const app = doc.data();
-          if (app.status === 'Under_HR_Review' || app.status === 'Submitted') {
-            pendingCount++;
-          } else {
-            completedCount++;
-          }
-        });
+        if (openCycle.cycle_id !== undefined && openCycle.cycle_id !== null) {
+          const { data: applications, error: appsError } = await supabase
+            .from('applications')
+            .select('*')
+            .eq('cycle_id', openCycle.cycle_id);
+          if (appsError) throw appsError;
+          applications.forEach(app => {
+            if (app.status === 'Under_HR_Review' || app.status === 'Submitted') {
+              pendingCount++;
+            } else {
+              completedCount++;
+            }
+          });
+        }
       }
 
       // Calculate stats
-      const deadline = openCycle?.deadline ? 
-        new Date(openCycle.deadline.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 
+      const deadline = openCycle?.deadline ?
+        new Date(openCycle.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) :
         'Not set';
 
-      const totalFaculty = Math.max(facultyUsersCount, facultyRecordsCount);
+      const totalFaculty = Math.max(facultyUsersCount || 0, facultyRecordsCount || 0);
 
       setStats({
         totalFaculty,
@@ -447,9 +474,6 @@ export default function Dashboard() {
 
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
-      console.error('Error code:', err.code);
-      console.error('Error message:', err.message);
-      // Set current cycle to null so the "No Active Cycle" card shows
       setCurrentCycle(null);
     } finally {
       setLoading(false);
@@ -462,20 +486,25 @@ export default function Dashboard() {
 
   const handleCycleSaved = () => {
     setModalOpen(false);
+    // Always refresh dashboard after saving a cycle
     fetchData();
   };
 
   const handleCycleAction = async (action) => {
     if (!currentCycle) return;
-    
     try {
-      const newStatus = action === 'open' ? 'open' : 'close';
-      console.log(`🔄 Updating cycle ${currentCycle.id} status to: ${newStatus}`);
-      
-      await updateDoc(doc(db, 'ranking_cycles', currentCycle.id), {
-        status: newStatus
-      });
-      
+      // Only allow 'open' or 'close' (all lowercase)
+      const newStatus = action === 'open' ? 'open' : 'closed';
+      if (newStatus !== 'open' && newStatus !== 'closed') {
+        alert('Invalid status value. Allowed: open, close');
+        return;
+      }
+      console.log(`🔄 Updating cycle ${currentCycle.cycle_id} status to: ${newStatus}`);
+      const { error } = await supabase
+        .from('ranking_cycles')
+        .update({ status: newStatus })
+        .eq('cycle_id', currentCycle.cycle_id);
+      if (error) throw error;
       console.log('✅ Cycle status updated successfully');
       fetchData(); // Refresh data
     } catch (err) {

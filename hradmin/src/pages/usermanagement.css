@@ -73,9 +73,61 @@ tbody td        { padding: 14px 12px 14px 0; font-size: 0.82rem; color: var(--te
 tbody td:first-child { padding-left: 0; }
 .faculty-name   { font-weight: 500; }
 .faculty-email  { font-size: 0.78rem; color: var(--muted); }
+
+/* ── kept for backward compat but superseded by .action-btn ── */
 .edit-btn       { background: none; border: none; cursor: pointer; color: var(--blue); display: flex; align-items: center; padding: 4px; border-radius: 6px; transition: background 0.15s; }
 .edit-btn:hover { background: #eff6ff; }
 .edit-btn svg   { width: 15px; height: 15px; }
+
+/* ══ ROW ACTION BUTTONS ══════════════════ */
+
+/* Improved row action buttons for clarity and usability */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* more space between buttons */
+  min-width: 70px;
+  justify-content: flex-start;
+}
+
+
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  border-radius: 7px;
+  min-width: 32px;
+  min-height: 32px;
+  transition: background 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.action-btn svg {
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+}
+
+
+.action-btn--edit {
+  color: var(--blue);
+}
+.action-btn--edit:hover {
+  background: #eff6ff;
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
+
+.action-btn--delete {
+  color: var(--red);
+}
+.action-btn--delete:hover {
+  background: #fef2f2;
+  box-shadow: 0 0 0 2px #fee2e2;
+}
 
 /* ══ SLIDE-IN PANEL ══════════════════════ */
 .panel-overlay      { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; align-items: center; justify-content: flex-end; }
@@ -140,10 +192,56 @@ tbody td:first-child { padding-left: 0; }
   color: #b91c1c; border-radius: 6px; font-size: 0.82rem;
 }
 
-.btn-danger {
-  background: #fee2e2; color: #b91c1c;
-  border: 1px solid #fca5a5; border-radius: 6px;
-  padding: 7px 14px; font-size: 0.82rem; font-weight: 500;
-  cursor: pointer; margin-right: auto;
-}
+.btn-danger       { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 7px 14px; font-size: 0.82rem; font-weight: 500; cursor: pointer; margin-right: auto; }
 .btn-danger:hover { background: #fca5a5; }
+
+/* ══ CONFIRM DELETE MODAL ════════════════ */
+.confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.confirm-modal {
+  background: var(--white);
+  border-radius: 14px;
+  padding: 32px 28px 24px;
+  width: 380px;
+  max-width: 92vw;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+.confirm-modal-icon {
+  width: 52px; height: 52px;
+  background: #fee2e2;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--red);
+}
+.confirm-modal-icon svg { width: 24px; height: 24px; }
+
+.confirm-modal-title {
+  font-size: 1rem; font-weight: 600; color: var(--text);
+}
+
+.confirm-modal-msg {
+  font-size: 0.85rem; color: var(--muted); line-height: 1.6;
+}
+.confirm-modal-msg strong { color: var(--text); font-weight: 600; }
+
+.confirm-modal-actions {
+  display: flex; gap: 10px; width: 100%; margin-top: 4px;
+}
+.confirm-modal-actions .btn { flex: 1; text-align: center; }
+
+.btn-cancel       { background: #f3f4f6; color: var(--text); border: 1px solid var(--border); }
+.btn-cancel:hover { background: #e5e7eb; opacity: 1; }
+
+.btn-confirm-delete       { background: var(--red); color: #fff; border: none; }
+.btn-confirm-delete:hover { opacity: 0.88; }

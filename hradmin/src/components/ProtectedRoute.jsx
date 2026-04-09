@@ -1,27 +1,25 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 
 export default function ProtectedRoute({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUser = session?.user;
       console.log('🔄 Auth state changed:', currentUser?.email);
-      
-      // Check if user is the admin
       if (currentUser && currentUser.email === 'admin@gordoncollege.edu.ph') {
         setUser(currentUser);
       } else {
         setUser(null);
       }
-      
       setLoading(false);
     });
-
-    return () => unsubscribe();
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {

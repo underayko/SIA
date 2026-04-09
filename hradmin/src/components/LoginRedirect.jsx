@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 
 export default function LoginRedirect({ children }) {
   const [user, setUser] = useState(null);
@@ -9,7 +8,8 @@ export default function LoginRedirect({ children }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUser = session?.user;
       if (currentUser && currentUser.email === 'admin@gordoncollege.edu.ph') {
         console.log('✅ Admin already logged in - redirecting to dashboard');
         navigate('/dashboard');
@@ -18,8 +18,9 @@ export default function LoginRedirect({ children }) {
       }
       setLoading(false);
     });
-
-    return () => unsubscribe();
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
   }, [navigate]);
 
   if (loading) {

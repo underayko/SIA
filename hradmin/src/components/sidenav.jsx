@@ -1,6 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import logo from "../assets/gclogo-Photoroom.png";
 import './sidenav.css';
 
@@ -56,7 +55,8 @@ export default function Sidebar() {
   const handleLogout = async () => {
     try {
       console.log('🔄 Logging out...');
-      await signOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       console.log('✅ Logout successful');
       navigate('/login');
     } catch (error) {

@@ -2,11 +2,8 @@ import { useState, useEffect } from 'react';
 import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './review.css';
-import { db } from '../firebase';
-import {
-  collection, doc, getDocs, getDoc, updateDoc,
-  query, where, orderBy, writeBatch
-} from 'firebase/firestore';
+import { supabase } from '../supabase';
+
 
 // ══ FACULTY INFO CARD (shared) ═══════════════════════════════
 function FacultyInfoCard({ facultyData, applicationData }) {
@@ -230,46 +227,51 @@ export default function Review() {
   const fetchApplicationsData = async () => {
     try {
       setLoading(true);
-      console.log('📊 Fetching applications data...');
+      console.log('📊 Fetching applications data (Supabase)...');
 
       // Get active cycle first
-      const cyclesQuery = query(collection(db, 'ranking_cycles'), where('status', '==', 'open'));
-      const cyclesSnapshot = await getDocs(cyclesQuery);
+      const { data: cycles, error: cyclesError } = await supabase
+        .from('ranking_cycles')
+        .select('*')
+        .eq('status', 'open')
+        .limit(1);
+      if (cyclesError) throw cyclesError;
       let activeCycle = null;
-      if (!cyclesSnapshot.empty) {
-        activeCycle = { id: cyclesSnapshot.docs[0].id, ...cyclesSnapshot.docs[0].data() };
+      if (cycles && cycles.length > 0) {
+        activeCycle = cycles[0];
         setCurrentCycle(activeCycle);
       }
 
       // Get areas for lookup
-      const areasSnapshot = await getDocs(collection(db, 'areas'));
-      const areasData = [];
-      areasSnapshot.forEach((doc) => {
-        areasData.push({ id: doc.id, ...doc.data() });
-      });
-      setAreas(areasData);
+      const { data: areasData, error: areasError } = await supabase
+        .from('areas')
+        .select('*');
+      if (areasError) throw areasError;
+      setAreas(areasData || []);
 
       // Get applications with faculty data
-      const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+      const { data: applicationsData, error: applicationsError } = await supabase
+        .from('applications')
+        .select('*');
+      if (applicationsError) throw applicationsError;
+
       const applicationsWithFaculty = [];
-
-      for (const appDoc of applicationsSnapshot.docs) {
-        const appData = appDoc.data();
-        
+      for (const appData of applicationsData) {
         // Get faculty data
-        const facultyDoc = await getDoc(doc(db, 'users', appData.faculty_id));
-        if (facultyDoc.exists()) {
-          const facultyData = facultyDoc.data();
-
-          applicationsWithFaculty.push({
-            id: appDoc.id,
-            ...appData,
-            faculty: {
-              ...facultyData,
-              department_name: facultyData.department || 'Unknown'
-            }
-          });
-        }
+        const { data: facultyData, error: facultyError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', appData.faculty_id)
+          .single();
+        if (facultyError) continue;
+        applicationsWithFaculty.push({
+          id: appData.id,
+          ...appData,
+          faculty: {
+            ...facultyData,
+            department_name: facultyData.department || 'Unknown'
+          }
+        });
       }
 
       setApplications(applicationsWithFaculty);

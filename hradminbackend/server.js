@@ -1,7 +1,8 @@
+import 'dotenv/config';
 // backend/server.js
 import express from "express";
 import cors from "cors";
-import db from "./firebase.js";
+import { supabase } from "./supabase.js";
 
 const app = express();
 app.use(cors());
@@ -11,16 +12,18 @@ app.use(express.json());
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   try {
-    const snapshot = await db.collection("users").where("email", "==", email).get();
-    if (snapshot.empty) {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single();
+    if (error || !user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const user = snapshot.docs[0].data();
     // Simple password check (plaintext, for demo)
     if (user.password !== password) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    // Optionally return token or user info
     res.json({ message: "Login successful", user });
   } catch (err) {
     console.error(err);
@@ -32,8 +35,10 @@ app.post("/login", async (req, res) => {
 // Example route: get users from Firebase
 app.get("/users", async (req, res) => {
   try {
-    const snapshot = await db.collection("users").get();
-    const users = snapshot.docs.map(doc => doc.data());
+    const { data: users, error } = await supabase
+      .from("users")
+      .select("*");
+    if (error) throw error;
     res.json(users);
   } catch (err) {
     console.error(err);
@@ -44,11 +49,12 @@ app.get("/users", async (req, res) => {
 app.post("/add-faculty", async (req, res) => {
   try {
     const newFaculty = req.body;
-    // Save to the 'faculty' collection using the Admin SDK
-    const docRef = await db.collection("faculty").add(newFaculty);
-    
-    // Return the new object with its generated ID
-    res.json({ id: docRef.id, ...newFaculty });
+    const { data, error } = await supabase
+      .from("users")
+      .insert([newFaculty])
+      .select();
+    if (error) throw error;
+    res.json(data[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to save faculty data" });

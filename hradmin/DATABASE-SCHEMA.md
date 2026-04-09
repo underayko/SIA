@@ -107,7 +107,7 @@ Per-area file uploads and scores.
 ## 4. Collection: `faculty`
 
 **Purpose:** Faculty member records (user management table)  
-**Document ID:** Auto-generated (Firebase IDs like `0KkM8iujCxldW2ddpgwK`)
+**Document ID:** Auto-generated (Supabase IDs like `0KkM8iujCxldW2ddpgwK`)
 
 ### Fields
 
@@ -187,7 +187,7 @@ Per-area file uploads and scores.
 ## 8. Collection: `users`
 
 **Purpose:** User accounts (faculty, admin)  
-**Document ID:** Firebase Auth UID or custom ID (`faculty_101`, etc.)
+**Document ID:** Supabase Auth UID or custom ID (`faculty_101`, etc.)
 
 ### Fields (vary by user type)
 
@@ -200,7 +200,7 @@ Per-area file uploads and scores.
 | `role` | string | `"admin"` |
 | `createdAt` | Timestamp | `Timestamp(...)` |
 
-⚠️ **Security Issue:** Password stored in plain text. Use Firebase Auth instead.
+⚠️ **Security Issue:** Password stored in plain text. Use Supabase Auth instead.
 
 #### Faculty User (`faculty_101`)
 
@@ -253,7 +253,7 @@ Per-area file uploads and scores.
 1. **Clean up test data:** Many `faculty` docs have empty names/emails
 2. **Remove `facultyrows`** if it's a test collection
 3. **Standardize field naming** across all collections
-4. **Move passwords to Firebase Auth** (remove plain text from `users`)
+4. **Move passwords to Supabase Auth** (remove plain text from `users`)
 5. **Add more `areas`** (currently only 1 exists, but HTML shows 10)
 6. **Add more `departments`** (currently only 1 exists)
 7. **Add more `positions`** (currently only 1 rank defined)
