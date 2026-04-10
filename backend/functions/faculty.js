@@ -7,33 +7,81 @@ import {
   updateById,
   deleteById,
 } from './sharedCrud.js';
+import { supabase } from './supabaseClient.js';
 
-const FACULTY_TABLE = 'faculty_records';
+const FACULTY_TABLE_CANDIDATES = (
+  process.env.FACULTY_TABLE_CANDIDATES || process.env.FACULTY_TABLE || 'faculty_records,faculty,faculty_profiles'
+)
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
-export function getFacultyRecordById(id) {
-  return getById(FACULTY_TABLE, id);
+let resolvedFacultyTable = null;
+
+function isMissingTableError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('relation') && message.includes('does not exist');
 }
 
-export function listFacultyRecords() {
-  return listAll(FACULTY_TABLE);
+async function resolveFacultyTable() {
+  if (resolvedFacultyTable) {
+    return resolvedFacultyTable;
+  }
+
+  let lastError = null;
+
+  for (const tableName of FACULTY_TABLE_CANDIDATES) {
+    const probe = await supabase.from(tableName).select('*').limit(1);
+    if (probe.error) {
+      lastError = probe.error;
+      if (isMissingTableError(probe.error)) {
+        continue;
+      }
+      continue;
+    }
+
+    resolvedFacultyTable = tableName;
+    return resolvedFacultyTable;
+  }
+
+  if (lastError) {
+    throw new Error(`Resolve faculty table failed: ${lastError.message}`);
+  }
+
+  throw new Error('Resolve faculty table failed: no candidate tables configured');
 }
 
-export function listFacultyRecordsByUserId(userId) {
-  return listByUserId(FACULTY_TABLE, userId);
+export async function getFacultyRecordById(id) {
+  const table = await resolveFacultyTable();
+  return getById(table, id);
 }
 
-export function createFacultyRecord(payload) {
-  return createOne(FACULTY_TABLE, payload);
+export async function listFacultyRecords() {
+  const table = await resolveFacultyTable();
+  return listAll(table);
 }
 
-export function upsertFacultyRecord(payload, onConflict = 'id') {
-  return upsertOne(FACULTY_TABLE, payload, onConflict);
+export async function listFacultyRecordsByUserId(userId) {
+  const table = await resolveFacultyTable();
+  return listByUserId(table, userId);
 }
 
-export function updateFacultyRecord(id, updates) {
-  return updateById(FACULTY_TABLE, id, updates);
+export async function createFacultyRecord(payload) {
+  const table = await resolveFacultyTable();
+  return createOne(table, payload);
 }
 
-export function deleteFacultyRecord(id) {
-  return deleteById(FACULTY_TABLE, id);
+export async function upsertFacultyRecord(payload, onConflict = 'id') {
+  const table = await resolveFacultyTable();
+  return upsertOne(table, payload, onConflict);
+}
+
+export async function updateFacultyRecord(id, updates) {
+  const table = await resolveFacultyTable();
+  return updateById(table, id, updates);
+}
+
+export async function deleteFacultyRecord(id) {
+  const table = await resolveFacultyTable();
+  return deleteById(table, id);
 }
