@@ -1,2 +1,41 @@
-// placeholder just so git reads this folder, it will be deleted later when we add the actual files
-// since git ignores empty folders. we need to have this file here so that git doesn't ignore the entire folder
+export { supabase } from './supabaseClient.js';
+export {
+	getUserById,
+	getUserByEmail,
+	getUserRoleByEmail,
+	listUsersByRole,
+	createUser,
+	upsertUser,
+	updateUser,
+	deleteUser,
+} from './users.js';
+
+export {
+	getFacultyRecordById,
+	listFacultyRecords,
+	listFacultyRecordsByUserId,
+	createFacultyRecord,
+	upsertFacultyRecord,
+	updateFacultyRecord,
+	deleteFacultyRecord,
+} from './faculty.js';
+
+export {
+	getHrRecordById,
+	listHrRecords,
+	listHrRecordsByUserId,
+	createHrRecord,
+	upsertHrRecord,
+	updateHrRecord,
+	deleteHrRecord,
+} from './hr.js';
+
+export {
+	getVpaaRecordById,
+	listVpaaRecords,
+	listVpaaRecordsByUserId,
+	createVpaaRecord,
+	upsertVpaaRecord,
+	updateVpaaRecord,
+	deleteVpaaRecord,
+} from './vpaa.js';
