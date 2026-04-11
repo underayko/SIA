@@ -907,9 +907,12 @@ export default function Profile({ user }) {
                                 )}
                             </div>
                         ))}
+                        {/* Add button hidden when profile edit window is closed */}
+                        {profileEditOpen && (
                         <button className="pf-elig-add" onClick={handleAddElig}>
                             <Plus size={14} /> Add eligibility or board exam
                         </button>
+                        )}
                     </div>
                 </div>
             </div>

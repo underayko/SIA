@@ -1,18 +1,25 @@
 // 📄 SIA/frontend/src/pages/faculty/tabs/Home.jsx
 //
 // ── SUBMISSION MODEL ─────────────────────────────────────────────────────────
-// One file submission per top-level Part (A, B, C, D, ...).
-// Sub-numbered items (A.1, A.1.1, A.1.1.1, ...) are the SCORING RUBRIC shown
-// as "What to Submit" bullets inside each Part card — they are NOT separate uploads.
-// (Confirmed by class rep: "Part A = File Submission, Part B = File Submission.
-//  Yung .1, .1.1 etc. is the rubric per Part. Mag-rereflect yan sa admin part.")
+// REVISED (John Carlo, class rep):
+//   • First-level numbered items (A.1, A.2, A.3, B.1 ...) = SEPARATE upload +
+//     submit each. They represent distinct document categories.
+//   • Sub-criteria (A.1.1, A.1.2 ...) = RUBRIC BULLETS grouped inside their
+//     parent numbered item — NOT separate uploads.
+//   • Letter Parts (A, B, C ...) that CONTAIN numbered sub-items become GROUP
+//     HEADERS only — no upload at the letter-Part level itself.
+//   • Letter Parts with NO numbered sub-items (most areas outside II) remain
+//     a single "compile into one PDF" submission slot.
+//
+//   Areas using the group-header model: Area II (Parts A, B, C, D).
+//   All other areas retain one upload per letter Part.
 //
 // ── REVISIONS ────────────────────────────────────────────────────────────────
-// • Area II fully corrected from official scoring table images
-// • All areas restructured to per-Part model (not per line-item)
-// • Sub-criteria shown as rubric bullets, not separate upload slots
-// • 2-level nav: Area list → Area detail with Part cards
-// • Score breakdown removed (HR-only), Ranking Summary added
+// • Area II restructured: A/B/C/D are group headers; A.1/A.2/etc. are
+//   separate submission slots; A.1.1/A.1.2/etc. are rubric bullets.
+// • Submission window flag (MOCK_SUBMISSION_OPEN) gates upload/submit controls.
+// • 2-level nav: Area list → Area detail with Part cards / group headers.
+// • Score breakdown removed (HR-only), Ranking Summary added.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -214,112 +221,223 @@ const AREAS_DATA = [
     },
 
     // ── AREA II ────────────────────────────────────────────────────────────────
+    // REVISED: Parts A/B/C/D are now GROUP HEADERS (isGroup: true).
+    // Each first-level numbered item (A.1, A.2, A.3...) is a separate submission.
+    // Sub-criteria (A.1.1, A.1.2...) are rubric bullets inside each subpart.
+    // TODO (backend): areasubmissions keyed by subpart.id (e.g. "II-A-1", "II-A-2")
     {
         id: "II",
         name: "Research and Publications",
         maxPts: 20,
-        note: "Part A (Publications) capped at 10 pts · Part B (Research) capped at 10 pts · Parts C and D are add-ons. Submit one compiled PDF per Part.",
+        note: "Part A (Publications) capped at 10 pts · Part B (Research) capped at 10 pts · Parts C and D are add-ons. Each numbered item (A.1, A.2 ...) requires its own file upload.",
         parts: [
+            // ── Part A — Publications ─────────────────────────────────────────
             {
                 id: "II-A",
-                label: "Part A — Publications (Max. 10 points)",
+                label: "Part A — Publications",
                 pts: "Max 10.00",
-                what: [
-                    // A.1 Published Books
-                    "A.1 Published Books (up to 2.00 pts per book):",
-                    "  • A.1.1 No. of Authors — Single author: 1.25 · Co-authored: 0.75 · Three or more: 0.25",
-                    "  • A.1.2 Designation of Writer — Lead Author: 0.75 · Co-author: 0.50",
-                    "  • A.1.3 Level — International: 1.00 · National/Regional: 0.75 · Institutional: 0.50",
-                    // A.2 Published Research
-                    "A.2 Published Research (up to 2.00 pts per output):",
-                    "  • A.2.1 No. of Authors — Single author: 1.25 · Co-authored: 0.75 · Three or more: 0.25",
-                    "  • A.2.2 Designation of Writer — Lead Author: 0.75 · Co-author: 0.50",
-                    "  • A.2.3 Level — International: 1.00 · National/Regional: 0.75 · Institutional: 0.50",
-                    // A.3 Monograph
-                    "A.3 Monograph (up to 1.00 pt per output):",
-                    "  • A.3.1 No. of Authors — Single: 0.75 · Co-authored: 0.50 · Three or more: 0.25",
-                    "  • A.3.2 Designation of Writer — Lead Author: 0.50 · Co-author: 0.25",
-                    "  • A.3.3 Level — International: 0.75 · National/Regional: 0.50 · Institutional: 0.25",
-                    // A.4
-                    "A.4 Published Thesis/Dissertation (from another institution): 3.00 pts flat",
-                    // What to include
-                    "Include in your compiled PDF: front cover/title page, abstract, proof of publication (ISBN, DOI, journal volume/issue/page, or publisher certificate). Indicate: no. of authors, your designation, and publication level.",
+                isGroup: true,
+                subparts: [
+                    {
+                        id: "II-A-1",
+                        label: "A.1 — Published Books",
+                        pts: "up to 2.00 pts / book",
+                        what: [
+                            "A.1.1 No. of Authors — Single author: 1.25 · Co-authored: 0.75 · Three or more: 0.25",
+                            "A.1.2 Designation of Writer — Lead Author: 0.75 · Co-author: 0.50",
+                            "A.1.3 Level — International: 1.00 · National/Regional: 0.75 · Institutional: 0.50",
+                            "Required: front cover/title page, abstract, proof of publication (ISBN, DOI, publisher certificate). Indicate: no. of authors, your designation, and publication level.",
+                        ],
+                        status: "submitted",
+                        file: "Books_A1_Candido.pdf",
+                        date: "Feb 25, 2026 at 10:00 AM",
+                    },
+                    {
+                        id: "II-A-2",
+                        label: "A.2 — Published Research",
+                        pts: "up to 2.00 pts / output",
+                        what: [
+                            "A.2.1 No. of Authors — Single author: 1.25 · Co-authored: 0.75 · Three or more: 0.25",
+                            "A.2.2 Designation of Writer — Lead Author: 0.75 · Co-author: 0.50",
+                            "A.2.3 Level — International: 1.00 · National/Regional: 0.75 · Institutional: 0.50",
+                            "Required: journal volume/issue/page, DOI or publisher certificate. Indicate: no. of authors, your designation, and level.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-A-3",
+                        label: "A.3 — Monograph",
+                        pts: "up to 1.00 pt / output",
+                        what: [
+                            "A.3.1 No. of Authors — Single: 0.75 · Co-authored: 0.50 · Three or more: 0.25",
+                            "A.3.2 Designation of Writer — Lead Author: 0.50 · Co-author: 0.25",
+                            "A.3.3 Level — International: 0.75 · National/Regional: 0.50 · Institutional: 0.25",
+                            "Required: title page, abstract, proof of publication. Indicate: no. of authors, your designation, and level.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-A-4",
+                        label: "A.4 — Published Thesis/Dissertation (from another institution)",
+                        pts: "3.00 pts flat",
+                        what: [
+                            "A.4 For a thesis or dissertation published and originating from another institution: 3.00 pts flat.",
+                            "Required: front cover, abstract, and proof of publication from the awarding institution.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
                 ],
-                status: "submitted",
-                file: "Publications_PartA_Candido.pdf",
-                date: "Feb 25, 2026 at 10:00 AM",
             },
+            // ── Part B — Research ─────────────────────────────────────────────
             {
                 id: "II-B",
-                label: "Part B — Research (Max. 10 points)",
+                label: "Part B — Research",
                 pts: "Max 10.00",
-                what: [
-                    // B.1
-                    "B.1 Institutional Materials (books, manuals, modules) — 1.50 pts per output:",
-                    "  • B.1.1 No. of Researchers — Single: 1.25 · Two or more: 0.75",
-                    "  • B.1.2 Designation — Lead researcher: 0.75 · Co-researcher: 0.50",
-                    "  • B.1.3 Level — External: 0.50 · Institutional: 0.25",
-                    // B.2
-                    "B.2 Unpublished Research — 0.75 pts per output:",
-                    "  • B.2.1 No. of Researchers — Single: 0.75 · Two or more: 0.50",
-                    "  • B.2.2 Designation — Lead researcher: 0.50 · Co-researcher: 0.25",
-                    "  • B.2.3 Level — External: 0.50 · Institutional: 0.25",
-                    // B.3
-                    "B.3 Development of a complete set of instructional materials: 1.25 pts flat",
-                    // What to include
-                    "Include in your compiled PDF: title page, abstract, and endorsement or certification from the Research Office or Dean. Indicate: no. of researchers, your designation, and level.",
+                isGroup: true,
+                subparts: [
+                    {
+                        id: "II-B-1",
+                        label: "B.1 — Institutional Materials (books, manuals, modules)",
+                        pts: "1.50 pts / output",
+                        what: [
+                            "B.1.1 No. of Researchers — Single: 1.25 · Two or more: 0.75",
+                            "B.1.2 Designation — Lead researcher: 0.75 · Co-researcher: 0.50",
+                            "B.1.3 Level — External: 0.50 · Institutional: 0.25",
+                            "Required: title page, abstract, endorsement or certification from the Research Office or Dean. Indicate: no. of researchers, your designation, and level.",
+                        ],
+                        status: "submitted",
+                        file: "InstitutionalMaterials_B1_Candido.pdf",
+                        date: "Feb 25, 2026 at 10:05 AM",
+                    },
+                    {
+                        id: "II-B-2",
+                        label: "B.2 — Unpublished Research",
+                        pts: "0.75 pts / output",
+                        what: [
+                            "B.2.1 No. of Researchers — Single: 0.75 · Two or more: 0.50",
+                            "B.2.2 Designation — Lead researcher: 0.50 · Co-researcher: 0.25",
+                            "B.2.3 Level — External: 0.50 · Institutional: 0.25",
+                            "Required: title page, abstract, and certification that the research is unpublished. Indicate: no. of researchers, your designation, and level.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-B-3",
+                        label: "B.3 — Development of a Complete Set of Instructional Materials",
+                        pts: "1.25 pts flat",
+                        what: [
+                            "B.3 For the development of a complete set of instructional materials: 1.25 pts flat.",
+                            "Required: copy of the instructional materials and certification or endorsement from the Dean or Department Head.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
                 ],
-                status: "submitted",
-                file: "Research_PartB_Candido.pdf",
-                date: "Feb 25, 2026 at 10:05 AM",
             },
+            // ── Part C — Editor of a Professional Journal ─────────────────────
             {
                 id: "II-C",
                 label: "Part C — Editor of a Professional Journal (add-on)",
                 pts: "0.50 – 1.25",
-                what: [
-                    // C.1
-                    "C.1 Editor-in-Chief / Honorary Editor-in-Chief (0.75 pts base):",
-                    "  • C.1.1 Level — External: 0.75 · Institutional: 0.50",
-                    "  • C.1.2 Type of Publication — Refereed: 1.25 · Non-refereed: 0.75",
-                    // C.2
-                    "C.2 Member of the Editorial Board (0.50 pts base):",
-                    "  • C.2.1 Level — External: 0.75 · Institutional: 0.50",
-                    "  • C.2.2 Type of Publication — Refereed: 1.25 · Non-refereed: 0.75",
-                    // What to include
-                    "Include: certificate or letter of appointment, front page of the journal showing your name and role. Indicate: level (external or institutional) and type of publication (refereed or non-refereed).",
+                isGroup: true,
+                subparts: [
+                    {
+                        id: "II-C-1",
+                        label: "C.1 — Editor-in-Chief / Honorary Editor-in-Chief",
+                        pts: "0.75 – 1.25",
+                        what: [
+                            "C.1.1 Level — External: 0.75 · Institutional: 0.50",
+                            "C.1.2 Type of Publication — Refereed: 1.25 · Non-refereed: 0.75",
+                            "Required: certificate or letter of appointment, front page of the journal showing your name and role.",
+                        ],
+                        status: "draft",
+                        file: "Editor_Chief_C1_Candido.pdf",
+                        date: null,
+                    },
+                    {
+                        id: "II-C-2",
+                        label: "C.2 — Member of the Editorial Board",
+                        pts: "0.50 – 1.25",
+                        what: [
+                            "C.2.1 Level — External: 0.75 · Institutional: 0.50",
+                            "C.2.2 Type of Publication — Refereed: 1.25 · Non-refereed: 0.75",
+                            "Required: certificate or letter of appointment, front page of the journal showing your name and board role.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
                 ],
-                status: "draft",
-                file: "Editor_PartC_Candido.pdf",
-                date: null,
             },
+            // ── Part D — Creative Works ───────────────────────────────────────
             {
                 id: "II-D",
                 label: "Part D — Creative Works (add-on, Max. 5 points)",
                 pts: "Max 5.00",
-                what: [
-                    // D.1
-                    "D.1 Poems, newspaper/magazine articles, illustrations, maps, plans, sketches, charts, 3D works, photography, lantern slides, pictorial illustrations, advertisements (0.75 pts base):",
-                    "  • D.1.1 Level — International: 1.75 · National: 0.75 · Institutional: 0.50",
-                    "  • D.1.2 No. of Authors — Single: 1.25 · Co-authored: 0.75 · Three or more: 0.50",
-                    // D.2
-                    "D.2 Short stories, Lectures, Sermons, Addresses (1.25 pts base):",
-                    "  • D.2.1 Level — International: 1.50 · National: 0.75 · Institutional: 0.50",
-                    "  • D.2.2 No. of Authors — Single: 1.25 · Co-authored: 0.75 · Three or more: 0.50",
-                    // D.3
-                    "D.3 Computer programs, paintings, novels (non-fiction) (1.50 pts base):",
-                    "  • D.3.1 Level — International: 1.50 · National: 0.75 · Institutional: 0.50",
-                    "  • D.3.2 No. of Authors — Single: 1.00 · Co-authored: 0.75 · Three or more: 0.50",
-                    // D.4
-                    "D.4 Poster / Oral Presentation (1.00 pt base):",
-                    "  • D.4.1 Level — International: 1.50 · National: 1.00 · Institutional: 0.25",
-                    "  • D.4.2 No. of Authors — Single: 1.00 · Co-authored: 0.75 · Three or more: 0.50",
-                    // What to include
-                    "Include: documentation of the work (published copy, scan, screenshot, or program proceedings). Indicate: type of creative work, level, and number of authors.",
+                isGroup: true,
+                subparts: [
+                    {
+                        id: "II-D-1",
+                        label: "D.1 — Poems, Newspaper/Magazine Articles, Illustrations, Maps, Photography, Advertisements",
+                        pts: "0.75 pts base",
+                        what: [
+                            "D.1.1 Level — International: 1.75 · National: 0.75 · Institutional: 0.50",
+                            "D.1.2 No. of Authors — Single: 1.25 · Co-authored: 0.75 · Three or more: 0.50",
+                            "Required: documentation of the work (published copy, scan, or program proceedings). Indicate: type of creative work, level, and number of authors.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-D-2",
+                        label: "D.2 — Short Stories, Lectures, Sermons, Addresses",
+                        pts: "1.25 pts base",
+                        what: [
+                            "D.2.1 Level — International: 1.50 · National: 0.75 · Institutional: 0.50",
+                            "D.2.2 No. of Authors — Single: 1.25 · Co-authored: 0.75 · Three or more: 0.50",
+                            "Required: published copy or official documentation. Indicate: level and number of authors.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-D-3",
+                        label: "D.3 — Computer Programs, Paintings, Novels (non-fiction)",
+                        pts: "1.50 pts base",
+                        what: [
+                            "D.3.1 Level — International: 1.50 · National: 0.75 · Institutional: 0.50",
+                            "D.3.2 No. of Authors — Single: 1.00 · Co-authored: 0.75 · Three or more: 0.50",
+                            "Required: documentation or published record of the work. Indicate: level and number of authors.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
+                    {
+                        id: "II-D-4",
+                        label: "D.4 — Poster / Oral Presentation",
+                        pts: "1.00 pt base",
+                        what: [
+                            "D.4.1 Level — International: 1.50 · National: 1.00 · Institutional: 0.25",
+                            "D.4.2 No. of Authors — Single: 1.00 · Co-authored: 0.75 · Three or more: 0.50",
+                            "Required: program proceedings or certificate of presentation. Indicate: level and number of authors.",
+                        ],
+                        status: "empty",
+                        file: null,
+                        date: null,
+                    },
                 ],
-                status: "empty",
-                file: null,
-                date: null,
             },
         ],
     },
@@ -728,8 +846,15 @@ const AREAS_DATA = [
 ];
 
 // ── Helpers ──
+
+// Flattens an area's parts: if a part is a group header (isGroup), returns its
+// subparts instead. This gives the flat list of actual submission slots.
+function getLeafParts(area) {
+    return area.parts.flatMap(p => p.isGroup ? p.subparts : [p]);
+}
+
 function getAreaStatus(area) {
-    const uploadable = area.parts.filter((p) => !p.auto);
+    const uploadable = getLeafParts(area).filter((p) => !p.auto);
     if (uploadable.length === 0) return "auto";
     if (uploadable.every((p) => p.status === "submitted")) return "submitted";
     if (
@@ -739,7 +864,7 @@ function getAreaStatus(area) {
     return "empty";
 }
 function getProgress(area) {
-    const uploadable = area.parts.filter((p) => !p.auto);
+    const uploadable = getLeafParts(area).filter((p) => !p.auto);
     return {
         done: uploadable.filter((p) => p.status === "submitted").length,
         total: uploadable.length,
@@ -938,12 +1063,43 @@ const styles = `
     .hm-pc-controls{flex-direction:column;align-items:stretch;}
     .hm-btn-template,.hm-btn-attach,.hm-btn-replace,.hm-btn-submit{justify-content:center;}
   }
+  /* ── GROUP HEADER (isGroup parts — Area II) ── */
+  .hm-part-group{border:1.5px solid #dde5df;border-radius:14px;overflow:hidden;margin-bottom:0;}
+  .hm-pg-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 18px;background:#f8f7f4;border-bottom:1.5px solid #dde5df;}
+  .hm-pg-label{font-family:'Playfair Display',serif;font-size:14px;font-weight:600;color:#1a1a1a;}
+  .hm-pg-pts{font-size:12px;font-weight:700;color:#1a6b3c;background:#eef7f2;padding:3px 10px;border-radius:8px;white-space:nowrap;}
+  .hm-pg-subparts{display:flex;flex-direction:column;gap:0;}
+  .hm-pg-subparts .hm-pc{border-radius:0;border-left:none;border-right:none;border-top:none;border-bottom:1px solid #f0f3f1;margin-bottom:0;}
+  .hm-pg-subparts .hm-pc:last-child{border-bottom:none;}
+  .hm-pg-subparts .hm-pc.s{border-left:3px solid #1a6b3c;}
+  .hm-pg-subparts .hm-pc.d{border-left:3px solid #c9a84c;}
   @keyframes hmFU{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
 `;
 
-// ── Part Card — one per Part (A, B, C, D...) ──
-// Each has: label, pts, status, rubric bullets, template download, file slot, submit button
+// ── Part Card — renders either a group header (isGroup) or a submission slot ──
+// Group headers (Area II Parts A/B/C/D) display a title bar and nest subpart cards.
+// Submission slots are the leaf nodes that have their own upload + submit controls.
 function PartCard({ part, submissionOpen }) {
+    // ── GROUP HEADER BRANCH ──
+    // If this part is a group (isGroup: true), render a section header and
+    // map each subpart as its own PartCard submission slot.
+    if (part.isGroup) {
+        return (
+            <div className="hm-part-group">
+                <div className="hm-pg-header">
+                    <span className="hm-pg-label">{part.label}</span>
+                    <span className="hm-pg-pts">{part.pts}</span>
+                </div>
+                <div className="hm-pg-subparts">
+                    {part.subparts.map(sp => (
+                        <PartCard key={sp.id} part={sp} submissionOpen={submissionOpen} />
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // ── SUBMISSION SLOT BRANCH (existing code below) ──
     const sc = part.auto
         ? "auto"
         : part.status === "submitted"
