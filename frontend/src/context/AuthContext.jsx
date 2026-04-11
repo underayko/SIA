@@ -10,8 +10,7 @@
 // =====================================================================
 
 // import { createContext, useContext, useEffect, useState } from "react";
-// import { onAuthStateChanged } from "firebase/auth";
-// import { auth } from "../firebase/auth";
+// import { supabase } from "../lib/supabase";
 
 // const AuthContext = createContext();
 
@@ -19,9 +18,12 @@
 //     const [user, setUser] = useState(null);
 
 //     useEffect(() => {
-//         onAuthStateChanged(auth, (firebaseUser) => {
-//             setUser(firebaseUser);
+//         const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+//             setUser(session?.user ?? null);
 //         });
+//         return () => {
+//             listener?.unsubscribe();
+//         };
 //     }, []);
 
 //     return (

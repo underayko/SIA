@@ -354,13 +354,13 @@ const styles = `
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE EDIT WINDOW FLAG
-// TODO (backend): fetch from Firestore — rankingcycles collection (same doc as submission_open)
-//   const cycleDoc = await getDoc(doc(db, "rankingcycles", currentCycleId));
-//   const profileEditOpen = cycleDoc.data().profile_edit_open; // boolean
+// TODO (backend): fetch from Supabase — rankingcycles table row for current cycle
+//   const { data } = await supabase.from("rankingcycles").select("profile_edit_open").eq("id", currentCycleId).single();
+//   const profileEditOpen = data.profile_edit_open; // boolean
 //   HR sets this independently from submission_open — faculty can only edit their
 //   profile during the window HR defines, typically at the start of a new cycle.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_PROFILE_EDIT_OPEN = false; // TODO: replace with Firestore value above
+const MOCK_PROFILE_EDIT_OPEN = false; // TODO: replace with Supabase value above
 
 function getStrength(pw) {
     if (!pw) return { label: "", color: "", pct: "0%" };
@@ -445,10 +445,10 @@ function EditableField({ label, value, onSave, pending, disabled }) {
 }
 
 export default function Profile({ user }) {
-    // TODO: replace with Firestore fetch — see MOCK_PROFILE_EDIT_OPEN comment above
+    // TODO: replace with Supabase fetch — see MOCK_PROFILE_EDIT_OPEN comment above
     const profileEditOpen = MOCK_PROFILE_EDIT_OPEN;
     // ── Editable field states ──
-    // TODO: fetch all initial values from Firestore — users collection, doc ID = auth.currentUser.uid
+    // TODO: fetch all initial values from Supabase — users table by authenticated user ID
     const [middleName, setMiddleName] = useState("B.");
     const [altEmail, setAltEmail] = useState("");
     const [teachingYears, setTeachingYears] = useState("6 years");
@@ -456,12 +456,12 @@ export default function Profile({ user }) {
     const [avatarPending, setAvatarPending] = useState(false);
 
     // Pending changes — fields that have been edited but not yet approved by HR
-    // TODO: fetch from Firestore — profile_change_requests collection
+    // TODO: fetch from Supabase — profile_change_requests table
     //       filter by user_id = auth.currentUser.uid and status = "pending"
     const [pendingFields, setPendingFields] = useState({});
 
     // Education entries
-    // TODO: fetch from Firestore — users.educational_attainment field
+    // TODO: fetch from Supabase — users.educational_attainment column
     const [eduList, setEduList] = useState([
         {
             level: "Bachelor's",
@@ -480,7 +480,7 @@ export default function Profile({ user }) {
     ]);
 
     // Eligibility entries
-    // TODO: fetch from Firestore — users.eligibility_exams field
+    // TODO: fetch from Supabase — users.eligibility_exams column
     const [eligList, setEligList] = useState([
         {
             text: "Civil Service Professional (CSC) — Passed 2014",
@@ -507,14 +507,14 @@ export default function Profile({ user }) {
     // ── Handlers ──
 
     const handleFieldSave = (field, value) => {
-        // TODO: write to Firestore — profile_change_requests collection
-        // doc structure: { user_id, field, old_value, new_value, status:"pending", requested_at: serverTimestamp() }
+        // TODO: write to Supabase — profile_change_requests table
+        // row structure: { user_id, field, old_value, new_value, status:"pending", requested_at: now() }
         // HR portal will show this as a pending change to review and approve or reject
         setPendingFields((prev) => ({ ...prev, [field]: value }));
     };
 
     const handleAvatarChange = () => {
-        // TODO: open file picker → upload to Firebase Storage → save URL to profile_change_requests
+        // TODO: open file picker → upload to Supabase Storage → save URL to profile_change_requests
         // path: profile_pictures/{userId}/{timestamp}.jpg
         // set users.profile_picture_pending = download URL
         // HR approves → copy to users.profile_picture
@@ -548,12 +548,10 @@ export default function Profile({ user }) {
     const handleCpSubmit = () => {
         if (!cpCurrent || !cpNew || !cpConfirm) return;
         if (cpNew !== cpConfirm || cpNew.length < 8) return;
-        // TODO: connect Firebase
-        // import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
-        // import { auth } from "../../firebase/auth";
-        // const credential = EmailAuthProvider.credential(auth.currentUser.email, cpCurrent);
-        // await reauthenticateWithCredential(auth.currentUser, credential);
-        // await updatePassword(auth.currentUser, cpNew);
+        // TODO: connect Supabase Auth
+        // use supabase.auth.signInWithPassword() or supabase.auth.updateUser()
+        // import { supabase } from "../../lib/supabase";
+        // const { data, error } = await supabase.auth.updateUser({ password: cpNew });
         setCpSuccess(true);
         setTimeout(() => {
             setCpSuccess(false);
@@ -574,7 +572,7 @@ export default function Profile({ user }) {
             <style>{styles}</style>
 
             {/* ── HERO ── */}
-            {/* TODO: fetch profile data from Firestore — users collection, doc ID = auth.currentUser.uid */}
+            {/* TODO: fetch profile data from Supabase — users table row by authenticated user ID */}
             <div className="pf-hero">
                 {/* Profile picture — faculty can request change, requires HR approval */}
                 {/* Avatar click is only active when the profile edit window is open */}
@@ -617,7 +615,7 @@ export default function Profile({ user }) {
                             {user?.email || "202011090@gordoncollege.edu.ph"}
                         </span>
                         {/* Performance rating chip — read-only, sourced from last published cycle */}
-                        {/* TODO: fetch from Firestore — areasubmissions where area_id = Area IV
+                        {/* TODO: fetch from Supabase — areasubmissions table where area_id = Area IV
                             for the most recently published cycle of this faculty member.
                             Show csv_total_average_rate (e.g. "4.52 · Outstanding") */}
                         <span className="pf-chip gold">
@@ -786,7 +784,7 @@ export default function Profile({ user }) {
                         <Lock size={10} /> HR managed
                     </span>
                 </div>
-                {/* TODO: fetch from Firestore — users collection fields:
+                {/* TODO: fetch from Supabase — users table fields:
                     current_rank, nature_of_appointment, date_of_last_promotion
                     Note: current_salary and applying_for are intentionally NOT shown here.
                     Salary is not disclosed to faculty per system policy.
@@ -833,7 +831,7 @@ export default function Profile({ user }) {
                             <Plus size={10} /> Can add
                         </span>
                     </div>
-                    {/* TODO: fetch from Firestore — users.educational_attainment
+                    {/* TODO: fetch from Supabase — users.educational_attainment
                         new entries go to profile_change_requests with field="educational_attainment"
                         pending entries shown with orange badge until HR approves */}
                     <div className="pf-edu-list">
@@ -890,7 +888,7 @@ export default function Profile({ user }) {
                             <Plus size={10} /> Can add
                         </span>
                     </div>
-                    {/* TODO: fetch from Firestore — users.eligibility_exams
+                    {/* TODO: fetch from Supabase — users.eligibility_exams
                         new entries go to profile_change_requests with field="eligibility_exams" */}
                     <div className="pf-elig-list">
                         {eligList.map((e, i) => (
@@ -909,9 +907,12 @@ export default function Profile({ user }) {
                         ))}
                         {/* Add button hidden when profile edit window is closed */}
                         {profileEditOpen && (
-                        <button className="pf-elig-add" onClick={handleAddElig}>
-                            <Plus size={14} /> Add eligibility or board exam
-                        </button>
+                            <button
+                                className="pf-elig-add"
+                                onClick={handleAddElig}
+                            >
+                                <Plus size={14} /> Add eligibility or board exam
+                            </button>
                         )}
                     </div>
                 </div>
@@ -942,7 +943,7 @@ export default function Profile({ user }) {
                         <Lock size={10} /> Read only
                     </span>
                 </div>
-                {/* TODO (backend): store a faculty's data privacy acknowledgement flag in Firestore
+                {/* TODO (backend): store a faculty's data privacy acknowledgement flag in Supabase
                     — users.privacy_acknowledged: boolean
                     — users.privacy_acknowledged_at: timestamp
                     When this field is false (new users), show a prompt to accept before proceeding.
@@ -1169,8 +1170,8 @@ export default function Profile({ user }) {
                             >
                                 Cancel
                             </button>
-                            {/* TODO: connect Firebase — reauthenticateWithCredential + updatePassword
-                                Password change does NOT go through profile_change_requests — it's instant via Firebase Auth */}
+                            {/* TODO: connect Supabase Auth — update password via supabase.auth.updateUser
+                                Password change does NOT go through profile_change_requests — it's instant via Supabase Auth */}
                             <button
                                 className="pf-cp-save"
                                 onClick={handleCpSubmit}

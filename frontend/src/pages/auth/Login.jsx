@@ -582,11 +582,14 @@ export default function Login({ onLogin }) {
         }
         setLoading(true);
         try {
-            // TODO: connect Firebase
-            // import { signInWithEmailAndPassword } from "firebase/auth";
-            // import { auth } from "../../firebase/auth";
-            // const { user } = await signInWithEmailAndPassword(auth, fullEmail, password);
-            // if (onLogin) onLogin(user);
+            // TODO: connect Supabase Auth
+            // import { supabase } from "../../lib/supabase";
+            // const { data, error } = await supabase.auth.signInWithPassword({
+            //     email: fullEmail,
+            //     password,
+            // });
+            // if (error) throw error;
+            // if (onLogin) onLogin(data.user);
             console.log("Logging in as:", fullEmail);
         } catch (err) {
             setError("Invalid GC email address or password. Please try again.");

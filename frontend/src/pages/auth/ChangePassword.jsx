@@ -503,12 +503,10 @@ export default function ChangePassword({ user, onSuccess }) {
         }
         setLoading(true);
         try {
-            // TODO: connect Firebase
-            // import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
-            // import { auth } from "../../firebase/auth";
-            // const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-            // await reauthenticateWithCredential(auth.currentUser, credential);
-            // await updatePassword(auth.currentUser, newPassword);
+            // TODO: connect Supabase Auth
+            // import { supabase } from "../../lib/supabase";
+            // const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+            // if (error) throw error;
             // if (onSuccess) onSuccess();
             setSuccess("Password updated successfully. Redirecting...");
         } catch (err) {

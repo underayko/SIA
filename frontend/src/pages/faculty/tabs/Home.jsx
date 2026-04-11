@@ -56,12 +56,12 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // SUBMISSION WINDOW FLAG
-// TODO (backend): fetch from Firestore — rankingcycles collection
-//   const cycleDoc = await getDoc(doc(db, "rankingcycles", currentCycleId));
-//   const submissionOpen = cycleDoc.data().submission_open; // boolean
+// TODO (backend): fetch from Supabase — rankingcycles table row for current cycle
+//   const { data } = await supabase.from("rankingcycles").select("submission_open").eq("id", currentCycleId).single();
+//   const submissionOpen = data.submission_open; // boolean
 //   This flag is toggled by HR (open) and auto-closed at deadline or manually closed.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_SUBMISSION_OPEN = false; // TODO: replace with Firestore value above
+const MOCK_SUBMISSION_OPEN = false; // TODO: replace with Supabase value above
 
 const AREAS_DATA = [
     // ── AREA I ─────────────────────────────────────────────────────────────────
@@ -850,7 +850,7 @@ const AREAS_DATA = [
 // Flattens an area's parts: if a part is a group header (isGroup), returns its
 // subparts instead. This gives the flat list of actual submission slots.
 function getLeafParts(area) {
-    return area.parts.flatMap(p => p.isGroup ? p.subparts : [p]);
+    return area.parts.flatMap((p) => (p.isGroup ? p.subparts : [p]));
 }
 
 function getAreaStatus(area) {
@@ -1091,8 +1091,12 @@ function PartCard({ part, submissionOpen }) {
                     <span className="hm-pg-pts">{part.pts}</span>
                 </div>
                 <div className="hm-pg-subparts">
-                    {part.subparts.map(sp => (
-                        <PartCard key={sp.id} part={sp} submissionOpen={submissionOpen} />
+                    {part.subparts.map((sp) => (
+                        <PartCard
+                            key={sp.id}
+                            part={sp}
+                            submissionOpen={submissionOpen}
+                        />
                     ))}
                 </div>
             </div>
@@ -1165,7 +1169,7 @@ function PartCard({ part, submissionOpen }) {
                     <>
                         {/* Still allow template download and viewing submitted files when closed */}
                         <div className="hm-pc-controls">
-                            {/* TODO: fetch template URL from Firestore/Firebase Storage
+                            {/* TODO: fetch template URL from Supabase Storage
                                 path: templates/area_{areaId}/{partId}_template.xlsx */}
                             <button className="hm-btn-template">
                                 <Download size={12} /> Download Template
@@ -1239,7 +1243,7 @@ function PartCard({ part, submissionOpen }) {
                         {/* Controls: Template + File + Submit */}
                         <div className="hm-pc-controls">
                             {/* Template download for this Part */}
-                            {/* TODO: fetch template URL from Firestore/Firebase Storage
+                            {/* TODO: fetch template URL from Supabase Storage
                                 path: templates/area_{areaId}/{partId}_template.xlsx */}
                             <button className="hm-btn-template">
                                 <Download size={12} /> Download Template
@@ -1277,19 +1281,19 @@ function PartCard({ part, submissionOpen }) {
                                     </div>
                                     {/* Replace button for submitted files */}
                                     {part.status === "submitted" && (
-                                        /* TODO: replace — upload new file to Firebase Storage,
-                                           update areasubmissions doc: file_url, file_name, updated_at */
+                                        /* TODO: replace — upload new file to Supabase Storage,
+                                           update areasubmissions row: file_url, file_name, updated_at */
                                         <button className="hm-btn-replace">
                                             <RefreshCw size={11} /> Replace
                                         </button>
                                     )}
                                 </>
                             ) : (
-                                /* TODO: attach file — open file picker → upload to Firebase Storage
+                                /* TODO: attach file — open file picker → upload to Supabase Storage
                                    path: submissions/{cycleId}/{userId}/area_{areaId}/{partId}/{filename}
-                                   create/update areasubmissions doc: { cycle_id, user_id, area_id,
+                                   create/update areasubmissions row: { cycle_id, user_id, area_id,
                                      part_id, file_url, file_name, status:"draft",
-                                     uploaded_at: serverTimestamp() } */
+                                     uploaded_at: now() } */
                                 <button className="hm-btn-attach">
                                     <Paperclip size={12} /> Attach File
                                 </button>
@@ -1407,7 +1411,7 @@ export default function Home({ user }) {
     const [view, setView] = useState("list");
     const [openAreaId, setOpenAreaId] = useState(null);
 
-    // TODO: replace with Firestore fetch — see MOCK_SUBMISSION_OPEN comment above
+    // TODO: replace with Supabase fetch — see MOCK_SUBMISSION_OPEN comment above
     const submissionOpen = MOCK_SUBMISSION_OPEN;
 
     const openArea = (id) => {
@@ -1422,7 +1426,7 @@ export default function Home({ user }) {
 
     const currentArea = AREAS_DATA.find((a) => a.id === openAreaId);
 
-    // TODO: compute from Firestore areasubmissions instead of local mock
+    // TODO: compute from Supabase areasubmissions instead of local mock
     const submittable = AREAS_DATA.filter((a) => getAreaStatus(a) !== "auto");
     const completed = submittable.filter(
         (a) => getAreaStatus(a) === "submitted",
@@ -1434,7 +1438,7 @@ export default function Home({ user }) {
             <style>{styles}</style>
 
             {/* ── HERO ── */}
-            {/* TODO: fetch from Firestore — rankingcycles (cycle + deadline + submission_open) · users (rank + dept) · applications (status) */}
+            {/* TODO: fetch from Supabase — rankingcycles (cycle + deadline + submission_open) · users (rank + dept) · applications (status) */}
             <div className="hm-hero">
                 <div className="hm-hero-left">
                     <div className="hm-hero-info">
@@ -1500,7 +1504,7 @@ export default function Home({ user }) {
                             </div>
                         </>
                     ) : (
-                        /* Closed state — shown when submission_open = false in Firestore */
+                        /* Closed state — shown when submission_open = false in Supabase */
                         <>
                             <div
                                 className="hm-deadline-ring"
@@ -1583,7 +1587,7 @@ export default function Home({ user }) {
             </div>
 
             {/* ── SUBMIT BAR ── */}
-            {/* TODO: submit — update applications doc status to "Submitted" in Firestore
+            {/* TODO: submit — update applications row status to "Submitted" in Supabase
                 Enable only when all parts across all 9 submittable areas are submitted */}
             <div className="hm-submit-bar">
                 <div className="hm-submit-info">
