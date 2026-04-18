@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './ranking.css';
+import { supabase } from '../supabase';
 
 /* ── Icons ───────────────────────────────── */
 const UploadIcon = () => (
@@ -132,6 +133,48 @@ export default function Ranking() {
   const [areas, setAreas] = useState(rankingAreas);
   const [editingId, setEditingId] = useState(null);
   const [editDescription, setEditDescription] = useState('');
+  const [previewArea, setPreviewArea] = useState(null);
+
+  // On initial load, check Storage for any existing templates per area
+  useEffect(() => {
+    const bucket = 'documents';
+    const roleFolder = 'Admin';
+
+    const loadExistingFiles = async () => {
+      const updatedAreas = [...areas];
+
+      for (const area of updatedAreas) {
+        const folderPath = `${roleFolder}/area-${area.id}`;
+
+        const { data: files, error } = await supabase.storage
+          .from(bucket)
+          .list(folderPath, {
+            limit: 1,
+            sortBy: { column: 'created_at', order: 'desc' },
+          });
+
+        if (error || !files || files.length === 0) continue;
+
+        const latest = files[0];
+        const fullPath = `${folderPath}/${latest.name}`;
+
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(fullPath, 60 * 60);
+
+        if (signedError || !signedData?.signedUrl) continue;
+
+        area.uploaded = true;
+        area.fileName = latest.name;
+        area.fileUrl = signedData.signedUrl;
+      }
+
+      setAreas(updatedAreas);
+    };
+
+    loadExistingFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleEdit = (area) => {
     setEditingId(area.id);
@@ -155,24 +198,19 @@ export default function Ranking() {
     setEditDescription('');
   };
 
-  const handleFileUpload = (areaId, event) => {
+  const handleFileUpload = async (areaId, event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // File validation
+    // File validation (PDF only)
     const allowedTypes = [
       'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg',
-      'image/png',
-      'image/gif'
     ];
     
     const maxSize = 5 * 1024 * 1024; // 5MB
 
     if (!allowedTypes.includes(file.type)) {
-      alert('Invalid file type. Please upload PDF, DOC, DOCX, or image files only.');
+      alert('Invalid file type. Please upload PDF files only.');
       return;
     }
 
@@ -187,18 +225,48 @@ export default function Ranking() {
       size: (file.size / 1024 / 1024).toFixed(2) + ' MB'
     });
 
-    // TODO: Implement actual file upload to cloud storage
-    // For now, just simulate successful upload
-    setTimeout(() => {
-      setAreas(prevAreas => 
-        prevAreas.map(area => 
-          area.id === areaId 
-            ? { ...area, uploaded: true, fileName: file.name }
-            : area
-        )
-      );
-      alert(`✅ File "${file.name}" uploaded successfully for ${areas.find(a => a.id === areaId)?.title}`);
-    }, 1000);
+    // Upload to Supabase Storage
+    // Bucket name must exist in your Supabase project (you named it "documents")
+    const bucket = 'documents';
+    const roleFolder = 'Admin'; // adjust later for VPAA / Faculty portals
+    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const path = `${roleFolder}/area-${areaId}/${Date.now()}-${safeName}`;
+
+    const { data: uploadData, error } = await supabase.storage
+      .from(bucket)
+      .upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Error uploading file to Supabase Storage:', error);
+      alert('Failed to upload file. Please try again.');
+      event.target.value = '';
+      return;
+    }
+
+    // For a private bucket, use a signed URL instead of a public URL
+    const { data: signedData, error: signedError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(uploadData.path, 60 * 60); // 1 hour
+
+    if (signedError) {
+      console.error('Error creating signed URL for file:', signedError);
+      alert('File uploaded, but failed to create a view link. Please try again.');
+      return;
+    }
+
+    const fileUrl = signedData?.signedUrl ?? '';
+
+    setAreas(prevAreas => 
+      prevAreas.map(area => 
+        area.id === areaId 
+          ? { ...area, uploaded: true, fileName: file.name, fileUrl }
+          : area
+      )
+    );
+    alert(`✅ File "${file.name}" uploaded successfully for ${areas.find(a => a.id === areaId)?.title}`);
 
     // Reset file input
     event.target.value = '';
@@ -210,6 +278,14 @@ export default function Ranking() {
     if (fileInput) {
       fileInput.click();
     }
+  };
+
+  const handleViewFile = (area) => {
+    if (!area.fileUrl) {
+      alert('No file is available to view for this area. Please upload a PDF first.');
+      return;
+    }
+    setPreviewArea(area);
   };
 
   return (
@@ -271,7 +347,7 @@ export default function Ranking() {
                         id={`file-input-${area.id}`}
                         style={{ display: 'none' }}
                         onChange={(e) => handleFileUpload(area.id, e)}
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                        accept=".pdf"
                       />
                       
                       {area.uploaded ? (
@@ -288,8 +364,14 @@ export default function Ranking() {
                             </>
                           ) : (
                             <>
-                              <CheckCircleIcon /> 
-                              {area.fileName || 'Uploaded'}
+                              <CheckCircleIcon />
+                              <span
+                                className="rk-badge-clickable"
+                                style={{ marginLeft: 4 }}
+                                onClick={() => handleViewFile(area)}
+                              >
+                                View
+                              </span>
                             </>
                           )}
                         </span>
@@ -336,6 +418,89 @@ export default function Ranking() {
               })}
             </tbody>
           </table>
+
+          {previewArea && (
+            <div
+              className="rk-preview-overlay"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+              }}
+              onClick={() => setPreviewArea(null)}
+            >
+              <div
+                className="rk-preview-modal"
+                style={{
+                  background: '#fff',
+                  borderRadius: 8,
+                  width: '95%',
+                  height: '90%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  className="rk-preview-header"
+                  style={{
+                    padding: '10px 16px',
+                    borderBottom: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Template Preview</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                      {previewArea?.title} {previewArea?.fileName ? `- ${previewArea.fileName}` : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rk-preview-close"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 20,
+                      lineHeight: 1,
+                    }}
+                    onClick={() => setPreviewArea(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={{ flex: 1 }}>
+                  {previewArea?.fileUrl ? (
+                    <iframe
+                      src={previewArea.fileUrl}
+                      title="Template Preview"
+                      style={{ width: '100%', height: '100%', border: 'none' }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#6b7280',
+                      }}
+                    >
+                      No file to preview.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
