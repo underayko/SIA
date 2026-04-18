@@ -1,0 +1,418 @@
+import React, { useState } from 'react';
+import Sidebar from '../components/sidenav';
+import './perfeval.css';
+import '../styles/layout.css';
+
+/* ── Icons ───────────────────────────────── */
+const Icons = {
+  User: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+    </svg>
+  ),
+  Briefcase: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+    </svg>
+  ),
+  Star: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+  ),
+  GraduationCap: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+    </svg>
+  ),
+  FileText: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  ),
+  Check: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+      width="10" height="10">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  ),
+  Calendar: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      width="12" height="12">
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  ),
+  ChevronLeft: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      width="14" height="14">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  ),
+  ChevronRight: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      width="14" height="14">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  ),
+};
+
+/* ── Data ────────────────────────────────── */
+const faculty = {
+  name:        'Jenkins, Sarah A.',
+  instructor:  'Instructor II',
+  department:  'CCS',
+  presentRank: 'Instructor II',
+  nature:      'Permanent',
+  salary:      '₱45,000.00',
+  teachingExp: '8 years',
+  industryExp: '3 years',
+  rating:      '4.8',
+  ratingDesc:  'Very Satisfactory',
+  education: [
+    { degree: "Bachelor's in Computer Science", school: 'State University' },
+    { degree: "Master's in Computer Science",   school: 'Tech Institute'   },
+  ],
+  eligibility:    'Civil Service Professional',
+  applyingFor:    'Instructor II',
+  lastPromotion:  '05 12, 21',
+};
+
+const areaResults = [
+  { label: 'Area I',    status: 'Passed' },
+  { label: 'Area II',   status: 'Passed' },
+  { label: 'Area III',  status: 'Passed' },
+  { label: 'Area IV',   status: 'Passed' },
+  { label: 'Area V',    status: 'Passed' },
+  { label: 'Area VI',   status: 'Passed' },
+  { label: 'Area VII',  status: 'Passed' },
+  { label: 'Area VIII', status: 'Passed' },
+  { label: 'Area XI',   status: 'Passed' },
+  { label: 'Area X',    status: 'Passed' },
+];
+
+const recommendations = [
+  { label: 'Qualified for Professor I',   ok: true  },
+  { label: 'Qualified for Professor II',  ok: true  },
+  { label: 'Qualified for Professor III', ok: true  },
+  { label: 'Qualified for Professor IV',  ok: false },
+  { label: 'Not Qualified for',           ok: false },
+];
+
+const criteriaData = [
+  { label: 'A. Associate Courses/Program (2 years)',      max: 25.00, score: 25.99 },
+  { label: "B. Bachelor's Degree (4 years to 5 years)",   max: 45.00, score: 0     },
+  { label: "C. Diploma course (Above Bachelor's Degree)", max: 45.00, score: 29.99 },
+  { label: "D. Master's Program",                         max: null,  score: null  },
+  { label: 'D.1 MA/MS Units (6-12 units)',                max: 47.00, score: 0     },
+];
+
+/* ══════════════════════════════════════════
+   FACULTY INFORMATION CARD
+   ══════════════════════════════════════════ */
+function FacultyInfoCard() {
+  return (
+    <div className="pe-card">
+      <div className="pe-card-header">
+        <Icons.User />
+        <span className="pe-card-title">Faculty Information</span>
+      </div>
+
+      <div className="pe-faculty-grid">
+        {/* Personal Details */}
+        <div className="pe-info-col">
+          <div className="pe-col-label"><Icons.User /> Personal Details</div>
+          <div className="pe-field">
+            <div className="pe-field-label">Name</div>
+            <div className="pe-field-value green">{faculty.name}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Instructor</div>
+            <div className="pe-field-value">{faculty.instructor}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Department</div>
+            <div className="pe-field-value">{faculty.department}</div>
+          </div>
+        </div>
+
+        {/* Employment Status */}
+        <div className="pe-info-col">
+          <div className="pe-col-label"><Icons.Briefcase /> Employment Status</div>
+          <div className="pe-field">
+            <div className="pe-field-label">Present Rank</div>
+            <div className="pe-field-value">{faculty.presentRank}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Nature of Appointment</div>
+            <div className="pe-field-value">{faculty.nature}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Current Salary</div>
+            <div className="pe-field-value salary">{faculty.salary}</div>
+          </div>
+        </div>
+
+        {/* Experience & Rating */}
+        <div className="pe-info-col">
+          <div className="pe-col-label"><Icons.Star /> Experience &amp; Rating</div>
+          <div className="pe-field">
+            <div className="pe-field-label">Teaching Exp.</div>
+            <div className="pe-field-value">{faculty.teachingExp}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Industry Exp.</div>
+            <div className="pe-field-value">{faculty.industryExp}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Performance Rating</div>
+            <div className="pe-field-value">
+              <span className="pe-rating-badge">{faculty.rating} — {faculty.ratingDesc}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Educational Attainment */}
+        <div className="pe-info-col">
+          <div className="pe-col-label"><Icons.GraduationCap /> Educational Attainment</div>
+          {faculty.education.map((ed, i) => (
+            <div className="pe-edu-box" key={i}>
+              <div className="pe-edu-degree">{ed.degree}</div>
+              <div className="pe-edu-school">{ed.school}</div>
+            </div>
+          ))}
+          <div className="pe-field">
+            <div className="pe-field-label">Eligibility &amp; Exams</div>
+            <div className="pe-field-value">{faculty.eligibility}</div>
+          </div>
+        </div>
+
+        {/* Application Details */}
+        <div className="pe-info-col">
+          <div className="pe-col-label"><Icons.FileText /> Application Details</div>
+          <div className="pe-field">
+            <div className="pe-field-label">Applying For</div>
+            <div className="pe-field-value green">{faculty.applyingFor}</div>
+          </div>
+          <div className="pe-field">
+            <div className="pe-field-label">Last Promotion</div>
+            <div className="pe-field-value">{faculty.lastPromotion}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   AREA SUMMARY CARD
+   ══════════════════════════════════════════ */
+function AreaSummaryCard({ filter, onChange }) {
+  const visible = filter
+    ? areaResults.filter(a => a.label.toLowerCase().includes(filter.toLowerCase()))
+    : areaResults;
+
+  return (
+    <div className="pe-card">
+      <div className="pe-card-header">
+        <span className="pe-card-title">Summary Evaluation of Submitted Area</span>
+      </div>
+
+      <div className="pe-area-inner">
+        {/* Left: filter input */}
+        <div className="pe-area-filter-col">
+          <input
+            className="pe-filter-input"
+            type="text"
+            placeholder="Area I-X"
+            value={filter}
+            onChange={e => onChange(e.target.value)}
+          />
+        </div>
+
+        {/* Right: 3-column area results grid */}
+        <div className="pe-area-results-col">
+          {visible.map(area => (
+            <div key={area.label} className="pe-area-item">
+              <span className="pe-area-name">{area.label}</span>
+              <span className={`pe-status-badge ${area.status === 'Passed' ? 'passed' : 'failed'}`}>
+                {area.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   FINAL RECOMMENDATION CARD
+   ══════════════════════════════════════════ */
+function RecommendationCard() {
+  return (
+    <div className="pe-card pe-rec-card">
+      <div className="pe-rec-title">Final Recommendation</div>
+      {recommendations.map((r, i) => (
+        <div
+          key={i}
+          className={`pe-rec-item${r.ok ? ' qualified' : ' unqualified'}`}
+        >
+          <span className={`pe-rec-check${r.ok ? '' : ' empty'}`}>
+            {r.ok && <Icons.Check />}
+          </span>
+          {r.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   EVALUATOR + APPROVAL CARD
+   ══════════════════════════════════════════ */
+function EvaluatorCard() {
+  return (
+    <div className="pe-card pe-evaluator-card">
+      {/* Evaluator section */}
+      <div className="pe-eval-section">
+        <div className="pe-eval-meta">Evaluator</div>
+        <div className="pe-eval-heading">
+          HR Admin <span>Dr. Maria Santos</span>
+        </div>
+        <div className="pe-eval-line"><strong>Department</strong> CCS</div>
+        <div className="pe-eval-line">Professor Jenkins, Sarah A.</div>
+        <div className="pe-eval-line">Dean Uy, Samuel D.</div>
+        <div className="pe-eval-date">
+          <Icons.Calendar /> Date Approved April 24, 2027
+        </div>
+      </div>
+
+      {/* Approval section */}
+      <div className="pe-eval-section">
+        <div className="pe-eval-heading" style={{ marginBottom: 8 }}>Approval</div>
+        <div className="pe-eval-meta">Evaluator</div>
+        <div className="pe-eval-line">
+          HR Admin <strong>Dr. Maria Santos</strong>
+        </div>
+        <div className="pe-eval-date">
+          <Icons.Calendar /> Date Approved April 24, 2027
+        </div>
+        <div className="pe-eval-line">
+          Professor Jenkins, Sarah A.
+          <br />
+          <span className="pe-eval-sub">Instructor III</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SUBMITTED AREA PANEL
+   ══════════════════════════════════════════ */
+function SubmittedAreaPanel() {
+  const [current, setCurrent] = useState(0);
+  const total = areaResults.length;
+
+  return (
+    <div className="pe-submitted-panel">
+      <div className="pe-submitted-header">Submitted Area Evaluation</div>
+
+      <div className="pe-score-block">
+        <div className="pe-score-label">Final Score</div>
+        <div className="pe-score-value">139<span> / 200</span></div>
+        <div className="pe-score-note">Instructor III threshold: 320 pts</div>
+      </div>
+
+      <div className="pe-breakdown">
+        <div className="pe-breakdown-title">
+          AREA I — Educational Qualifications
+          <span className="pe-score-tag">56.00</span>
+        </div>
+
+        <table className="pe-criteria-table">
+          <thead>
+            <tr>
+              <th>Criteria</th>
+              <th style={{ textAlign: 'right' }}>Max Points</th>
+              <th style={{ textAlign: 'right' }}>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {criteriaData.map((row, i) => (
+              <tr key={i}>
+                <td>{row.label}</td>
+                <td className="num">{row.max != null ? row.max.toFixed(2) : ''}</td>
+                <td className={`num${row.score === 0 ? ' zero' : ''}`}>
+                  {row.score != null ? row.score.toFixed(2) : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="pe-panel-nav">
+        <button
+          className={`pe-btn-nav${current === 0 ? ' disabled' : ''}`}
+          onClick={() => current > 0 && setCurrent(c => c - 1)}
+        >
+          <Icons.ChevronLeft /> Previous Area
+        </button>
+        <span className="pe-nav-counter">{current + 1} / {total}</span>
+        <button
+          className={`pe-btn-nav${current === total - 1 ? ' disabled' : ''}`}
+          onClick={() => current < total - 1 && setCurrent(c => c + 1)}
+        >
+          Next Area <Icons.ChevronRight />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   PAGE EXPORT
+   ══════════════════════════════════════════ */
+export default function PerfEval() {
+  const [filter,    setFilter]    = useState('');
+  const [showPanel, setShowPanel] = useState(true);
+
+  return (
+    <div className="app">
+      <Sidebar />
+
+      <div className="main">
+        <div className="content">
+          <div className="rk-card-header">
+            <span className="rk-card-title">Performance Evaluation</span>
+            <span className="rk-semester">1st Semester AY 2026–2027</span>
+          </div>
+
+          <div className="pe-body">
+          <FacultyInfoCard />
+
+          <div className="pe-summary-row">
+            <div className="pe-summary-left">
+              <AreaSummaryCard filter={filter} onChange={setFilter} />
+              <RecommendationCard />
+            </div>
+            <EvaluatorCard />
+          </div>
+
+          <div className="pe-submit-row">
+            <button className="pe-btn-submit" onClick={() => setShowPanel(v => !v)}>
+              {showPanel ? 'Hide Evaluation' : 'Submit Evaluation'}
+            </button>
+          </div>
+
+          {showPanel && <SubmittedAreaPanel />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
