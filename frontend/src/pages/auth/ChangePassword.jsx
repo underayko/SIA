@@ -1,6 +1,7 @@
 import { useState } from "react";
 import gcLogo from "../../assets/gclogo.png";
 import studentHat from "../../assets/student-hat.png";
+import { supabase } from "../../lib/supabase";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Source+Sans+3:wght@300;400;500;600&display=swap');
@@ -503,14 +504,38 @@ export default function ChangePassword({ user, onSuccess }) {
         }
         setLoading(true);
         try {
-            // TODO: connect Supabase Auth
-            // import { supabase } from "../../lib/supabase";
-            // const { data, error } = await supabase.auth.updateUser({ password: newPassword });
-            // if (error) throw error;
-            // if (onSuccess) onSuccess();
-            setSuccess("Password updated successfully. Redirecting...");
-        } catch (err) {
+          const {
+            data: { user: sessionUser },
+          } = await supabase.auth.getUser();
+
+          const accountEmail = sessionUser?.email || user?.email;
+          if (!accountEmail) {
+            throw new Error("Unable to determine account email for verification.");
+          }
+
+          const { error: verifyError } = await supabase.auth.signInWithPassword({
+            email: accountEmail,
+            password: currentPassword,
+          });
+
+          if (verifyError) {
             setError("Current password is incorrect. Please try again.");
+            return;
+          }
+
+          const { error: updateError } = await supabase.auth.updateUser({
+            password: newPassword,
+          });
+          if (updateError) throw updateError;
+
+            setSuccess("Password updated successfully. Redirecting...");
+          if (onSuccess) {
+            await onSuccess();
+          }
+        } catch {
+          setError(
+            "Password update failed. Please try again or contact the administrator.",
+          );
         } finally {
             setLoading(false);
         }

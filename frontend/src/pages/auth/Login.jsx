@@ -1,6 +1,7 @@
 import { useState } from "react";
 import gcLogo from "../../assets/gclogo.png";
 import studentHat from "../../assets/student-hat.png";
+import { supabase } from "../../lib/supabase";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Source+Sans+3:wght@300;400;500;600&display=swap');
@@ -572,26 +573,29 @@ export default function Login({ onLogin }) {
     const [loading, setLoading] = useState(false);
     const [showForgot, setShowForgot] = useState(false);
 
-    const fullEmail = `${employeeId}@gordoncollege.edu.ph`;
-
     const handleLogin = async () => {
         setError("");
-        if (!employeeId || !password) {
+      const normalizedEmployeeId = employeeId
+        .trim()
+        .replace(/@gordoncollege\.edu\.ph$/i, "");
+
+      if (!normalizedEmployeeId || !password) {
             setError("Please enter your GC email address and password.");
             return;
         }
+
+      const fullEmail = `${normalizedEmployeeId}@gordoncollege.edu.ph`;
+
         setLoading(true);
         try {
-            // TODO: connect Supabase Auth
-            // import { supabase } from "../../lib/supabase";
-            // const { data, error } = await supabase.auth.signInWithPassword({
-            //     email: fullEmail,
-            //     password,
-            // });
-            // if (error) throw error;
-            // if (onLogin) onLogin(data.user);
-            console.log("Logging in as:", fullEmail);
-        } catch (err) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: fullEmail,
+          password,
+        });
+
+        if (error) throw error;
+        if (onLogin) onLogin(data?.user ?? null);
+        } catch {
             setError("Invalid GC email address or password. Please try again.");
         } finally {
             setLoading(false);

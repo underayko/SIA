@@ -221,7 +221,7 @@ function CycleCard({ cycle }) {
 }
 
 // ─── Main Export ──────────────────────────────────────────────
-export default function History({ user, cycles, logs }) {
+export default function History({ cycles, logs }) {
     const cycleData = cycles || MOCK_CYCLES;
     const logData   = logs   || MOCK_LOGS;
 

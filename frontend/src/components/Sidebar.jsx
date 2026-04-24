@@ -193,15 +193,15 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, notifCount, l
         </div>
 
         <nav className="sb-nav">
-          {NAV_ITEMS.map(({ key, icon: Icon, label, badge }) => (
+          {NAV_ITEMS.map((item) => (
             <button
-              key={key}
-              className={`sb-nav-btn${activeTab === key ? " active" : ""}`}
-              onClick={() => onNavigate(key)}
+              key={item.key}
+              className={`sb-nav-btn${activeTab === item.key ? " active" : ""}`}
+              onClick={() => onNavigate(item.key)}
             >
-              <span className="sb-nav-icon"><Icon size={16} /></span>
-              <span className="sb-nav-label">{label}</span>
-              {badge && notifCount > 0 && (
+              <span className="sb-nav-icon"><item.icon size={16} /></span>
+              <span className="sb-nav-label">{item.label}</span>
+              {item.badge && notifCount > 0 && (
                 <span className="sb-nav-badge">{notifCount}</span>
               )}
             </button>
@@ -219,15 +219,15 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, notifCount, l
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="sb-bottom-nav">
         <div className="sb-bottom-nav-inner">
-          {NAV_ITEMS.map(({ key, icon: Icon, shortLabel, label, badge }) => (
+          {NAV_ITEMS.map((item) => (
             <button
-              key={key}
-              className={`sb-bottom-btn${activeTab === key ? " active" : ""}`}
-              onClick={() => onNavigate(key)}
+              key={item.key}
+              className={`sb-bottom-btn${activeTab === item.key ? " active" : ""}`}
+              onClick={() => onNavigate(item.key)}
             >
-              <span className="sb-bottom-icon"><Icon size={17} /></span>
-              <span className="sb-bottom-label">{shortLabel || label}</span>
-              {badge && notifCount > 0 && (
+              <span className="sb-bottom-icon"><item.icon size={17} /></span>
+              <span className="sb-bottom-label">{item.shortLabel || item.label}</span>
+              {item.badge && notifCount > 0 && (
                 <span className="sb-bottom-badge">{notifCount}</span>
               )}
             </button>

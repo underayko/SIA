@@ -141,7 +141,7 @@ const NOTIF_ITEMS = [
   },
 ];
 
-export default function Topbar({ title, user, notifCount, onMarkAllRead, onViewAllNotifs, onLogout }) {
+export default function Topbar({ title, notifCount, onMarkAllRead, onViewAllNotifs, onLogout }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 

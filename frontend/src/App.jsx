@@ -1,184 +1,114 @@
-// // 📄 SIA/frontend/src/App.jsx
-
-// import { useState } from "react";
-// import Login from "./pages/auth/Login";
-// import ChangePassword from "./pages/auth/ChangePassword";
-// import Dashboard from "./pages/faculty/Dashboard";
-
-// // TODO: once Supabase Auth is connected, replace this entire page-switching system
-// // with React Router (npm install react-router-dom) for proper URL-based routing:
-// //   /              → Login
-// //   /change-password → ChangePassword (protected, redirect if not first login)
-// //   /dashboard     → Dashboard (protected, redirect to login if not authenticated)
-// //   /dashboard/history      → History tab
-// //   /dashboard/profile      → Profile tab
-// //   /dashboard/notifications → Notifications tab
-
-// // TODO: wrap the app with Supabase AuthContext so auth state persists on page refresh
-// // import { AuthProvider } from "./context/AuthContext";
-// // Wrap <App /> in <AuthProvider> inside main.jsx
-
-// function App() {
-//     const [page, setPage] = useState("login");
-//     const [user, setUser] = useState(null);
-
-//     // Called by Login after successful Supabase sign-in
-//     const handleLogin = (supabaseUser) => {
-//         setUser(supabaseUser);
-
-//         // TODO: detect first login using Supabase auth metadata
-//         // Supabase provides created_at and last_sign_in_at on the user session.
-//         // If they match, it means the user is logging in for the very first time.
-//         // const isFirstLogin =
-//         //   supabaseUser.created_at === supabaseUser.last_sign_in_at;
-//         // if (isFirstLogin) {
-//         //   setPage("changePassword");
-//         // } else {
-//         //   setPage("dashboard");
-//         // }
-
-//         // TODO: after first login detection is working, also check user role here
-//         // to route HR and VPAA users to their respective dashboards instead of faculty:
-//         // const userDoc = await getDoc(doc(db, "users", supabaseUser.id));
-//         // const role = userDoc.data().role; // "Faculty" | "HR" | "VPAA"
-//         // if (role === "HR")   setPage("hrDashboard");
-//         // if (role === "VPAA") setPage("vpaaDashboard");
-//         // if (role === "Faculty") setPage("dashboard");
-
-//         // For now — always goes straight to dashboard
-//         setPage("dashboard");
-//     };
-
-//     // Called by ChangePassword after password is successfully updated
-//     const handlePasswordChanged = () => {
-//         // TODO: after password change, also update users.is_first_login = false in Supabase
-//         // so the first-login flag is cleared and they won't be redirected again
-//         // await supabase.from("users").update({ is_first_login: false }).eq("id", authUser.id);
-//         setPage("dashboard");
-//     };
-
-//     // Called by Dashboard logout button
-//     const handleLogout = () => {
-//         setUser(null);
-//         setPage("login");
-//         // TODO: connect Supabase signOut
-//         // import { supabase } from "./lib/supabase";
-//         // await supabase.auth.signOut();
-//     };
-
-//     if (page === "login") return <Login onLogin={handleLogin} />;
-//     if (page === "changePassword")
-//         return <ChangePassword user={user} onSuccess={handlePasswordChanged} />;
-//     if (page === "dashboard")
-//         return <Dashboard user={user} onLogout={handleLogout} />;
-
-//     // TODO: add HR and VPAA dashboard routes here once Team A and Team C build their portals
-//     // if (page === "hrDashboard")   return <HRDashboard user={user} onLogout={handleLogout} />;
-//     // if (page === "vpaaDashboard") return <VPAADashboard user={user} onLogout={handleLogout} />;
-
-//     return null;
-// }
-
-// export default App;
-
-// ==============================================================================================================
-
-// 📄 DEV ONLY — replace with the real App.jsx before pushing to GitHub
-// This file lets you preview any page for screenshots
-
-import { useState } from "react";
 import Login from "./pages/auth/Login";
 import ChangePassword from "./pages/auth/ChangePassword";
 import Dashboard from "./pages/faculty/Dashboard";
+import HrDashboard from "./pages/hr/Dashboard";
+import VpaaDashboard from "./pages/vpaa/Dashboard";
+import { useAuth } from "./context/AuthContext";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-const MOCK_USER = {
-    displayName: "David Bryan B. Candido",
-    email: "202011090@gordoncollege.edu.ph",
-};
-
-const PAGES = [
-    { key: "login", label: "Login" },
-    { key: "changePassword", label: "Change Password" },
-    { key: "dashboard", label: "Dashboard — Home" },
-    { key: "history", label: "Dashboard — History" },
-    { key: "profile", label: "Dashboard — Profile" },
-    { key: "notifications", label: "Dashboard — Notifications" },
-];
-
-const switcherStyle = {
-    position: "fixed",
-    bottom: 16,
-    left: "50%",
-    transform: "translateX(-50%)",
-    zIndex: 9999,
-    background: "#134f2c",
-    borderRadius: 12,
-    padding: "8px 12px",
-    display: "flex",
-    gap: 6,
-    flexWrap: "wrap",
-    justifyContent: "center",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-};
-const btnStyle = (active) => ({
-    padding: "5px 12px",
-    borderRadius: 8,
-    border: "none",
-    cursor: "pointer",
-    fontSize: 11,
-    fontWeight: 600,
-    fontFamily: "sans-serif",
-    background: active ? "#c9a84c" : "rgba(255,255,255,0.12)",
-    color: active ? "#134f2c" : "rgba(255,255,255,0.85)",
-    transition: "all 0.15s",
-});
+function LoadingScreen() {
+    return (
+        <div
+            style={{
+                minHeight: "100vh",
+                display: "grid",
+                placeItems: "center",
+                fontFamily: "'Source Sans 3', sans-serif",
+                background: "#f8f7f4",
+                color: "#134f2c",
+                fontWeight: 600,
+                letterSpacing: "0.4px",
+            }}
+        >
+            Loading session...
+        </div>
+    );
+}
 
 export default function App() {
-    const [page, setPage] = useState("login");
+    const {
+        user,
+        role,
+        isLoading,
+        needsPasswordChange,
+        signOut,
+        markFirstLoginComplete,
+    } = useAuth();
 
-    const renderPage = () => {
-        if (page === "login")
-            return <Login onLogin={() => setPage("dashboard")} />;
-        if (page === "changePassword")
-            return (
-                <ChangePassword
-                    user={MOCK_USER}
-                    onSuccess={() => setPage("dashboard")}
-                />
-            );
+    const portalUser = user
+        ? {
+              ...user,
+              displayName:
+                  user.user_metadata?.full_name ||
+                  user.user_metadata?.display_name ||
+                  user.email?.split("@")[0] ||
+                  "Faculty Member",
+          }
+        : null;
 
-        // Dashboard tabs
-        const tabMap = {
-            dashboard: "home",
-            history: "history",
-            profile: "profile",
-            notifications: "notifications",
-        };
+    if (isLoading) return <LoadingScreen />;
+    if (!user) return <Login />;
+
+    if (needsPasswordChange) {
         return (
-            <Dashboard
-                user={MOCK_USER}
-                onLogout={() => setPage("login")}
-                _devInitialTab={tabMap[page] || "home"}
+            <ChangePassword
+                user={portalUser}
+                onSuccess={markFirstLoginComplete}
             />
         );
-    };
+    }
+
+    const homePath =
+        role === "HR" ? "/hr" : role === "VPAA" ? "/vpaa" : "/faculty";
 
     return (
-        <>
-            {renderPage()}
-
-            {/* Dev page switcher — remove before pushing */}
-            <div style={switcherStyle}>
-                {PAGES.map((p) => (
-                    <button
-                        key={p.key}
-                        style={btnStyle(page === p.key)}
-                        onClick={() => setPage(p.key)}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </>
+        <Routes>
+            <Route
+                path="/faculty/*"
+                element={
+                    role === "Faculty" ? (
+                        <Dashboard
+                            user={portalUser}
+                            onLogout={() => {
+                                void signOut();
+                            }}
+                        />
+                    ) : (
+                        <Navigate to={homePath} replace />
+                    )
+                }
+            />
+            <Route
+                path="/hr/*"
+                element={
+                    role === "HR" ? (
+                        <HrDashboard
+                            user={portalUser}
+                            onLogout={() => {
+                                void signOut();
+                            }}
+                        />
+                    ) : (
+                        <Navigate to={homePath} replace />
+                    )
+                }
+            />
+            <Route
+                path="/vpaa/*"
+                element={
+                    role === "VPAA" ? (
+                        <VpaaDashboard
+                            user={portalUser}
+                            onLogout={() => {
+                                void signOut();
+                            }}
+                        />
+                    ) : (
+                        <Navigate to={homePath} replace />
+                    )
+                }
+            />
+            <Route path="*" element={<Navigate to={homePath} replace />} />
+        </Routes>
     );
 }

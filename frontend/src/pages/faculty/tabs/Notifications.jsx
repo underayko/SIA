@@ -152,7 +152,7 @@ const TABS = ["all", "unread", "system", "hr"];
 const TAB_LABELS = { all: "All", unread: "Unread", system: "System", hr: "HR / VPAA" };
 
 // ─── Main Export ──────────────────────────────────────────────
-export default function Notifications({ user, notifications }) {
+export default function Notifications({ notifications }) {
     const [notifs, setNotifs] = useState(notifications || MOCK_NOTIFS);
     const [activeTab, setActiveTab] = useState("all");
 

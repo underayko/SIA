@@ -1,3 +1,4 @@
+
 // 📄 SIA/frontend/src/pages/faculty/tabs/Home.jsx
 //
 // ── SUBMISSION MODEL ─────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@
 // • Score breakdown removed (HR-only), Ranking Summary added.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     Send,
     FileText,
@@ -31,12 +32,12 @@ import {
     RefreshCw,
     Paperclip,
     CheckCircle,
+    X,
     School,
     Star,
     Building2,
     ArrowRight,
     Upload,
-    X,
     Calendar,
     Megaphone,
     TrendingUp,
@@ -44,24 +45,18 @@ import {
     Info,
     Lock,
 } from "lucide-react";
+import { supabase } from "../../../lib/supabase";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AREAS DATA
 // Each `part` = one template download + one file upload + one submit button
 // `what` bullets = the scoring rubric criteria for that Part (sub-items)
-//
-// TODO (backend):
-//   areas collection      — area and part definitions
-//   areasubmissions       — filter: cycle_id, user_id; keyed by part.id
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // SUBMISSION WINDOW FLAG
-// TODO (backend): fetch from Supabase — rankingcycles table row for current cycle
-//   const { data } = await supabase.from("rankingcycles").select("submission_open").eq("id", currentCycleId).single();
-//   const submissionOpen = data.submission_open; // boolean
-//   This flag is toggled by HR (open) and auto-closed at deadline or manually closed.
+// Default fallback used until ranking cycle data is hydrated from Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_SUBMISSION_OPEN = false; // TODO: replace with Supabase value above
+const MOCK_SUBMISSION_OPEN = false;
 
 const AREAS_DATA = [
     // ── AREA I ─────────────────────────────────────────────────────────────────
@@ -224,7 +219,6 @@ const AREAS_DATA = [
     // REVISED: Parts A/B/C/D are now GROUP HEADERS (isGroup: true).
     // Each first-level numbered item (A.1, A.2, A.3...) is a separate submission.
     // Sub-criteria (A.1.1, A.1.2...) are rubric bullets inside each subpart.
-    // TODO (backend): areasubmissions keyed by subpart.id (e.g. "II-A-1", "II-A-2")
     {
         id: "II",
         name: "Research and Publications",
@@ -845,6 +839,8 @@ const AREAS_DATA = [
     },
 ];
 
+const DEFAULT_AREAS_DATA = withAreaIds(AREAS_DATA);
+
 // ── Helpers ──
 
 // Flattens an area's parts: if a part is a group header (isGroup), returns its
@@ -904,6 +900,559 @@ const ACTIVITY_LOG = [
         meta: "Feb 1, 2026 · Deadline: March 15, 2026",
     },
 ];
+
+const DEFAULT_CYCLE_LABEL = "1st Semester AY 2026–2027";
+const DEFAULT_DEADLINE_LABEL = "March 15, 2026";
+const TEMPLATE_BUCKET =
+    import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "templates";
+const SUBMISSIONS_BUCKET =
+    import.meta.env.VITE_SUPABASE_SUBMISSIONS_BUCKET || "submissions";
+const TOAST_TTL_MS = 3200;
+const AREA_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_AREA_TABLE_CANDIDATES ||
+    "areas,ranking_areas,area_definitions"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const AREA_PART_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_AREA_PART_TABLE_CANDIDATES ||
+    "areaparts,area_parts,ranking_parts,area_criteria"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+function getFirstValue(source, keys, fallback = null) {
+    if (!source) return fallback;
+    for (const key of keys) {
+        const value = source[key];
+        if (value !== undefined && value !== null && value !== "") {
+            return value;
+        }
+    }
+    return fallback;
+}
+
+function isColumnOrTableError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    return (
+        message.includes("does not exist") ||
+        message.includes("column") ||
+        message.includes("relation")
+    );
+}
+
+function toBoolean(value, fallback = false) {
+    if (typeof value === "boolean") return value;
+    if (value === 1 || value === "1") return true;
+    if (value === 0 || value === "0") return false;
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (["true", "t", "yes", "y", "open"].includes(normalized)) {
+            return true;
+        }
+        if (["false", "f", "no", "n", "closed"].includes(normalized)) {
+            return false;
+        }
+    }
+    return fallback;
+}
+
+function formatLongDate(value, fallback) {
+    if (!value) return fallback;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback;
+
+    return date.toLocaleDateString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function formatDateTime(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+
+    return date.toLocaleString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function toDaysLeft(deadlineValue, fallback = 15) {
+    if (!deadlineValue) return fallback;
+    const date = new Date(deadlineValue);
+    if (Number.isNaN(date.getTime())) return fallback;
+
+    const diffMs = date.getTime() - Date.now();
+    return Math.max(0, Math.ceil(diffMs / 86400000));
+}
+
+function normalizeSubmissionStatus(row) {
+    const statusRaw = String(
+        getFirstValue(row, ["status", "submission_status", "state"], ""),
+    )
+        .trim()
+        .toLowerCase();
+
+    if (statusRaw.includes("submit")) return "submitted";
+    if (statusRaw.includes("draft") || statusRaw.includes("pending")) {
+        return "draft";
+    }
+
+    const submittedAt = getFirstValue(row, [
+        "submitted_at",
+        "submittedAt",
+        "date_submitted",
+    ]);
+    if (submittedAt) return "submitted";
+
+    const fileName = getFirstValue(row, [
+        "file_name",
+        "filename",
+        "name",
+        "original_file_name",
+    ]);
+    const fileUrl = getFirstValue(row, ["file_url", "url", "path"]);
+    if (fileName || fileUrl) return "draft";
+
+    return "empty";
+}
+
+function parseTimestamp(row) {
+    const raw = getFirstValue(row, [
+        "updated_at",
+        "submitted_at",
+        "uploaded_at",
+        "created_at",
+    ]);
+    if (!raw) return 0;
+    const time = new Date(raw).getTime();
+    return Number.isFinite(time) ? time : 0;
+}
+
+function stripUndefined(obj) {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([, value]) => value !== undefined),
+    );
+}
+
+function inferAreaIdFromPartId(partId) {
+    if (!partId) return null;
+    return String(partId).split("-")[0] || null;
+}
+
+function resolvePartAreaId(part) {
+    return part?.areaId || inferAreaIdFromPartId(part?.id);
+}
+
+function sanitizeFileName(fileName) {
+    return String(fileName || "document")
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9._-]/g, "")
+        .slice(0, 120);
+}
+
+function buildTemplatePathForPart(part) {
+    const areaId = resolvePartAreaId(part);
+    if (!areaId || !part?.id) return null;
+    return `area_${areaId}/${part.id}_template.xlsx`;
+}
+
+function normalizeWhatList(raw) {
+    if (Array.isArray(raw)) {
+        return raw
+            .map((item) => String(item || "").trim())
+            .filter(Boolean);
+    }
+
+    if (typeof raw === "string") {
+        return raw
+            .split(/\r?\n|\|\|/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+}
+
+function toSortOrder(row, fallback = 0) {
+    const value = Number(
+        getFirstValue(row, [
+            "sort_order",
+            "display_order",
+            "sequence",
+            "order",
+            "position",
+            "idx",
+        ]),
+    );
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function makePartFromRow(row, areaId) {
+    const id = String(
+        getFirstValue(row, ["part_id", "subpart_id", "code", "id"], ""),
+    ).trim();
+    if (!id) return null;
+
+    const label = String(
+        getFirstValue(row, ["label", "name", "title", "part_label"], id),
+    );
+    const pts = String(
+        getFirstValue(row, ["pts", "points", "score", "max_points"], ""),
+    );
+    const what = normalizeWhatList(
+        getFirstValue(row, [
+            "what",
+            "rubric",
+            "criteria",
+            "requirements",
+            "description_lines",
+        ]),
+    );
+
+    return {
+        id,
+        label,
+        pts,
+        what,
+        auto: toBoolean(getFirstValue(row, ["auto", "is_auto"]), false),
+        isGroup: toBoolean(
+            getFirstValue(row, ["is_group", "group", "is_header"]),
+            false,
+        ),
+        areaId,
+        status: "empty",
+        file: null,
+        date: null,
+        _parentId: getFirstValue(row, [
+            "parent_part_id",
+            "parent_id",
+            "group_part_id",
+            "group_id",
+        ]),
+        _sortOrder: toSortOrder(row, 0),
+    };
+}
+
+function stripPartMeta(part) {
+    const { _parentId, _sortOrder, ...clean } = part;
+    return clean;
+}
+
+function withAreaIds(areas) {
+    return areas.map((area) => ({
+        ...area,
+        parts: area.parts.map((part) => {
+            if (part.isGroup) {
+                return {
+                    ...part,
+                    areaId: part.areaId || area.id,
+                    subparts: (part.subparts || []).map((subpart) => ({
+                        ...subpart,
+                        areaId: subpart.areaId || area.id,
+                    })),
+                };
+            }
+
+            return {
+                ...part,
+                areaId: part.areaId || area.id,
+            };
+        }),
+    }));
+}
+
+async function queryAllByTableCandidates(candidates) {
+    for (const table of candidates) {
+        const ordered = await supabase
+            .from(table)
+            .select("*")
+            .order("sort_order", { ascending: true });
+        if (!ordered.error && Array.isArray(ordered.data)) {
+            return ordered.data;
+        }
+
+        const fallback = await supabase.from(table).select("*");
+        if (!fallback.error && Array.isArray(fallback.data)) {
+            return fallback.data;
+        }
+    }
+
+    return [];
+}
+
+function buildAreasFromRows(areaRows, partRows) {
+    if (!Array.isArray(areaRows) || areaRows.length === 0) {
+        return [];
+    }
+
+    const resolved = areaRows
+        .map((row, idx) => {
+            const areaId = String(
+                getFirstValue(row, ["area_id", "code", "id", "area_code"], ""),
+            ).trim();
+            if (!areaId) return null;
+
+            const inlineParts = getFirstValue(row, ["parts", "part_definitions"]);
+            if (Array.isArray(inlineParts) && inlineParts.length > 0) {
+                const mappedInlineParts = inlineParts
+                    .map((part, partIdx) => {
+                        const mapped = makePartFromRow(part, areaId);
+                        if (!mapped) return null;
+                        return { ...mapped, _sortOrder: toSortOrder(part, partIdx) };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a._sortOrder - b._sortOrder)
+                    .map((part) => stripPartMeta(part));
+
+                return {
+                    id: areaId,
+                    name: String(
+                        getFirstValue(row, ["name", "title", "area_name"], `Area ${areaId}`),
+                    ),
+                    maxPts: Number(
+                        getFirstValue(row, ["max_points", "max_pts", "maxPts"], 0),
+                    ),
+                    note: String(getFirstValue(row, ["note", "description"], "")),
+                    parts: mappedInlineParts,
+                    _sortOrder: toSortOrder(row, idx),
+                };
+            }
+
+            const ownRows = (Array.isArray(partRows) ? partRows : []).filter((partRow) => {
+                const partAreaId = String(
+                    getFirstValue(partRow, ["area_id", "area", "area_code", "parent_area_id"], ""),
+                ).trim();
+                return partAreaId && partAreaId === areaId;
+            });
+
+            const mappedParts = ownRows
+                .map((partRow, partIdx) => {
+                    const mapped = makePartFromRow(partRow, areaId);
+                    if (!mapped) return null;
+                    return { ...mapped, _sortOrder: toSortOrder(partRow, partIdx) };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a._sortOrder - b._sortOrder);
+
+            const byId = new Map(mappedParts.map((part) => [part.id, part]));
+            const topLevel = [];
+            for (const part of mappedParts) {
+                const parentId = part._parentId ? String(part._parentId) : "";
+                if (parentId && byId.has(parentId)) {
+                    const parent = byId.get(parentId);
+                    parent.isGroup = true;
+                    parent.subparts = parent.subparts || [];
+                    parent.subparts.push(stripPartMeta(part));
+                } else {
+                    topLevel.push(part);
+                }
+            }
+
+            const cleanTopLevel = topLevel
+                .sort((a, b) => a._sortOrder - b._sortOrder)
+                .map((part) => {
+                    if (part.isGroup && Array.isArray(part.subparts)) {
+                        const sortedSubparts = part.subparts
+                            .map((subpart, subIdx) => ({
+                                ...subpart,
+                                _sortOrder: toSortOrder(subpart, subIdx),
+                            }))
+                            .sort((a, b) => a._sortOrder - b._sortOrder)
+                            .map((subpart) => stripPartMeta(subpart));
+                        return {
+                            ...stripPartMeta(part),
+                            subparts: sortedSubparts,
+                        };
+                    }
+                    return stripPartMeta(part);
+                });
+
+            return {
+                id: areaId,
+                name: String(
+                    getFirstValue(row, ["name", "title", "area_name"], `Area ${areaId}`),
+                ),
+                maxPts: Number(
+                    getFirstValue(row, ["max_points", "max_pts", "maxPts"], 0),
+                ),
+                note: String(getFirstValue(row, ["note", "description"], "")),
+                parts: cleanTopLevel,
+                _sortOrder: toSortOrder(row, idx),
+            };
+        })
+        .filter((area) => area && Array.isArray(area.parts) && area.parts.length > 0)
+        .sort((a, b) => a._sortOrder - b._sortOrder)
+        .map((area) => {
+            const clean = { ...area };
+            delete clean._sortOrder;
+            return clean;
+        });
+
+    return withAreaIds(resolved);
+}
+
+async function fetchAreaDefinitions() {
+    const areaRows = await queryAllByTableCandidates(AREA_TABLE_CANDIDATES);
+    if (areaRows.length === 0) return null;
+
+    const partRows = await queryAllByTableCandidates(AREA_PART_TABLE_CANDIDATES);
+    const built = buildAreasFromRows(areaRows, partRows);
+    return built.length > 0 ? built : null;
+}
+
+function updatePartInAreas(areas, partId, updater) {
+    return areas.map((area) => ({
+        ...area,
+        parts: area.parts.map((part) => {
+            if (part.isGroup) {
+                return {
+                    ...part,
+                    subparts: part.subparts.map((subpart) =>
+                        subpart.id === partId ? updater(subpart) : subpart,
+                    ),
+                };
+            }
+
+            return part.id === partId ? updater(part) : part;
+        }),
+    }));
+}
+
+function buildToast(id, kind, message) {
+    return { id, kind, message };
+}
+
+function mergePartWithSubmission(part, submissionRow) {
+    if (!submissionRow) return part;
+
+    const status = normalizeSubmissionStatus(submissionRow);
+    const file =
+        getFirstValue(submissionRow, [
+            "file_name",
+            "filename",
+            "name",
+            "original_file_name",
+        ]) || part.file;
+    const dateText =
+        formatDateTime(
+            getFirstValue(submissionRow, [
+                "submitted_at",
+                "updated_at",
+                "uploaded_at",
+                "created_at",
+            ]),
+        ) || part.date;
+    const fileUrl = getFirstValue(submissionRow, [
+        "file_url",
+        "download_url",
+        "url",
+    ]);
+    const storagePath = getFirstValue(submissionRow, [
+        "file_path",
+        "storage_path",
+        "path",
+        "object_path",
+    ]);
+    const submissionId = getFirstValue(submissionRow, ["id", "submission_id"]);
+
+    return {
+        ...part,
+        status: status === "empty" ? part.status : status,
+        file,
+        date: dateText,
+        fileUrl: fileUrl || part.fileUrl || null,
+        storagePath: storagePath || part.storagePath || null,
+        submissionId: submissionId || part.submissionId || null,
+    };
+}
+
+function mergeAreasWithSubmissions(areas, submissionRows) {
+    const latestByPartId = new Map();
+
+    for (const row of submissionRows) {
+        const partId = getFirstValue(row, [
+            "part_id",
+            "partId",
+            "subpart_id",
+            "subpartId",
+            "criterion_id",
+            "criterionId",
+        ]);
+        if (!partId) continue;
+
+        const key = String(partId);
+        const existing = latestByPartId.get(key);
+        if (!existing || parseTimestamp(row) >= parseTimestamp(existing)) {
+            latestByPartId.set(key, row);
+        }
+    }
+
+    return areas.map((area) => ({
+        ...area,
+        parts: area.parts.map((part) => {
+            if (part.isGroup) {
+                return {
+                    ...part,
+                    subparts: part.subparts.map((subpart) =>
+                        mergePartWithSubmission(
+                            subpart,
+                            latestByPartId.get(subpart.id),
+                        ),
+                    ),
+                };
+            }
+
+            return mergePartWithSubmission(part, latestByPartId.get(part.id));
+        }),
+    }));
+}
+
+function pickUserFilterCandidates(user) {
+    return [
+        ["user_id", user?.id],
+        ["faculty_id", user?.id],
+        ["uid", user?.id],
+        ["id", user?.id],
+        ["email", user?.email],
+        ["user_email", user?.email],
+    ].filter(([, value]) => Boolean(value));
+}
+
+async function querySingleByCandidates(table, selectClause, candidates) {
+    for (const [column, value] of candidates) {
+        const result = await supabase
+            .from(table)
+            .select(selectClause)
+            .eq(column, value)
+            .maybeSingle();
+
+        if (!result.error) return result.data;
+        if (!isColumnOrTableError(result.error)) continue;
+    }
+    return null;
+}
+
+async function queryRowsByCandidates(table, selectClause, candidates) {
+    for (const [column, value] of candidates) {
+        const result = await supabase
+            .from(table)
+            .select(selectClause)
+            .eq(column, value);
+
+        if (!result.error && Array.isArray(result.data)) return result.data;
+        if (!isColumnOrTableError(result.error)) continue;
+    }
+    return [];
+}
 
 // ── Styles ──
 const styles = `
@@ -1038,6 +1587,12 @@ const styles = `
   .hm-btn-submit:hover:not(:disabled){opacity:0.9;}
   .hm-btn-submit:disabled{background:linear-gradient(135deg,#27ae60,#2ecc71);cursor:default;box-shadow:none;}
   .hm-pc-date{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;}
+    /* TOASTS */
+    .hm-toast-wrap{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:10000;max-width:min(360px,92vw);}
+    .hm-toast{display:flex;align-items:flex-start;gap:8px;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.4;box-shadow:0 10px 22px rgba(0,0,0,0.14);border:1px solid transparent;background:#fff;}
+    .hm-toast.success{border-color:#a9dfbf;background:#eafaf1;color:#1e8449;}
+    .hm-toast.error{border-color:#f5b7b1;background:#fef2f2;color:#c0392b;}
+    .hm-toast.info{border-color:#bcd7ea;background:#eef6fc;color:#1f5f8a;}
   /* ACTIVITY LOG */
   .hm-activity-panel{background:var(--white);border-radius:14px;border:1px solid var(--border);padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.04);animation:hmFU .5s .3s ease both;}
   .hm-activity-list{display:flex;flex-direction:column;}
@@ -1079,7 +1634,18 @@ const styles = `
 // ── Part Card — renders either a group header (isGroup) or a submission slot ──
 // Group headers (Area II Parts A/B/C/D) display a title bar and nest subpart cards.
 // Submission slots are the leaf nodes that have their own upload + submit controls.
-function PartCard({ part, submissionOpen }) {
+function PartCard({
+    part,
+    submissionOpen,
+    getBusyAction,
+    onDownloadTemplate,
+    onAttachFile,
+    onReplaceFile,
+    onRemoveDraft,
+    onSubmitPart,
+    onViewFile,
+    onDownloadFile,
+}) {
     // ── GROUP HEADER BRANCH ──
     // If this part is a group (isGroup: true), render a section header and
     // map each subpart as its own PartCard submission slot.
@@ -1096,6 +1662,14 @@ function PartCard({ part, submissionOpen }) {
                             key={sp.id}
                             part={sp}
                             submissionOpen={submissionOpen}
+                            getBusyAction={getBusyAction}
+                            onDownloadTemplate={onDownloadTemplate}
+                            onAttachFile={onAttachFile}
+                            onReplaceFile={onReplaceFile}
+                            onRemoveDraft={onRemoveDraft}
+                            onSubmitPart={onSubmitPart}
+                            onViewFile={onViewFile}
+                            onDownloadFile={onDownloadFile}
                         />
                     ))}
                 </div>
@@ -1118,6 +1692,8 @@ function PartCard({ part, submissionOpen }) {
           : part.status === "draft"
             ? "Draft"
             : "Pending";
+        const partBusyAction = getBusyAction?.(part.id) || null;
+        const isBusy = Boolean(partBusyAction);
 
     return (
         <div className={`hm-pc ${sc}`}>
@@ -1164,14 +1740,16 @@ function PartCard({ part, submissionOpen }) {
                     </div>
                 ) : !submissionOpen ? (
                     /* ── CLOSED STATE ── shown when HR has not yet opened the cycle,
-                       or after the submission deadline has passed.
-                       TODO (backend): driven by rankingcycles.submission_open (boolean) */
+                       or after the submission deadline has passed. */
                     <>
                         {/* Still allow template download and viewing submitted files when closed */}
                         <div className="hm-pc-controls">
-                            {/* TODO: fetch template URL from Supabase Storage
-                                path: templates/area_{areaId}/{partId}_template.xlsx */}
-                            <button className="hm-btn-template">
+                            <button
+                                type="button"
+                                className="hm-btn-template"
+                                onClick={() => onDownloadTemplate(part)}
+                                disabled={isBusy}
+                            >
                                 <Download size={12} /> Download Template
                             </button>
 
@@ -1184,14 +1762,20 @@ function PartCard({ part, submissionOpen }) {
                                         {part.file}
                                     </span>
                                     <button
+                                        type="button"
                                         className="hm-fab hm-fab-view"
                                         title="View"
+                                        onClick={() => onViewFile(part)}
+                                        disabled={isBusy}
                                     >
                                         <Eye size={11} />
                                     </button>
                                     <button
+                                        type="button"
                                         className="hm-fab hm-fab-dl"
                                         title="Download"
+                                        onClick={() => onDownloadFile(part)}
+                                        disabled={isBusy}
                                     >
                                         <Download size={11} />
                                     </button>
@@ -1200,6 +1784,7 @@ function PartCard({ part, submissionOpen }) {
 
                             {/* Locked submit — disabled with lock icon */}
                             <button
+                                type="button"
                                 className="hm-btn-submit"
                                 disabled
                                 style={{ opacity: 0.45, cursor: "not-allowed" }}
@@ -1243,9 +1828,12 @@ function PartCard({ part, submissionOpen }) {
                         {/* Controls: Template + File + Submit */}
                         <div className="hm-pc-controls">
                             {/* Template download for this Part */}
-                            {/* TODO: fetch template URL from Supabase Storage
-                                path: templates/area_{areaId}/{partId}_template.xlsx */}
-                            <button className="hm-btn-template">
+                            <button
+                                type="button"
+                                className="hm-btn-template"
+                                onClick={() => onDownloadTemplate(part)}
+                                disabled={isBusy}
+                            >
                                 <Download size={12} /> Download Template
                             </button>
 
@@ -1259,21 +1847,30 @@ function PartCard({ part, submissionOpen }) {
                                             {part.file}
                                         </span>
                                         <button
+                                            type="button"
                                             className="hm-fab hm-fab-view"
                                             title="View"
+                                            onClick={() => onViewFile(part)}
+                                            disabled={isBusy}
                                         >
                                             <Eye size={11} />
                                         </button>
                                         <button
+                                            type="button"
                                             className="hm-fab hm-fab-dl"
                                             title="Download"
+                                            onClick={() => onDownloadFile(part)}
+                                            disabled={isBusy}
                                         >
                                             <Download size={11} />
                                         </button>
                                         {part.status === "draft" && (
                                             <button
+                                                type="button"
                                                 className="hm-fab hm-fab-del"
-                                                title="Remove"
+                                                title="Remove draft"
+                                                onClick={() => onRemoveDraft(part)}
+                                                disabled={isBusy}
                                             >
                                                 <X size={11} />
                                             </button>
@@ -1281,39 +1878,48 @@ function PartCard({ part, submissionOpen }) {
                                     </div>
                                     {/* Replace button for submitted files */}
                                     {part.status === "submitted" && (
-                                        /* TODO: replace — upload new file to Supabase Storage,
-                                           update areasubmissions row: file_url, file_name, updated_at */
-                                        <button className="hm-btn-replace">
+                                        <button
+                                            type="button"
+                                            className="hm-btn-replace"
+                                            onClick={() => onReplaceFile(part)}
+                                            disabled={isBusy}
+                                        >
                                             <RefreshCw size={11} /> Replace
                                         </button>
                                     )}
                                 </>
                             ) : (
-                                /* TODO: attach file — open file picker → upload to Supabase Storage
-                                   path: submissions/{cycleId}/{userId}/area_{areaId}/{partId}/{filename}
-                                   create/update areasubmissions row: { cycle_id, user_id, area_id,
-                                     part_id, file_url, file_name, status:"draft",
-                                     uploaded_at: now() } */
-                                <button className="hm-btn-attach">
+                                <button
+                                    type="button"
+                                    className="hm-btn-attach"
+                                    onClick={() => onAttachFile(part)}
+                                    disabled={isBusy}
+                                >
                                     <Paperclip size={12} /> Attach File
                                 </button>
                             )}
 
                             {/* Submit button */}
                             {part.status === "submitted" ? (
-                                <button className="hm-btn-submit" disabled>
+                                <button
+                                    type="button"
+                                    className="hm-btn-submit"
+                                    disabled
+                                >
                                     <CheckCircle size={12} /> Submitted
                                 </button>
-                            ) : part.status === "draft" ? (
-                                /* TODO: submit — update areasubmissions doc:
-                                   status = "submitted", submitted_at = serverTimestamp()
-                                   write to applicationlogs: { cycle_id, user_id, area_id,
-                                     part_id, action:"submitted", file_name, timestamp } */
-                                <button className="hm-btn-submit">
+                                                        ) : part.status === "draft" ? (
+                                <button
+                                    type="button"
+                                    className="hm-btn-submit"
+                                    onClick={() => onSubmitPart(part)}
+                                    disabled={isBusy}
+                                >
                                     <Send size={12} /> Submit Part
                                 </button>
                             ) : (
                                 <button
+                                    type="button"
                                     className="hm-btn-submit"
                                     disabled
                                     style={{
@@ -1408,11 +2014,689 @@ function AreaListCard({ area, onClick }) {
 
 // ── Main Export ──
 export default function Home({ user }) {
+    const userId = user?.id || null;
+    const userEmail = user?.email || null;
+
     const [view, setView] = useState("list");
     const [openAreaId, setOpenAreaId] = useState(null);
 
-    // TODO: replace with Supabase fetch — see MOCK_SUBMISSION_OPEN comment above
-    const submissionOpen = MOCK_SUBMISSION_OPEN;
+    const [areasData, setAreasData] = useState(DEFAULT_AREAS_DATA);
+    const [submissionOpen, setSubmissionOpen] = useState(MOCK_SUBMISSION_OPEN);
+    const [cycleInfo, setCycleInfo] = useState({
+        id: null,
+        label: DEFAULT_CYCLE_LABEL,
+        deadlineLabel: DEFAULT_DEADLINE_LABEL,
+        daysLeft: 15,
+    });
+    const [profileInfo, setProfileInfo] = useState({
+        currentRank: "Instructor I",
+        department: "Department of Computer Studies",
+    });
+    const [applicationInfo, setApplicationInfo] = useState({
+        id: null,
+        targetRank: "Instructor II",
+        status: "Draft",
+        minimumScore: 200,
+        lastScore: 86,
+        lastCycleLabel: "2nd Sem AY 2025–2026",
+        lastCycleResult: "Rank Retained",
+    });
+    const [isSubmittingApplication, setIsSubmittingApplication] =
+        useState(false);
+    const [partActionMap, setPartActionMap] = useState({});
+    const [toasts, setToasts] = useState([]);
+
+    const setPartAction = (partId, action) => {
+        setPartActionMap((prev) => {
+            const next = { ...prev };
+            if (!action) {
+                delete next[partId];
+            } else {
+                next[partId] = action;
+            }
+            return next;
+        });
+    };
+
+    const getBusyAction = (partId) => partActionMap[partId] || null;
+
+    const pushToast = (kind, message) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setToasts((prev) => [...prev, buildToast(id, kind, message)]);
+        window.setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        }, TOAST_TTL_MS);
+    };
+
+    const patchPartLocal = (partId, updater) => {
+        setAreasData((prev) => updatePartInAreas(prev, partId, updater));
+    };
+
+    const openUrl = (url, downloadName = null) => {
+        if (!url) return;
+        if (downloadName) {
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = downloadName;
+            a.target = "_blank";
+            a.rel = "noreferrer";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
+
+        window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    const getPartFileUrl = async (part) => {
+        const directUrl = part.fileUrl;
+        if (directUrl && /^https?:\/\//i.test(directUrl)) {
+            return directUrl;
+        }
+
+        if (part.storagePath) {
+            const signed = await supabase.storage
+                .from(SUBMISSIONS_BUCKET)
+                .createSignedUrl(part.storagePath, 3600);
+            if (!signed.error && signed.data?.signedUrl) {
+                return signed.data.signedUrl;
+            }
+        }
+
+        return null;
+    };
+
+    const pickSingleFile = (onFile) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".pdf,.doc,.docx,.png,.jpg,.jpeg";
+        input.style.display = "none";
+        const cleanup = () => {
+            if (document.body.contains(input)) {
+                document.body.removeChild(input);
+            }
+        };
+        input.onchange = (event) => {
+            const file = event.target?.files?.[0] || null;
+            onFile(file);
+            cleanup();
+        };
+        input.oncancel = cleanup;
+        document.body.appendChild(input);
+        input.click();
+    };
+
+    const writeSubmissionRow = async ({
+        part,
+        status,
+        fileName,
+        fileUrl,
+        storagePath,
+    }) => {
+        const nowIso = new Date().toISOString();
+        const areaId = resolvePartAreaId(part);
+        const userPairs = [
+            ["user_id", userId],
+            ["faculty_id", userId],
+            ["uid", userId],
+            ["email", userEmail],
+            ["user_email", userEmail],
+        ].filter(([, value]) => Boolean(value));
+        const cyclePairs = [
+            ["cycle_id", cycleInfo.id],
+            ["ranking_cycle_id", cycleInfo.id],
+            ["cycleId", cycleInfo.id],
+        ].filter(([, value]) => Boolean(value));
+
+        const userPair = userPairs[0] || null;
+        const cyclePair = cyclePairs[0] || null;
+
+        const basePayload = {
+            area_id: areaId,
+            part_id: part.id,
+            file_name: fileName,
+            file_url: fileUrl,
+            file_path: storagePath,
+            status,
+            updated_at: nowIso,
+            uploaded_at: nowIso,
+            submitted_at: status === "submitted" ? nowIso : undefined,
+        };
+
+        const payloadVariants = [
+            stripUndefined(basePayload),
+            stripUndefined({
+                ...basePayload,
+                ...(userPair ? { [userPair[0]]: userPair[1] } : {}),
+            }),
+            stripUndefined({
+                ...basePayload,
+                ...(userPair ? { [userPair[0]]: userPair[1] } : {}),
+                ...(cyclePair ? { [cyclePair[0]]: cyclePair[1] } : {}),
+            }),
+        ];
+
+        let saved = null;
+        if (part.submissionId) {
+            for (const payload of payloadVariants) {
+                const result = await supabase
+                    .from("areasubmissions")
+                    .update(payload)
+                    .eq("id", part.submissionId)
+                    .select("*")
+                    .maybeSingle();
+                if (!result.error) {
+                    saved = result.data;
+                    break;
+                }
+            }
+        }
+
+        if (!saved) {
+            for (const payload of payloadVariants) {
+                const result = await supabase
+                    .from("areasubmissions")
+                    .insert([payload])
+                    .select("*")
+                    .maybeSingle();
+                if (!result.error) {
+                    saved = result.data;
+                    break;
+                }
+            }
+        }
+
+        return saved;
+    };
+
+    const deleteSubmissionRow = async (part) => {
+        if (part.submissionId) {
+            const byIdResult = await supabase
+                .from("areasubmissions")
+                .delete()
+                .eq("id", part.submissionId);
+            if (!byIdResult.error) return true;
+        }
+
+        const partColumns = [
+            "part_id",
+            "partId",
+            "subpart_id",
+            "subpartId",
+            "criterion_id",
+            "criterionId",
+        ];
+        const userPairs = [
+            ["user_id", userId],
+            ["faculty_id", userId],
+            ["uid", userId],
+            ["email", userEmail],
+            ["user_email", userEmail],
+        ].filter(([, value]) => Boolean(value));
+        const cyclePairs = [
+            ["cycle_id", cycleInfo.id],
+            ["ranking_cycle_id", cycleInfo.id],
+            ["cycleId", cycleInfo.id],
+        ].filter(([, value]) => Boolean(value));
+
+        for (const partColumn of partColumns) {
+            const scopedPairs = [
+                ...userPairs.slice(0, 1),
+                ...cyclePairs.slice(0, 1),
+            ];
+
+            const attempts = [scopedPairs, userPairs.slice(0, 1), []];
+            for (const pairs of attempts) {
+                let query = supabase
+                    .from("areasubmissions")
+                    .delete()
+                    .eq(partColumn, part.id);
+                for (const [column, value] of pairs) {
+                    query = query.eq(column, value);
+                }
+
+                const result = await query;
+                if (!result.error) return true;
+                if (!isColumnOrTableError(result.error)) return false;
+            }
+        }
+
+        return false;
+    };
+
+    const uploadFileForPart = async (part, file, nextStatus) => {
+        const areaId = resolvePartAreaId(part);
+        const cycleSegment = cycleInfo.id || "current-cycle";
+        const userSegment = userId || userEmail || "anonymous";
+        const cleanName = sanitizeFileName(file.name);
+        const storagePath = `${cycleSegment}/${userSegment}/area_${areaId}/${part.id}/${Date.now()}_${cleanName}`;
+
+        const uploadResult = await supabase.storage
+            .from(SUBMISSIONS_BUCKET)
+            .upload(storagePath, file, { upsert: true });
+        if (uploadResult.error) {
+            throw uploadResult.error;
+        }
+
+        const signed = await supabase.storage
+            .from(SUBMISSIONS_BUCKET)
+            .createSignedUrl(storagePath, 3600);
+        const fileUrl = signed.data?.signedUrl || null;
+
+        const saved = await writeSubmissionRow({
+            part,
+            status: nextStatus,
+            fileName: file.name,
+            fileUrl,
+            storagePath,
+        });
+
+        const nowText = formatDateTime(new Date().toISOString()) || part.date;
+        patchPartLocal(part.id, (prev) => ({
+            ...prev,
+            status: nextStatus,
+            file: file.name,
+            date: nowText,
+            fileUrl,
+            storagePath,
+            submissionId:
+                getFirstValue(saved, ["id", "submission_id"], null) ||
+                prev.submissionId ||
+                null,
+        }));
+    };
+
+    const handleDownloadTemplate = async (part) => {
+        const templatePath = buildTemplatePathForPart(part);
+        if (!templatePath) return;
+
+        setPartAction(part.id, "template");
+        try {
+            const signed = await supabase.storage
+                .from(TEMPLATE_BUCKET)
+                .createSignedUrl(templatePath, 600);
+
+            if (signed.error || !signed.data?.signedUrl) {
+                pushToast(
+                    "error",
+                    "Template file is not available yet for this part.",
+                );
+                return;
+            }
+
+            openUrl(signed.data.signedUrl);
+            pushToast("success", "Template download is ready.");
+        } finally {
+            setPartAction(part.id, null);
+        }
+    };
+
+    const handleViewFile = async (part) => {
+        setPartAction(part.id, "view");
+        try {
+            const url = await getPartFileUrl(part);
+            if (!url) {
+                pushToast(
+                    "error",
+                    "Unable to locate the uploaded file for this part.",
+                );
+                return;
+            }
+            openUrl(url);
+        } finally {
+            setPartAction(part.id, null);
+        }
+    };
+
+    const handleDownloadFile = async (part) => {
+        setPartAction(part.id, "download");
+        try {
+            const url = await getPartFileUrl(part);
+            if (!url) {
+                pushToast(
+                    "error",
+                    "Unable to locate the uploaded file for this part.",
+                );
+                return;
+            }
+            openUrl(url, part.file || `${part.id}.pdf`);
+            pushToast("success", "File download started.");
+        } finally {
+            setPartAction(part.id, null);
+        }
+    };
+
+    const handleAttachFile = (part) => {
+        pickSingleFile(async (file) => {
+            if (!file) return;
+
+            setPartAction(part.id, "attach");
+            try {
+                await uploadFileForPart(part, file, "draft");
+                pushToast("success", "Draft file attached successfully.");
+            } catch {
+                pushToast("error", "File upload failed. Please try again.");
+            }
+            setPartAction(part.id, null);
+        });
+    };
+
+    const handleReplaceFile = (part) => {
+        pickSingleFile(async (file) => {
+            if (!file) return;
+
+            setPartAction(part.id, "replace");
+            try {
+                await uploadFileForPart(part, file, part.status || "draft");
+                pushToast("success", "File replaced successfully.");
+            } catch {
+                pushToast(
+                    "error",
+                    "File replacement failed. Please try again.",
+                );
+            }
+            setPartAction(part.id, null);
+        });
+    };
+
+    const handleRemoveDraft = async (part) => {
+        if (part.status !== "draft") return;
+
+        setPartAction(part.id, "remove");
+        try {
+            const deleted = await deleteSubmissionRow(part);
+            if (!deleted) {
+                pushToast("error", "Unable to remove draft right now.");
+                return;
+            }
+
+            if (part.storagePath) {
+                await supabase.storage
+                    .from(SUBMISSIONS_BUCKET)
+                    .remove([part.storagePath]);
+            }
+
+            patchPartLocal(part.id, (prev) => ({
+                ...prev,
+                status: "empty",
+                file: null,
+                date: null,
+                fileUrl: null,
+                storagePath: null,
+                submissionId: null,
+            }));
+            pushToast("success", "Draft removed.");
+        } catch {
+            pushToast("error", "Unable to remove draft right now.");
+        } finally {
+            setPartAction(part.id, null);
+        }
+    };
+
+    const handleSubmitPart = async (part) => {
+        if (part.status !== "draft") return;
+
+        setPartAction(part.id, "submit");
+        try {
+            const nowIso = new Date().toISOString();
+            const fileName = part.file || `${part.id}.pdf`;
+
+            const saved = await writeSubmissionRow({
+                part,
+                status: "submitted",
+                fileName,
+                fileUrl: part.fileUrl || null,
+                storagePath: part.storagePath || null,
+            });
+
+            await supabase.from("applicationlogs").insert([
+                stripUndefined({
+                    user_id: userId,
+                    cycle_id: cycleInfo.id,
+                    area_id: resolvePartAreaId(part),
+                    part_id: part.id,
+                    action: "submitted",
+                    file_name: fileName,
+                    timestamp: nowIso,
+                    created_at: nowIso,
+                }),
+            ]);
+
+            patchPartLocal(part.id, (prev) => ({
+                ...prev,
+                status: "submitted",
+                date: formatDateTime(nowIso) || prev.date,
+                submissionId:
+                    getFirstValue(saved, ["id", "submission_id"], null) ||
+                    prev.submissionId ||
+                    null,
+            }));
+            pushToast("success", "Part submitted successfully.");
+        } catch {
+            pushToast("error", "Unable to submit this part right now.");
+        } finally {
+            setPartAction(part.id, null);
+        }
+    };
+
+    useEffect(() => {
+        let isActive = true;
+
+        const hydrateHome = async () => {
+            const backendAreas = await fetchAreaDefinitions();
+            const baseAreas = backendAreas || DEFAULT_AREAS_DATA;
+
+            if (!userId && !userEmail) {
+                if (!isActive) return;
+                setAreasData(baseAreas);
+                return;
+            }
+
+            const candidates = pickUserFilterCandidates({
+                id: userId,
+                email: userEmail,
+            });
+
+            let nextSubmissionOpen = MOCK_SUBMISSION_OPEN;
+            let nextCycleInfo = {
+                id: null,
+                label: DEFAULT_CYCLE_LABEL,
+                deadlineLabel: DEFAULT_DEADLINE_LABEL,
+                daysLeft: 15,
+            };
+
+            const cycleResult = await supabase
+                .from("rankingcycles")
+                .select("*")
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (!cycleResult.error && cycleResult.data) {
+                const cycle = cycleResult.data;
+                const deadline = getFirstValue(cycle, [
+                    "deadline",
+                    "deadline_at",
+                    "submission_deadline",
+                    "end_date",
+                    "closing_date",
+                ]);
+
+                nextSubmissionOpen = toBoolean(
+                    getFirstValue(cycle, [
+                        "submission_open",
+                        "is_open",
+                        "open",
+                    ]),
+                    MOCK_SUBMISSION_OPEN,
+                );
+
+                nextCycleInfo = {
+                    id: getFirstValue(cycle, ["id", "cycle_id"], null),
+                    label: String(
+                        getFirstValue(cycle, ["cycle", "cycle_name", "name"], DEFAULT_CYCLE_LABEL),
+                    ),
+                    deadlineLabel: formatLongDate(deadline, DEFAULT_DEADLINE_LABEL),
+                    daysLeft: toDaysLeft(deadline, 15),
+                };
+            }
+
+            if (!isActive) return;
+            setSubmissionOpen(nextSubmissionOpen);
+            setCycleInfo(nextCycleInfo);
+
+            const profileRow = await querySingleByCandidates(
+                "users",
+                "*",
+                candidates,
+            );
+            if (profileRow && isActive) {
+                setProfileInfo({
+                    currentRank: String(
+                        getFirstValue(
+                            profileRow,
+                            [
+                                "current_rank",
+                                "rank",
+                                "position_rank",
+                                "faculty_rank",
+                            ],
+                            "Instructor I",
+                        ),
+                    ),
+                    department: String(
+                        getFirstValue(
+                            profileRow,
+                            [
+                                "department",
+                                "department_name",
+                                "dept",
+                                "college_department",
+                            ],
+                            "Department of Computer Studies",
+                        ),
+                    ),
+                });
+            }
+
+            let applicationRow = await querySingleByCandidates(
+                "applications",
+                "*",
+                candidates,
+            );
+
+            let positionRow = null;
+            if (applicationRow?.position_id) {
+                const positionResult = await supabase
+                    .from("positions")
+                    .select("*")
+                    .eq("id", applicationRow.position_id)
+                    .maybeSingle();
+
+                if (!positionResult.error) {
+                    positionRow = positionResult.data;
+                }
+            }
+
+            if (applicationRow && isActive) {
+                const minScore = Number(
+                    getFirstValue(
+                        applicationRow,
+                        [
+                            "minimum_score",
+                            "required_score",
+                            "score_threshold",
+                        ],
+                        getFirstValue(positionRow, ["minimum_score"], 200),
+                    ),
+                );
+                const lastScore = Number(
+                    getFirstValue(
+                        applicationRow,
+                        [
+                            "last_cycle_score",
+                            "previous_cycle_score",
+                            "score",
+                            "total_score",
+                        ],
+                        86,
+                    ),
+                );
+
+                setApplicationInfo({
+                    id: getFirstValue(applicationRow, ["id", "application_id"], null),
+                    targetRank: String(
+                        getFirstValue(
+                            applicationRow,
+                            ["target_rank", "applying_for"],
+                            getFirstValue(positionRow, ["name", "position_name", "rank", "title"], "Instructor II"),
+                        ),
+                    ),
+                    status: String(
+                        getFirstValue(
+                            applicationRow,
+                            ["status", "application_status"],
+                            "Draft",
+                        ),
+                    ),
+                    minimumScore: Number.isFinite(minScore) ? minScore : 200,
+                    lastScore: Number.isFinite(lastScore) ? lastScore : 86,
+                    lastCycleLabel: String(
+                        getFirstValue(
+                            applicationRow,
+                            [
+                                "last_cycle_label",
+                                "previous_cycle",
+                                "cycle_label",
+                            ],
+                            "2nd Sem AY 2025–2026",
+                        ),
+                    ),
+                    lastCycleResult: String(
+                        getFirstValue(
+                            applicationRow,
+                            ["last_cycle_result", "result", "result_label"],
+                            "Rank Retained",
+                        ),
+                    ),
+                });
+            }
+
+            const submissionRows = await queryRowsByCandidates(
+                "areasubmissions",
+                "*",
+                candidates,
+            );
+
+            if (!isActive) return;
+
+            const scopedRows = nextCycleInfo.id
+                ? submissionRows.filter((row) => {
+                      const cycleId = getFirstValue(row, [
+                          "cycle_id",
+                          "ranking_cycle_id",
+                          "cycleId",
+                      ]);
+                      return cycleId
+                          ? String(cycleId) === String(nextCycleInfo.id)
+                          : true;
+                  })
+                : submissionRows;
+
+            if (scopedRows.length > 0) {
+                setAreasData(mergeAreasWithSubmissions(baseAreas, scopedRows));
+            } else {
+                setAreasData(baseAreas);
+            }
+        };
+
+        void hydrateHome();
+
+        return () => {
+            isActive = false;
+        };
+    }, [userEmail, userId]);
 
     const openArea = (id) => {
         setOpenAreaId(id);
@@ -1424,26 +2708,76 @@ export default function Home({ user }) {
         setOpenAreaId(null);
     };
 
-    const currentArea = AREAS_DATA.find((a) => a.id === openAreaId);
+    const currentArea = areasData.find((a) => a.id === openAreaId);
 
-    // TODO: compute from Supabase areasubmissions instead of local mock
-    const submittable = AREAS_DATA.filter((a) => getAreaStatus(a) !== "auto");
+    const submittable = areasData.filter((a) => getAreaStatus(a) !== "auto");
     const completed = submittable.filter(
         (a) => getAreaStatus(a) === "submitted",
     ).length;
     const allDone = completed === submittable.length;
+
+    const appStatus = String(applicationInfo.status || "Draft").toLowerCase();
+    const appStatusLabel = appStatus.includes("submit")
+        ? "Submitted"
+        : appStatus.includes("review")
+          ? "Under Review"
+          : "Draft";
+    const isApplicationSubmitted = appStatus.includes("submit");
+
+    const scoreShort = Math.max(
+        applicationInfo.minimumScore - applicationInfo.lastScore,
+        0,
+    );
+    const summaryProgressPct =
+        applicationInfo.minimumScore > 0
+            ? Math.min(
+                  100,
+                  Math.round(
+                      (applicationInfo.lastScore / applicationInfo.minimumScore) *
+                          100,
+                  ),
+              )
+            : 0;
+    const submitProgressPct = useMemo(() => {
+        if (submittable.length === 0) return 0;
+        return Math.round((completed / submittable.length) * 100);
+    }, [completed, submittable.length]);
+
+    const handleSubmitApplication = async () => {
+        if (!applicationInfo.id || isApplicationSubmitted) return;
+
+        setIsSubmittingApplication(true);
+        const { error } = await supabase
+            .from("applications")
+            .update({
+                status: "Submitted",
+                submitted_at: new Date().toISOString(),
+            })
+            .eq("id", applicationInfo.id);
+
+        if (!error) {
+            setApplicationInfo((prev) => ({
+                ...prev,
+                status: "Submitted",
+            }));
+            pushToast("success", "Application submitted successfully.");
+        } else {
+            pushToast("error", "Unable to submit application right now.");
+        }
+
+        setIsSubmittingApplication(false);
+    };
 
     return (
         <>
             <style>{styles}</style>
 
             {/* ── HERO ── */}
-            {/* TODO: fetch from Supabase — rankingcycles (cycle + deadline + submission_open) · users (rank + dept) · applications (status) */}
             <div className="hm-hero">
                 <div className="hm-hero-left">
                     <div className="hm-hero-info">
                         <div className="hm-cycle-tag">
-                            1st Semester AY 2026–2027 ·{" "}
+                            {cycleInfo.label} ·{" "}
                             {submissionOpen
                                 ? "Open Cycle"
                                 : "Submissions Closed"}
@@ -1453,21 +2787,20 @@ export default function Home({ user }) {
                         </div>
                         <div className="hm-rank-flow">
                             <span className="hm-rank-chip">
-                                <School size={11} /> Instructor I
+                                <School size={11} /> {profileInfo.currentRank}
                             </span>
                             <span className="hm-rank-arrow">
                                 <ArrowRight size={13} />
                             </span>
                             <span className="hm-rank-chip target">
-                                <Star size={11} /> Instructor II
+                                <Star size={11} /> {applicationInfo.targetRank}
                             </span>
                             <span className="hm-status-pill hm-status-draft">
-                                ● Draft
+                                ● {appStatusLabel}
                             </span>
                         </div>
                         <div className="hm-dept-tag">
-                            <Building2 size={12} /> Department of Computer
-                            Studies
+                            <Building2 size={12} /> {profileInfo.department}
                         </div>
                     </div>
                 </div>
@@ -1490,7 +2823,9 @@ export default function Home({ user }) {
                                     />
                                 </svg>
                                 <div className="hm-ring-center">
-                                    <span className="hm-ring-days">15</span>
+                                    <span className="hm-ring-days">
+                                        {cycleInfo.daysLeft}
+                                    </span>
                                     <span className="hm-ring-days-label">
                                         Days Left
                                     </span>
@@ -1500,7 +2835,7 @@ export default function Home({ user }) {
                                 Submission Deadline
                             </div>
                             <div className="hm-deadline-date">
-                                March 15, 2026
+                                {cycleInfo.deadlineLabel}
                             </div>
                         </>
                     ) : (
@@ -1538,14 +2873,12 @@ export default function Home({ user }) {
             </div>
 
             {/* ── RANKING SUMMARY ── */}
-            {/* TODO: fetch — current_rank (users) · target_rank (applications → positions)
-                score threshold (positions.minimum_score) · last_cycle_score (prev applications) */}
             <div className="hm-rank-summary">
                 <div className="hm-rs-item">
                     <div className="hm-rs-label">Current Rank</div>
                     <div className="hm-rs-value">
-                        <School size={14} color="var(--gc-green)" /> Instructor
-                        I
+                        <School size={14} color="var(--gc-green)" />{" "}
+                        {profileInfo.currentRank}
                     </div>
                     <div className="hm-rs-sub">Since June 2020</div>
                 </div>
@@ -1554,22 +2887,24 @@ export default function Home({ user }) {
                     <div className="hm-rs-label">Applying For</div>
                     <div className="hm-rs-value">
                         <TrendingUp size={14} color="var(--gc-green)" />{" "}
-                        Instructor II
+                        {applicationInfo.targetRank}
                     </div>
                     <div className="hm-rs-sub">This cycle's target</div>
                 </div>
                 <div className="hm-rs-divider" />
                 <div className="hm-rs-item">
                     <div className="hm-rs-label">Score Needed</div>
-                    <div className="hm-rs-value">120 / 200 pts</div>
+                    <div className="hm-rs-value">
+                        {applicationInfo.lastScore} / {applicationInfo.minimumScore} pts
+                    </div>
                     <div className="hm-rs-bar">
                         <div
                             className="hm-rs-bar-fill"
-                            style={{ width: "43%" }}
+                            style={{ width: `${summaryProgressPct}%` }}
                         />
                     </div>
                     <div className="hm-rs-sub">
-                        Last score: 86 pts · 34 pts short
+                        Last score: {applicationInfo.lastScore} pts · {scoreShort} pts short
                     </div>
                 </div>
                 <div className="hm-rs-divider" />
@@ -1577,18 +2912,16 @@ export default function Home({ user }) {
                     <div className="hm-rs-label">Last Cycle Result</div>
                     <div className="hm-rs-value">
                         <span className="hm-rs-badge hm-rs-badge-retained">
-                            Rank Retained
+                            {applicationInfo.lastCycleResult}
                         </span>
                     </div>
                     <div className="hm-rs-sub">
-                        2nd Sem AY 2025–2026 · 86 pts
+                        {applicationInfo.lastCycleLabel} · {applicationInfo.lastScore} pts
                     </div>
                 </div>
             </div>
 
             {/* ── SUBMIT BAR ── */}
-            {/* TODO: submit — update applications row status to "Submitted" in Supabase
-                Enable only when all parts across all 9 submittable areas are submitted */}
             <div className="hm-submit-bar">
                 <div className="hm-submit-info">
                     <h4>Ready to submit your application?</h4>
@@ -1608,24 +2941,37 @@ export default function Home({ user }) {
                         <div
                             className="hm-prog-fill"
                             style={{
-                                width: `${Math.round((completed / submittable.length) * 100)}%`,
+                                width: `${submitProgressPct}%`,
                             }}
                         />
                     </div>
                 </div>
-                {/* Disabled entirely when submissions are closed — regardless of completion */}
-                {/* TODO (backend): submissionOpen driven by rankingcycles.submission_open */}
                 <button
                     className="hm-btn-submit-all"
-                    disabled={!allDone || !submissionOpen}
+                    onClick={handleSubmitApplication}
+                    disabled={
+                        !allDone ||
+                        !submissionOpen ||
+                        isSubmittingApplication ||
+                        !applicationInfo.id ||
+                        isApplicationSubmitted
+                    }
                 >
-                    {submissionOpen ? (
+                    {!submissionOpen ? (
                         <>
-                            <Upload size={14} /> Submit Application
+                            <Lock size={14} /> Submissions Closed
+                        </>
+                    ) : isSubmittingApplication ? (
+                        <>
+                            <Upload size={14} /> Submitting...
+                        </>
+                    ) : isApplicationSubmitted ? (
+                        <>
+                            <CheckCircle size={14} /> Application Submitted
                         </>
                     ) : (
                         <>
-                            <Lock size={14} /> Submissions Closed
+                            <Upload size={14} /> Submit Application
                         </>
                     )}
                 </button>
@@ -1644,10 +2990,12 @@ export default function Home({ user }) {
                                 its own template download and submission slot.
                             </div>
                         </div>
-                        <span className="hm-badge-green">10 Areas</span>
+                        <span className="hm-badge-green">
+                            {areasData.length} Areas
+                        </span>
                     </div>
                     <div className="hm-area-list">
-                        {AREAS_DATA.map((area) => (
+                        {areasData.map((area) => (
                             <AreaListCard
                                 key={area.id}
                                 area={area}
@@ -1690,6 +3038,14 @@ export default function Home({ user }) {
                                 key={part.id}
                                 part={part}
                                 submissionOpen={submissionOpen}
+                                getBusyAction={getBusyAction}
+                                onDownloadTemplate={handleDownloadTemplate}
+                                onAttachFile={handleAttachFile}
+                                onReplaceFile={handleReplaceFile}
+                                onRemoveDraft={handleRemoveDraft}
+                                onSubmitPart={handleSubmitPart}
+                                onViewFile={handleViewFile}
+                                onDownloadFile={handleDownloadFile}
                             />
                         ))}
                     </div>
@@ -1723,6 +3079,19 @@ export default function Home({ user }) {
                             </div>
                         ))}
                     </div>
+                </div>
+            )}
+
+            {toasts.length > 0 && (
+                <div className="hm-toast-wrap" role="status" aria-live="polite">
+                    {toasts.map((toast) => (
+                        <div
+                            key={toast.id}
+                            className={`hm-toast ${toast.kind || "info"}`}
+                        >
+                            {toast.message}
+                        </div>
+                    ))}
                 </div>
             )}
         </>

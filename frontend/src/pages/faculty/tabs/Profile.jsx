@@ -9,7 +9,7 @@
 // • Added last-cycle performance rating chip in the hero (read-only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     User,
     Building2,
@@ -35,6 +35,7 @@ import {
     Upload,
     Shield,
 } from "lucide-react";
+import { supabase } from "../../../lib/supabase";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
@@ -281,6 +282,30 @@ const styles = `
   .pf-notice-pending { background:var(--pending-pale); border:1px solid rgba(211,84,0,0.2); color:var(--pending); }
   .pf-notice strong  { color:var(--gc-green-dark); }
 
+    /* ── TOASTS ── */
+    .pf-toast-wrap {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 10000;
+        max-width: min(360px, 92vw);
+    }
+    .pf-toast {
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.4;
+        box-shadow: 0 10px 22px rgba(0,0,0,0.14);
+        border: 1px solid transparent;
+        background: #fff;
+    }
+    .pf-toast.success { border-color: #a9dfbf; background: #eafaf1; color: #1e8449; }
+    .pf-toast.error { border-color: #f5b7b1; background: #fef2f2; color: #c0392b; }
+    .pf-toast.info { border-color: #bcd7ea; background: #eef6fc; color: #1f5f8a; }
+
   /* ── CHANGE PASSWORD ── */
   .pf-cp-fields { display:flex; flex-direction:column; gap:14px; margin-bottom:18px; }
   .pf-cp-field  { display:flex; flex-direction:column; gap:6px; }
@@ -326,6 +351,15 @@ const styles = `
     background:#eafaf1; border:1.5px solid #a9dfbf;
     border-radius:10px; padding:14px 16px;
   }
+    .pf-cp-error {
+        background:#fef2f2;
+        border:1px solid #f5b7b1;
+        color:#c0392b;
+        border-radius:8px;
+        padding:10px 12px;
+        font-size:12.5px;
+        margin-bottom:14px;
+    }
 
   /* ── RESPONSIVE ── */
   @media (max-width: 900px) {
@@ -354,13 +388,144 @@ const styles = `
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE EDIT WINDOW FLAG
-// TODO (backend): fetch from Supabase — rankingcycles table row for current cycle
-//   const { data } = await supabase.from("rankingcycles").select("profile_edit_open").eq("id", currentCycleId).single();
-//   const profileEditOpen = data.profile_edit_open; // boolean
-//   HR sets this independently from submission_open — faculty can only edit their
-//   profile during the window HR defines, typically at the start of a new cycle.
+// Default fallback used until ranking cycle data is hydrated from Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_PROFILE_EDIT_OPEN = false; // TODO: replace with Supabase value above
+const MOCK_PROFILE_EDIT_OPEN = false;
+const PROFILE_PICTURE_BUCKET =
+    import.meta.env.VITE_SUPABASE_PROFILE_PICTURE_BUCKET || "profile-pictures";
+const CHANGE_REQUEST_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_PROFILE_CHANGE_TABLE_CANDIDATES ||
+    "profile_change_requests,profilechangerequests,user_profile_change_requests"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const USER_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_USER_TABLE_CANDIDATES ||
+    "users,faculty_records,faculty_profiles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const CYCLE_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_CYCLE_TABLE_CANDIDATES ||
+    "rankingcycles,ranking_cycles,cycles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const AREA_SUBMISSION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_AREA_SUBMISSION_TABLE_CANDIDATES ||
+    "areasubmissions,area_submissions"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const TOAST_TTL_MS = 3200;
+
+function getFirstValue(source, keys, fallback = null) {
+    if (!source) return fallback;
+    for (const key of keys) {
+        const value = source[key];
+        if (value !== undefined && value !== null && value !== "") {
+            return value;
+        }
+    }
+    return fallback;
+}
+
+function stripUndefined(obj) {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([, value]) => value !== undefined),
+    );
+}
+
+function normalizeStatus(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function toBoolean(value, fallback = false) {
+    if (typeof value === "boolean") return value;
+    if (value === 1 || value === "1") return true;
+    if (value === 0 || value === "0") return false;
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (["true", "t", "yes", "y", "open"].includes(normalized)) return true;
+        if (["false", "f", "no", "n", "closed"].includes(normalized)) return false;
+    }
+    return fallback;
+}
+
+function formatShortDate(value, fallback = "Not available") {
+    if (!value) return fallback;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback;
+    return date.toLocaleDateString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function parseArrayOrLines(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) return parsed;
+        } catch {
+            return trimmed
+                .split(/\r?\n|\|\|/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+        }
+    }
+    return [];
+}
+
+function sanitizeFileName(fileName) {
+    return String(fileName || "image")
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9._-]/g, "")
+        .slice(0, 120);
+}
+
+async function queryRowsWithTableFromCandidates(candidates, limit = 300) {
+    for (const table of candidates) {
+        const ordered = await supabase
+            .from(table)
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(limit);
+        if (!ordered.error && Array.isArray(ordered.data)) {
+            return { table, rows: ordered.data };
+        }
+
+        const plain = await supabase.from(table).select("*").limit(limit);
+        if (!plain.error && Array.isArray(plain.data)) {
+            return { table, rows: plain.data };
+        }
+    }
+
+    return { table: null, rows: [] };
+}
+
+async function querySingleByCandidates(candidates, column, value) {
+    for (const table of candidates) {
+        const result = await supabase
+            .from(table)
+            .select("*")
+            .eq(column, value)
+            .maybeSingle();
+        if (!result.error) {
+            return { table, row: result.data };
+        }
+    }
+
+    return { table: null, row: null };
+}
 
 function getStrength(pw) {
     if (!pw) return { label: "", color: "", pct: "0%" };
@@ -445,23 +610,27 @@ function EditableField({ label, value, onSave, pending, disabled }) {
 }
 
 export default function Profile({ user }) {
-    // TODO: replace with Supabase fetch — see MOCK_PROFILE_EDIT_OPEN comment above
-    const profileEditOpen = MOCK_PROFILE_EDIT_OPEN;
-    // ── Editable field states ──
-    // TODO: fetch all initial values from Supabase — users table by authenticated user ID
+    const userId = user?.id || null;
+    const userEmail = user?.email || null;
+    const [profileEditOpen, setProfileEditOpen] = useState(MOCK_PROFILE_EDIT_OPEN);
+    const [profilePicture, setProfilePicture] = useState("");
+    const [memberSince, setMemberSince] = useState("Not available");
+    const [lastName, setLastName] = useState("Candido");
+    const [firstName, setFirstName] = useState("David Bryan");
     const [middleName, setMiddleName] = useState("B.");
     const [altEmail, setAltEmail] = useState("");
+    const [department, setDepartment] = useState("Computer Studies");
+    const [currentRank, setCurrentRank] = useState("Instructor I");
+    const [natureOfAppointment, setNatureOfAppointment] = useState("Full-time Permanent");
+    const [lastPromotionDate, setLastPromotionDate] = useState("Not available");
     const [teachingYears, setTeachingYears] = useState("6 years");
     const [industryYears, setIndustryYears] = useState("3 years");
+    const [performanceChip, setPerformanceChip] = useState("4.52 · Outstanding");
     const [avatarPending, setAvatarPending] = useState(false);
+    const [changeRequestTable, setChangeRequestTable] = useState(null);
 
-    // Pending changes — fields that have been edited but not yet approved by HR
-    // TODO: fetch from Supabase — profile_change_requests table
-    //       filter by user_id = auth.currentUser.uid and status = "pending"
     const [pendingFields, setPendingFields] = useState({});
 
-    // Education entries
-    // TODO: fetch from Supabase — users.educational_attainment column
     const [eduList, setEduList] = useState([
         {
             level: "Bachelor's",
@@ -479,8 +648,6 @@ export default function Profile({ user }) {
         },
     ]);
 
-    // Eligibility entries
-    // TODO: fetch from Supabase — users.eligibility_exams column
     const [eligList, setEligList] = useState([
         {
             text: "Civil Service Professional (CSC) — Passed 2014",
@@ -500,65 +667,437 @@ export default function Profile({ user }) {
     const [showNew, setShowNew] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [cpSuccess, setCpSuccess] = useState(false);
+    const [cpError, setCpError] = useState("");
+    const [toasts, setToasts] = useState([]);
 
     const strength = getStrength(cpNew);
     const passwordsMatch = cpNew.length > 0 && cpNew === cpConfirm;
 
+    const pushToast = (kind, message) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setToasts((prev) => [...prev, { id, kind, message }]);
+        window.setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        }, TOAST_TTL_MS);
+    };
+
+    const applyProfileFieldLocally = (field, value) => {
+        if (field === "middleName") setMiddleName(value);
+        if (field === "altEmail") setAltEmail(value);
+        if (field === "teachingYears") setTeachingYears(value);
+        if (field === "industryYears") setIndustryYears(value);
+    };
+
+    const getCurrentFieldValue = (field) => {
+        if (field === "middleName") return middleName;
+        if (field === "altEmail") return altEmail;
+        if (field === "teachingYears") return teachingYears;
+        if (field === "industryYears") return industryYears;
+        return "";
+    };
+
+    const writeChangeRequest = async ({ field, oldValue, newValue, meta }) => {
+        const nowIso = new Date().toISOString();
+        const payload = stripUndefined({
+            user_id: userId,
+            email: userEmail,
+            field,
+            old_value: oldValue,
+            new_value: newValue,
+            status: "pending",
+            requested_at: nowIso,
+            created_at: nowIso,
+            meta,
+        });
+
+        const targetTables = changeRequestTable
+            ? [changeRequestTable, ...CHANGE_REQUEST_TABLE_CANDIDATES]
+            : CHANGE_REQUEST_TABLE_CANDIDATES;
+
+        for (const table of targetTables) {
+            const result = await supabase.from(table).insert([payload]).select("id");
+            if (!result.error) {
+                setChangeRequestTable(table);
+                return result.data?.[0] || null;
+            }
+        }
+
+        return null;
+    };
+
+    useEffect(() => {
+        let isActive = true;
+
+        const hydrateProfile = async () => {
+            const cycleResult = await queryRowsWithTableFromCandidates(
+                CYCLE_TABLE_CANDIDATES,
+                1,
+            );
+            if (isActive && cycleResult.rows.length > 0) {
+                const cycle = cycleResult.rows[0];
+                setProfileEditOpen(
+                    toBoolean(
+                        getFirstValue(cycle, ["profile_edit_open", "is_profile_edit_open"], MOCK_PROFILE_EDIT_OPEN),
+                        MOCK_PROFILE_EDIT_OPEN,
+                    ),
+                );
+            }
+
+            let userRow = null;
+            if (userId) {
+                const byId = await querySingleByCandidates(USER_TABLE_CANDIDATES, "id", userId);
+                userRow = byId.row;
+            }
+            if (!userRow && userEmail) {
+                const byEmail = await querySingleByCandidates(USER_TABLE_CANDIDATES, "email", userEmail);
+                userRow = byEmail.row;
+            }
+
+            if (isActive && userRow) {
+                setLastName(String(getFirstValue(userRow, ["last_name", "lastname", "surname"], "Candido")));
+                setFirstName(String(getFirstValue(userRow, ["first_name", "firstname", "given_name"], "David Bryan")));
+                setMiddleName(String(getFirstValue(userRow, ["middle_name", "middlename"], "B.")));
+                setAltEmail(String(getFirstValue(userRow, ["personal_email", "alternate_email", "alt_email"], "")));
+                setDepartment(String(getFirstValue(userRow, ["department", "department_name", "dept"], "Computer Studies")));
+                setCurrentRank(String(getFirstValue(userRow, ["current_rank", "rank", "faculty_rank"], "Instructor I")));
+                setNatureOfAppointment(String(getFirstValue(userRow, ["nature_of_appointment", "appointment_type"], "Full-time Permanent")));
+                setLastPromotionDate(
+                    formatShortDate(
+                        getFirstValue(userRow, ["date_of_last_promotion", "last_promotion_date"]),
+                        "Not available",
+                    ),
+                );
+                setTeachingYears(String(getFirstValue(userRow, ["teaching_years", "years_teaching"], "6 years")));
+                setIndustryYears(String(getFirstValue(userRow, ["industry_years", "years_industry"], "3 years")));
+                setProfilePicture(String(getFirstValue(userRow, ["profile_picture", "avatar_url", "photo_url"], "")));
+                setMemberSince(
+                    formatShortDate(
+                        getFirstValue(userRow, ["created_at", "member_since", "date_created"]),
+                        "Not available",
+                    ),
+                );
+
+                const education = parseArrayOrLines(
+                    getFirstValue(userRow, ["educational_attainment", "education", "education_history"], []),
+                );
+                if (education.length > 0) {
+                    const mappedEducation = education
+                        .map((entry) => {
+                            if (typeof entry === "string") {
+                                return {
+                                    level: "Credential",
+                                    levelClass: "edu-bachelor",
+                                    degree: entry,
+                                    school: "",
+                                    pending: false,
+                                };
+                            }
+
+                            const level = String(getFirstValue(entry, ["level", "type"], "Credential"));
+                            return {
+                                level,
+                                levelClass:
+                                    level.toLowerCase().includes("doctor")
+                                        ? "edu-doctorate"
+                                        : level.toLowerCase().includes("master")
+                                          ? "edu-masters"
+                                          : "edu-bachelor",
+                                degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
+                                school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
+                                pending: false,
+                            };
+                        })
+                        .filter(Boolean);
+                    setEduList(mappedEducation);
+                }
+
+                const eligibility = parseArrayOrLines(
+                    getFirstValue(userRow, ["eligibility_exams", "eligibilities", "licenses"], []),
+                );
+                if (eligibility.length > 0) {
+                    setEligList(
+                        eligibility.map((entry) => ({
+                            text:
+                                typeof entry === "string"
+                                    ? entry
+                                    : String(getFirstValue(entry, ["text", "name", "title"], "Eligibility")),
+                            pending: false,
+                        })),
+                    );
+                }
+            }
+
+            const requestResult = await queryRowsWithTableFromCandidates(
+                CHANGE_REQUEST_TABLE_CANDIDATES,
+                200,
+            );
+            const requestRows = requestResult.rows.filter((row) => {
+                const status = normalizeStatus(getFirstValue(row, ["status", "request_status"], "pending"));
+                if (status !== "pending") return false;
+
+                const rowUserId = String(getFirstValue(row, ["user_id", "uid", "faculty_id"], ""));
+                const rowEmail = String(getFirstValue(row, ["email", "user_email"], ""));
+                return (userId && rowUserId && rowUserId === String(userId)) ||
+                    (userEmail && rowEmail && rowEmail === String(userEmail));
+            });
+
+            if (isActive) {
+                setChangeRequestTable(requestResult.table || null);
+
+                const nextPending = {};
+                const pendingEdu = [];
+                const pendingElig = [];
+                let hasAvatarPending = false;
+
+                for (const row of requestRows) {
+                    const field = String(getFirstValue(row, ["field", "field_name", "target_field"], ""));
+                    const newValue = getFirstValue(row, ["new_value", "value", "requested_value"], "");
+
+                    if (["middleName", "altEmail", "teachingYears", "industryYears"].includes(field)) {
+                        nextPending[field] = String(newValue || "");
+                    }
+
+                    if (field === "profile_picture") {
+                        hasAvatarPending = true;
+                    }
+
+                    if (field === "educational_attainment") {
+                        try {
+                            const parsed = JSON.parse(String(newValue));
+                            if (parsed && typeof parsed === "object") {
+                                pendingEdu.push({ ...parsed, pending: true });
+                            }
+                        } catch {
+                            pendingEdu.push({
+                                level: "Credential",
+                                levelClass: "edu-bachelor",
+                                degree: String(newValue),
+                                school: "",
+                                pending: true,
+                            });
+                        }
+                    }
+
+                    if (field === "eligibility_exams") {
+                        pendingElig.push({
+                            text: String(newValue),
+                            pending: true,
+                        });
+                    }
+                }
+
+                setPendingFields(nextPending);
+                setAvatarPending(hasAvatarPending);
+                if (pendingEdu.length > 0) {
+                    setEduList((prev) => [...prev, ...pendingEdu]);
+                }
+                if (pendingElig.length > 0) {
+                    setEligList((prev) => [...prev, ...pendingElig]);
+                }
+            }
+
+            const areaResult = await queryRowsWithTableFromCandidates(
+                AREA_SUBMISSION_TABLE_CANDIDATES,
+                300,
+            );
+            if (isActive && areaResult.rows.length > 0) {
+                const areaRows = areaResult.rows.filter((row) => {
+                    const rowUserId = String(getFirstValue(row, ["user_id", "faculty_id", "uid"], ""));
+                    const rowEmail = String(getFirstValue(row, ["email", "user_email"], ""));
+                    const areaId = String(getFirstValue(row, ["area_id", "area"], ""));
+                    const forUser =
+                        (userId && rowUserId && rowUserId === String(userId)) ||
+                        (userEmail && rowEmail && rowEmail === String(userEmail));
+                    return forUser && (areaId === "IV" || areaId === "Area IV" || areaId === "IV-auto");
+                });
+
+                if (areaRows.length > 0) {
+                    const row = areaRows[0];
+                    const score = getFirstValue(row, ["csv_total_average_rate", "rating", "score"], null);
+                    const label = getFirstValue(row, ["rating_label", "rating_text", "performance_level"], "Outstanding");
+                    if (score) {
+                        setPerformanceChip(`${score} · ${label}`);
+                    }
+                }
+            }
+        };
+
+        void hydrateProfile();
+
+        return () => {
+            isActive = false;
+        };
+    }, [userEmail, userId]);
+
     // ── Handlers ──
 
-    const handleFieldSave = (field, value) => {
-        // TODO: write to Supabase — profile_change_requests table
-        // row structure: { user_id, field, old_value, new_value, status:"pending", requested_at: now() }
-        // HR portal will show this as a pending change to review and approve or reject
+    const handleFieldSave = async (field, value) => {
+        const saved = await writeChangeRequest({
+            field,
+            oldValue: getCurrentFieldValue(field),
+            newValue: value,
+        });
+        if (!saved) {
+            pushToast("error", "Unable to submit this profile change right now.");
+            return;
+        }
+
+        applyProfileFieldLocally(field, value);
         setPendingFields((prev) => ({ ...prev, [field]: value }));
+        pushToast("success", "Change request submitted for HR verification.");
     };
 
     const handleAvatarChange = () => {
-        // TODO: open file picker → upload to Supabase Storage → save URL to profile_change_requests
-        // path: profile_pictures/{userId}/{timestamp}.jpg
-        // set users.profile_picture_pending = download URL
-        // HR approves → copy to users.profile_picture
-        setAvatarPending(true);
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/png,image/jpeg,image/jpg,image/webp";
+        input.style.display = "none";
+        input.onchange = async (event) => {
+            const file = event.target?.files?.[0];
+            if (!file) return;
+
+            const userSegment = userId || userEmail || "anonymous";
+            const storagePath = `${userSegment}/${Date.now()}_${sanitizeFileName(file.name)}`;
+            const upload = await supabase.storage
+                .from(PROFILE_PICTURE_BUCKET)
+                .upload(storagePath, file, { upsert: true });
+            if (upload.error) {
+                pushToast("error", "Profile photo upload failed.");
+                return;
+            }
+
+            const signed = await supabase.storage
+                .from(PROFILE_PICTURE_BUCKET)
+                .createSignedUrl(storagePath, 3600);
+            const imageUrl = signed.data?.signedUrl || null;
+
+            const saved = await writeChangeRequest({
+                field: "profile_picture",
+                oldValue: profilePicture,
+                newValue: imageUrl,
+                meta: stripUndefined({ storagePath }),
+            });
+            if (!saved) {
+                pushToast("error", "Unable to submit profile photo change.");
+                return;
+            }
+
+            setAvatarPending(true);
+            pushToast("success", "Profile photo change submitted for approval.");
+        };
+        document.body.appendChild(input);
+        input.click();
+        document.body.removeChild(input);
     };
 
-    const handleAddEdu = () => {
-        // TODO: open a modal to input new degree details
-        // save to profile_change_requests with field="educational_attainment"
-        // new entry shown with pending:true until HR approves
+    const handleAddEdu = async () => {
+        const level = window.prompt("Degree level (e.g., Bachelor's, Master's)", "Bachelor's");
+        if (!level) return;
+        const degree = window.prompt("Degree title", "");
+        if (!degree) return;
+        const school = window.prompt("School and year", "");
+
         const newEntry = {
-            level: "New Degree",
-            levelClass: "edu-bachelor",
-            degree: "[Degree Title]",
-            school: "[School · Year]",
+            level,
+            levelClass:
+                level.toLowerCase().includes("doctor")
+                    ? "edu-doctorate"
+                    : level.toLowerCase().includes("master")
+                      ? "edu-masters"
+                      : "edu-bachelor",
+            degree,
+            school: school || "",
             pending: true,
         };
+
+        const saved = await writeChangeRequest({
+            field: "educational_attainment",
+            oldValue: "",
+            newValue: JSON.stringify(newEntry),
+        });
+        if (!saved) {
+            pushToast("error", "Unable to add degree right now.");
+            return;
+        }
+
         setEduList((prev) => [...prev, newEntry]);
+        pushToast("success", "Degree entry submitted for HR verification.");
     };
 
-    const handleAddElig = () => {
-        // TODO: open a modal to input new eligibility/board exam
-        // save to profile_change_requests with field="eligibility_exams"
+    const handleAddElig = async () => {
+        const text = window.prompt("Eligibility or board exam", "");
+        if (!text) return;
+
         const newEntry = {
-            text: "[New Eligibility / Board Exam]",
+            text,
             pending: true,
         };
+
+        const saved = await writeChangeRequest({
+            field: "eligibility_exams",
+            oldValue: "",
+            newValue: text,
+        });
+        if (!saved) {
+            pushToast("error", "Unable to add eligibility right now.");
+            return;
+        }
+
         setEligList((prev) => [...prev, newEntry]);
+        pushToast("success", "Eligibility entry submitted for HR verification.");
     };
 
-    const handleCpSubmit = () => {
-        if (!cpCurrent || !cpNew || !cpConfirm) return;
-        if (cpNew !== cpConfirm || cpNew.length < 8) return;
-        // TODO: connect Supabase Auth
-        // use supabase.auth.signInWithPassword() or supabase.auth.updateUser()
-        // import { supabase } from "../../lib/supabase";
-        // const { data, error } = await supabase.auth.updateUser({ password: cpNew });
-        setCpSuccess(true);
-        setTimeout(() => {
-            setCpSuccess(false);
-            setCpCurrent("");
-            setCpNew("");
-            setCpConfirm("");
-        }, 4000);
+    const handleCpSubmit = async () => {
+        setCpError("");
+        if (!cpCurrent || !cpNew || !cpConfirm) {
+            setCpError("Please complete all password fields.");
+            return;
+        }
+        if (cpNew.length < 8) {
+            setCpError("New password must be at least 8 characters long.");
+            return;
+        }
+        if (cpNew !== cpConfirm) {
+            setCpError("New password and confirmation do not match.");
+            return;
+        }
+
+        try {
+            const {
+                data: { user: sessionUser },
+            } = await supabase.auth.getUser();
+
+            const accountEmail = user?.email || sessionUser?.email;
+            if (!accountEmail) {
+                throw new Error("No account email available for verification.");
+            }
+
+            const { error: verifyError } = await supabase.auth.signInWithPassword({
+                email: accountEmail,
+                password: cpCurrent,
+            });
+            if (verifyError) {
+                setCpError("Current password is incorrect.");
+                return;
+            }
+
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: cpNew,
+            });
+            if (updateError) throw updateError;
+
+            setCpSuccess(true);
+            setTimeout(() => {
+                setCpSuccess(false);
+                setCpCurrent("");
+                setCpNew("");
+                setCpConfirm("");
+            }, 4000);
+        } catch {
+            setCpError(
+                "Unable to update password right now. Please try again.",
+            );
+        }
     };
 
     const hasPendingChanges =
@@ -572,7 +1111,6 @@ export default function Profile({ user }) {
             <style>{styles}</style>
 
             {/* ── HERO ── */}
-            {/* TODO: fetch profile data from Supabase — users table row by authenticated user ID */}
             <div className="pf-hero">
                 {/* Profile picture — faculty can request change, requires HR approval */}
                 {/* Avatar click is only active when the profile edit window is open */}
@@ -582,8 +1120,11 @@ export default function Profile({ user }) {
                     style={!profileEditOpen ? { cursor: "default" } : undefined}
                 >
                     <div className="pf-hero-avatar">
-                        {/* TODO: show users.profile_picture if exists, else show default icon */}
-                        <User size={34} />
+                        {profilePicture ? (
+                            <img src={profilePicture} alt="Profile" />
+                        ) : (
+                            <User size={34} />
+                        )}
                     </div>
                     <div className="pf-avatar-overlay">
                         <Camera size={16} />
@@ -605,21 +1146,17 @@ export default function Profile({ user }) {
                     </div>
                     <div className="pf-hero-chips">
                         <span className="pf-chip">
-                            <School size={12} /> Instructor I
+                            <School size={12} /> {currentRank}
                         </span>
                         <span className="pf-chip">
-                            <Building2 size={12} /> Dept. of Computer Studies
+                            <Building2 size={12} /> {department}
                         </span>
                         <span className="pf-chip">
                             <Mail size={12} />{" "}
                             {user?.email || "202011090@gordoncollege.edu.ph"}
                         </span>
-                        {/* Performance rating chip — read-only, sourced from last published cycle */}
-                        {/* TODO: fetch from Supabase — areasubmissions table where area_id = Area IV
-                            for the most recently published cycle of this faculty member.
-                            Show csv_total_average_rate (e.g. "4.52 · Outstanding") */}
                         <span className="pf-chip gold">
-                            <Star size={12} /> 4.52 · Outstanding
+                            <Star size={12} /> {performanceChip}
                         </span>
                     </div>
                 </div>
@@ -632,13 +1169,11 @@ export default function Profile({ user }) {
                     <div className="psb-label" style={{ marginTop: 10 }}>
                         Member Since
                     </div>
-                    {/* TODO: fetch from users.created_at */}
-                    <div className="psb-sub">June 12, 2020</div>
+                    <div className="psb-sub">{memberSince}</div>
                 </div>
             </div>
 
             {/* Profile edit window closed notice */}
-            {/* TODO (backend): shown when rankingcycles.profile_edit_open = false */}
             {!profileEditOpen && (
                 <div
                     className="pf-notice"
@@ -691,11 +1226,11 @@ export default function Profile({ user }) {
                         <div className="pf-row">
                             <div className="pf-item">
                                 <div className="pf-label">Last Name</div>
-                                <div className="pf-value">Candido</div>
+                                <div className="pf-value">{lastName}</div>
                             </div>
                             <div className="pf-item">
                                 <div className="pf-label">First Name</div>
-                                <div className="pf-value">David Bryan</div>
+                                <div className="pf-value">{firstName}</div>
                             </div>
                         </div>
                         {/* Editable */}
@@ -720,7 +1255,7 @@ export default function Profile({ user }) {
                                 <div className="pf-label">
                                     <Building2 size={11} /> Department
                                 </div>
-                                <div className="pf-value">Computer Studies</div>
+                                <div className="pf-value">{department}</div>
                             </div>
                         </div>
                         {/* Editable alternate email */}
@@ -784,11 +1319,6 @@ export default function Profile({ user }) {
                         <Lock size={10} /> HR managed
                     </span>
                 </div>
-                {/* TODO: fetch from Supabase — users table fields:
-                    current_rank, nature_of_appointment, date_of_last_promotion
-                    Note: current_salary and applying_for are intentionally NOT shown here.
-                    Salary is not disclosed to faculty per system policy.
-                    Target rank (applying_for) is visible in the Dashboard only. */}
                 <div className="pf-fields">
                     <div className="pf-row">
                         <div className="pf-item">
@@ -798,19 +1328,19 @@ export default function Profile({ user }) {
                                     <Star size={10} /> Required
                                 </span>
                             </div>
-                            <div className="pf-value">Instructor I</div>
+                            <div className="pf-value">{currentRank}</div>
                         </div>
                         <div className="pf-item">
                             <div className="pf-label">
                                 Nature of Appointment
                             </div>
-                            <div className="pf-value">Full-time Permanent</div>
+                            <div className="pf-value">{natureOfAppointment}</div>
                         </div>
                         <div className="pf-item">
                             <div className="pf-label">
                                 <Calendar size={11} /> Date of Last Promotion
                             </div>
-                            <div className="pf-value">June 12, 2020</div>
+                            <div className="pf-value">{lastPromotionDate}</div>
                         </div>
                     </div>
                 </div>
@@ -831,9 +1361,6 @@ export default function Profile({ user }) {
                             <Plus size={10} /> Can add
                         </span>
                     </div>
-                    {/* TODO: fetch from Supabase — users.educational_attainment
-                        new entries go to profile_change_requests with field="educational_attainment"
-                        pending entries shown with orange badge until HR approves */}
                     <div className="pf-edu-list">
                         {eduList.map((edu, i) => (
                             <div className="pf-edu-item" key={i}>
@@ -888,8 +1415,6 @@ export default function Profile({ user }) {
                             <Plus size={10} /> Can add
                         </span>
                     </div>
-                    {/* TODO: fetch from Supabase — users.eligibility_exams
-                        new entries go to profile_change_requests with field="eligibility_exams" */}
                     <div className="pf-elig-list">
                         {eligList.map((e, i) => (
                             <div className="pf-elig-item" key={i}>
@@ -943,11 +1468,7 @@ export default function Profile({ user }) {
                         <Lock size={10} /> Read only
                     </span>
                 </div>
-                {/* TODO (backend): store a faculty's data privacy acknowledgement flag in Supabase
-                    — users.privacy_acknowledged: boolean
-                    — users.privacy_acknowledged_at: timestamp
-                    When this field is false (new users), show a prompt to accept before proceeding.
-                    This screen is read-only for now; acknowledgement logic to be implemented later. */}
+                {/* Privacy acknowledgement is displayed as read-only on this view. */}
                 <div className="pf-privacy-body">
                     <p>
                         Gordon College is committed to protecting the privacy
@@ -1036,6 +1557,7 @@ export default function Profile({ user }) {
                     </div>
                 ) : (
                     <>
+                        {cpError && <div className="pf-cp-error">{cpError}</div>}
                         <div className="pf-cp-fields">
                             <div className="pf-cp-field">
                                 <label className="pf-label">
@@ -1166,12 +1688,11 @@ export default function Profile({ user }) {
                                     setCpCurrent("");
                                     setCpNew("");
                                     setCpConfirm("");
+                                    setCpError("");
                                 }}
                             >
                                 Cancel
                             </button>
-                            {/* TODO: connect Supabase Auth — update password via supabase.auth.updateUser
-                                Password change does NOT go through profile_change_requests — it's instant via Supabase Auth */}
                             <button
                                 className="pf-cp-save"
                                 onClick={handleCpSubmit}
@@ -1182,6 +1703,19 @@ export default function Profile({ user }) {
                     </>
                 )}
             </div>
+
+            {toasts.length > 0 && (
+                <div className="pf-toast-wrap" role="status" aria-live="polite">
+                    {toasts.map((toast) => (
+                        <div
+                            key={toast.id}
+                            className={`pf-toast ${toast.kind || "info"}`}
+                        >
+                            {toast.message}
+                        </div>
+                    ))}
+                </div>
+            )}
         </>
     );
 }
