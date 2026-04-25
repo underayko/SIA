@@ -267,7 +267,7 @@ function TimelineModal({ cycle, onClose, onSaved }) {
 
       console.log('💾 Saving cycle data:', cleanedData);
       
-      if (cycle?.id) {
+      if (cycle?.cycle_id) {
         // Update cycle in Supabase
         const { error } = await supabase
           .from('ranking_cycles')
@@ -295,7 +295,7 @@ function TimelineModal({ cycle, onClose, onSaved }) {
   return (
     <div className="modal-overlay open" onClick={(e) => e.target.classList.contains('modal-overlay') && onClose()}>
       <div className="modal">
-        <h3>{cycle?.id ? 'Edit Cycle' : 'Create New Cycle'}</h3>
+        <h3>{cycle?.cycle_id ? 'Edit Cycle' : 'Create New Cycle'}</h3>
         <div className="modal-grid">
           <div className="modal-field">
             <label>Academic Year</label>
@@ -401,8 +401,10 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({ showLoader = true } = {}) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     try {
       console.log('🔄 Starting data fetch (Supabase)...');
 
@@ -429,14 +431,16 @@ export default function Dashboard() {
       setCycleHistory(history);
 
       // Faculty stats
-      const { count: facultyUsersCount, error: usersError } = await supabase
+      const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'faculty');
+        .select('user_id, role');
       if (usersError) throw usersError;
 
-      // If you do not have a separate 'faculty' table, use 'users' for both counts
-      const facultyRecordsCount = facultyUsersCount;
+      const normalized = (role) => String(role || '').trim().toLowerCase();
+      const facultyUsersCount = (usersData || []).filter((user) => {
+        const role = normalized(user.role);
+        return role === 'faculty' || role.includes('faculty');
+      }).length;
 
       // Applications for current cycle
       let pendingCount = 0;
@@ -463,7 +467,17 @@ export default function Dashboard() {
         new Date(openCycle.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) :
         'Not set';
 
-      const totalFaculty = Math.max(facultyUsersCount || 0, facultyRecordsCount || 0);
+      let totalFaculty = facultyUsersCount;
+
+      // Fallback: derive faculty count from unique faculty_id in applications when role labels are inconsistent.
+      if (totalFaculty === 0) {
+        const { data: applicationFacultyRows, error: applicationFacultyError } = await supabase
+          .from('applications')
+          .select('faculty_id');
+        if (!applicationFacultyError && applicationFacultyRows) {
+          totalFaculty = new Set(applicationFacultyRows.map((row) => row.faculty_id)).size;
+        }
+      }
 
       setStats({
         totalFaculty,
@@ -476,12 +490,31 @@ export default function Dashboard() {
       console.error('Error fetching dashboard data:', err);
       setCurrentCycle(null);
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   };
 
-  useEffect(() => { 
-    fetchData(); 
+  useEffect(() => {
+    fetchData();
+
+    const dashboardChannel = supabase
+      .channel('dashboard-live-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        fetchData({ showLoader: false });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, () => {
+        fetchData({ showLoader: false });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ranking_cycles' }, () => {
+        fetchData({ showLoader: false });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(dashboardChannel);
+    };
   }, []);
 
   const handleCycleSaved = () => {
@@ -515,7 +548,7 @@ export default function Dashboard() {
 
   const statCards = [
     {
-      iconClass: 'blue', label: 'Total Faculty', value: stats.totalFaculty.toString(),
+      iconClass: 'blue', label: 'Total Faculty', value: String(stats.totalFaculty ?? 0),
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>,
     },
     {
@@ -577,7 +610,7 @@ export default function Dashboard() {
                   No previous cycles found.
                 </p>
               ) : (
-                cycleHistory.map((cycle) => <HistoryItem key={cycle.id} cycle={cycle} />)
+                cycleHistory.map((cycle) => <HistoryItem key={cycle.cycle_id} cycle={cycle} />)
               )}
             </div>
           </div>
