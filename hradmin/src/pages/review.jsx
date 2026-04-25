@@ -43,7 +43,7 @@ function FacultyInfoCard({ facultyData, applicationData }) {
           <div className="fi-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Experience &amp; Rating</div>
           <div className="fi-field"><label>Teaching Exp.</label><span>{facultyData.teaching_experience_years || 0} years</span></div>
           <div className="fi-field"><label>Industry Exp.</label><span>{facultyData.industry_experience_years || 0} years</span></div>
-          <div className="fi-field"><label>Final Score</label><span>{applicationData.final_score || 'Not scored'}</span></div>
+          <div className="fi-field"><label>Final Score</label><span>{applicationData.display_score ?? 'Not scored'}</span></div>
           <div className="fi-field"><label>Status</label><span>{applicationData.status?.replace(/_/g, ' ') || 'N/A'}</span></div>
         </div>
         <div>
@@ -82,7 +82,9 @@ function ReviewRow({ faculty, onReview }) {
 }
 
 // ══ AREA CARD (scoring view) ══════════════════════════════════
-function AreaCard({ area }) {
+function AreaCard({ area, isExpanded, draftScore, onToggle, onDraftChange, onSave, isSaving }) {
+  const maxPoints = Number(area.max || 0);
+
   return (
     <div className="area-card">
       <div className="area-card-header">
@@ -92,66 +94,66 @@ function AreaCard({ area }) {
         </div>
         <div className="area-card-right">
           <span className="area-score">{area.score}</span>
-          <button className="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-          <button className="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button className="icon-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button className="icon-btn" type="button" onClick={() => onToggle(area.id)} aria-label={isExpanded ? 'Collapse scoring controls' : 'Expand scoring controls'}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={isExpanded ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}/></svg>
+          </button>
         </div>
       </div>
-      {area.criteria.length > 0 && (
-        <table className="criteria-table">
-          <thead><tr><th>Criteria</th><th>Max Points</th><th>Score</th></tr></thead>
-          <tbody>
-            {area.criteria.map((c, i) => (
-              <tr key={i}>
-                <td>{c.label}</td>
-                <td>{c.max}</td>
-                <td>
-                  {c.score !== '—' ? (
-                    <div className="score-input">
-                      <span className="score-val">{c.score}</span>
-                      <div className="score-arrows"><button>▲</button><button>▼</button></div>
-                    </div>
-                  ) : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      {isExpanded && (
+        <div className="score-editor">
+          <div className="score-editor-row">
+            <label htmlFor={`score-input-${area.id}`}>HR Score</label>
+            <input
+              id={`score-input-${area.id}`}
+              type="number"
+              min="0"
+              max={Number.isFinite(maxPoints) && maxPoints > 0 ? maxPoints : undefined}
+              step="0.01"
+              value={draftScore}
+              onChange={(e) => onDraftChange(area.id, e.target.value)}
+            />
+            <button
+              type="button"
+              className="save-score-btn"
+              onClick={() => onSave(area)}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save Score'}
+            </button>
+          </div>
+          <div className="score-editor-help">Allowed range: 0 to {Number.isFinite(maxPoints) ? maxPoints : 0} points</div>
+        </div>
       )}
     </div>
   );
 }
 
 // ══ AREA SCORES SUMMARY + QUALIFICATION OVERVIEW ══════════════
-function SummaryView({ onBack }) {
-  const areaScores = [
-    { label: 'AREA I: Educational Qualifications',               max: 85,  score: 50.00, pct: 59 },
-    { label: 'AREA II: Research and Publications',               max: 20,  score: 10.00, pct: 50 },
-    { label: 'AREA III: Teaching Experience and Prof. Services', max: 20,  score: 18.00, pct: 90 },
-    { label: 'AREA IV: Performance Evaluation',                  max: 10,  score: 8.00,  pct: 80 },
-    { label: 'AREA V: Training and Seminars',                    max: 20,  score: 11.00, pct: 55 },
-    { label: 'AREA VI: Expert Services Rendered',                max: 20,  score: 14.00, pct: 70 },
-    { label: 'AREA VII: Involvement in Prof. Organizations',     max: 10,  score: 8.00,  pct: 80 },
-    { label: 'AREA VIII: Awards of Distinction',                 max: 10,  score: 9.00,  pct: 90 },
-    { label: 'AREA IX: Community Outreach',                      max: 5,   score: 4.00,  pct: 80 },
-    { label: 'AREA X: Professional Examination',                 max: 10,  score: 7.00,  pct: 70 },
-  ];
-
+function SummaryView({ onBack, areaScores }) {
   return (
     <div className="summary-layout">
       {/* Left: Area Scores */}
       <div className="scores-panel">
         <div className="scores-panel-title">Area Scores</div>
-        {areaScores.map((a, i) => (
-          <div className="score-bar-item" key={i}>
-            <div className="score-bar-header">
-              <span>{a.label}</span>
-              <span className="score-bar-val">{a.score.toFixed(2)}</span>
-            </div>
-            <div className="score-bar-bg">
-              <div className="score-bar-fill" style={{ width: `${a.pct}%` }} />
-            </div>
+        {areaScores.length === 0 ? (
+          <div style={{ padding: '8px 0', color: '#6b7280', fontSize: '0.8rem' }}>
+            No scored area submissions yet.
           </div>
-        ))}
+        ) : (
+          areaScores.map((a, i) => (
+            <div className="score-bar-item" key={i}>
+              <div className="score-bar-header">
+                <span>{a.label}</span>
+                <span className="score-bar-val">{a.score.toFixed(2)}</span>
+              </div>
+              <div className="score-bar-bg">
+                <div className="score-bar-fill" style={{ width: `${a.pct}%` }} />
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Right: Qualification Overview */}
@@ -218,6 +220,9 @@ export default function Review() {
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [expandedAreaId, setExpandedAreaId] = useState(null);
+  const [draftScores, setDraftScores] = useState({});
+  const [savingAreaId, setSavingAreaId] = useState(null);
 
   // Fetch data on component mount
   useEffect(() => {
@@ -249,11 +254,39 @@ export default function Review() {
       if (areasError) throw areasError;
       setAreas(areasData || []);
 
+      // Get departments for faculty name lookup
+      const { data: departmentsData, error: departmentsError } = await supabase
+        .from('departments')
+        .select('department_id, department_name');
+      if (departmentsError) throw departmentsError;
+
+      const departmentById = new Map(
+        (departmentsData || []).map((dept) => [dept.department_id, dept.department_name])
+      );
+
       // Get applications with faculty data
       const { data: applicationsData, error: applicationsError } = await supabase
         .from('applications')
         .select('*');
       if (applicationsError) throw applicationsError;
+
+      const applicationIds = (applicationsData || []).map((app) => app.application_id);
+      let fallbackScoreByApplicationId = new Map();
+
+      // Auto-fetch score fallback by summing per-area HR points when final_score is not yet saved.
+      if (applicationIds.length > 0) {
+        const { data: allSubmissions, error: submissionsError } = await supabase
+          .from('area_submissions')
+          .select('application_id, hr_points')
+          .in('application_id', applicationIds);
+        if (submissionsError) throw submissionsError;
+
+        fallbackScoreByApplicationId = (allSubmissions || []).reduce((acc, row) => {
+          const current = acc.get(row.application_id) || 0;
+          acc.set(row.application_id, current + Number(row.hr_points || 0));
+          return acc;
+        }, new Map());
+      }
 
       const applicationsWithFaculty = [];
       for (const appData of applicationsData) {
@@ -261,15 +294,20 @@ export default function Review() {
         const { data: facultyData, error: facultyError } = await supabase
           .from('users')
           .select('*')
-          .eq('id', appData.faculty_id)
+          .eq('user_id', appData.faculty_id)
           .single();
         if (facultyError) continue;
+
+        const fallbackScore = fallbackScoreByApplicationId.get(appData.application_id);
+        const displayScore = appData.final_score ?? appData.hr_score ?? fallbackScore ?? null;
+
         applicationsWithFaculty.push({
-          id: appData.id,
+          id: appData.application_id,
           ...appData,
+          display_score: displayScore,
           faculty: {
             ...facultyData,
-            department_name: facultyData.department || 'Unknown'
+            department_name: departmentById.get(facultyData.department_id) || 'Unknown'
           }
         });
       }
@@ -288,26 +326,31 @@ export default function Review() {
   const fetchAreaSubmissions = async (applicationId) => {
     try {
       console.log('📄 Fetching area submissions for application:', applicationId);
-      
-      const submissionsQuery = query(
-        collection(db, 'areasubmissions'),
-        where('application', '==', applicationId)
-      );
-      const submissionsSnapshot = await getDocs(submissionsQuery);
-      
-      const submissions = [];
-      submissionsSnapshot.forEach((doc) => {
-        const submissionData = doc.data();
-        const area = areas.find(a => a.id === submissionData.area_id);
-        
-        submissions.push({
-          id: doc.id,
+
+      const { data: submissionsData, error: submissionsError } = await supabase
+        .from('area_submissions')
+        .select('*')
+        .eq('application_id', applicationId);
+      if (submissionsError) throw submissionsError;
+
+      const submissions = (submissionsData || []).map((submissionData) => {
+        const area = areas.find((a) => a.area_id === submissionData.area_id);
+
+        return {
+          id: submissionData.submission_id,
           ...submissionData,
-          area: area || { area_name: 'Unknown Area', max_possible_points: 0 }
-        });
+          area: area || { area_name: `Unknown Area ${submissionData.area_id}`, max_possible_points: 0 }
+        };
       });
 
       setAreaSubmissions(submissions);
+      setDraftScores(
+        submissions.reduce((acc, item) => {
+          acc[item.id] = item.hr_points ?? '';
+          return acc;
+        }, {})
+      );
+      setExpandedAreaId(null);
       console.log('✅ Fetched area submissions:', submissions.length);
     } catch (error) {
       console.error('❌ Error fetching area submissions:', error);
@@ -326,10 +369,87 @@ export default function Review() {
     setSelectedApplication(null);
     setSelectedFaculty(null);
     setAreaSubmissions([]);
+    setDraftScores({});
+    setExpandedAreaId(null);
   };
 
   const handleBackToDetail = () => {
     setView('detail');
+  };
+
+  const handleToggleArea = (areaId) => {
+    setExpandedAreaId((prev) => (prev === areaId ? null : areaId));
+  };
+
+  const handleDraftScoreChange = (submissionId, value) => {
+    setDraftScores((prev) => ({
+      ...prev,
+      [submissionId]: value
+    }));
+  };
+
+  const handleSaveAreaScore = async (area) => {
+    const parsedScore = Number.parseFloat(draftScores[area.id]);
+    const maxPoints = Number(area.max || 0);
+
+    if (!Number.isFinite(parsedScore)) {
+      alert('Please enter a valid numeric score before saving.');
+      return;
+    }
+
+    if (parsedScore < 0 || parsedScore > maxPoints) {
+      alert(`Score must be between 0 and ${maxPoints}.`);
+      return;
+    }
+
+    try {
+      setSavingAreaId(area.id);
+
+      const { error: submissionUpdateError } = await supabase
+        .from('area_submissions')
+        .update({ hr_points: parsedScore })
+        .eq('submission_id', area.id);
+      if (submissionUpdateError) throw submissionUpdateError;
+
+      const updatedSubmissions = areaSubmissions.map((submission) =>
+        submission.id === area.id ? { ...submission, hr_points: parsedScore } : submission
+      );
+      setAreaSubmissions(updatedSubmissions);
+
+      const totalScore = updatedSubmissions.reduce((sum, submission) => {
+        return sum + Number(submission.hr_points || 0);
+      }, 0);
+
+      if (selectedApplication?.id) {
+        const { error: appUpdateError } = await supabase
+          .from('applications')
+          .update({ hr_score: totalScore })
+          .eq('application_id', selectedApplication.id);
+        if (appUpdateError) throw appUpdateError;
+
+        const updatedSelectedApplication = {
+          ...selectedApplication,
+          hr_score: totalScore,
+          display_score: selectedApplication.final_score ?? totalScore
+        };
+
+        setSelectedApplication(updatedSelectedApplication);
+        setApplications((prev) =>
+          prev.map((app) =>
+            app.id === selectedApplication.id
+              ? { ...app, hr_score: totalScore, display_score: app.final_score ?? totalScore }
+              : app
+          )
+        );
+      }
+
+      alert('Score saved successfully.');
+    } catch (error) {
+      console.error('❌ Error saving score:', error);
+      alert('Failed to save score. Please try again.');
+    } finally {
+      setSavingAreaId(null);
+    }
   };
 
   // Filter applications based on search and filters
@@ -339,6 +459,7 @@ export default function Review() {
       app.faculty.name_last.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesDepartment = departmentFilter === 'all' || 
+      app.faculty.department_name === departmentFilter ||
       app.faculty.department === departmentFilter;
     
     const matchesStatus = statusFilter === 'all' ||
@@ -350,11 +471,35 @@ export default function Review() {
 
   // Convert area submissions to the format expected by AreaCard
   const submittedAreas = areaSubmissions.map(submission => ({
+    id: submission.id,
     label: `AREA ${submission.area.area_name}`,
-    max: submission.area.max_possible_points?.toString() || '0.00',
-    score: submission.hr_points?.toString() || '0.00',
+    max: Number(submission.area.max_possible_points || 0),
+    score: Number(submission.hr_points || 0).toFixed(2),
     criteria: [] // For now, we'll keep this empty since criteria would need separate implementation
   }));
+
+  const selectedDisplayScore = selectedApplication
+    ? (selectedApplication.final_score ?? selectedApplication.hr_score ?? areaSubmissions.reduce((sum, submission) => sum + Number(submission.hr_points || 0), 0))
+    : null;
+
+  const selectedApplicationForDisplay = selectedApplication
+    ? { ...selectedApplication, display_score: selectedDisplayScore }
+    : selectedApplication;
+
+  const summaryAreaScores = areaSubmissions
+    .map((submission) => {
+      const score = Number(submission.hr_points || 0);
+      const max = Number(submission.area?.max_possible_points || 0);
+      const pct = max > 0 ? Math.min(100, Math.round((score / max) * 100)) : 0;
+
+      return {
+        label: `AREA ${submission.area?.area_name || submission.area_id}`,
+        max,
+        score,
+        pct
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   if (loading) {
     return (
@@ -439,7 +584,7 @@ export default function Review() {
                         <td className="faculty-name">{application.faculty.name_last}, {application.faculty.name_first}</td>
                         <td>{application.faculty.department_name}</td>
                         <td>{application.faculty.current_rank}</td>
-                        <td>{application.final_score || 'Not scored'}</td>
+                        <td>{application.display_score ?? 'Not scored'}</td>
                         <td>
                           <span className={`badge ${
                             ['Under_VPAA_Review', 'For_Publishing', 'Published'].includes(application.status) 
@@ -499,7 +644,7 @@ export default function Review() {
                 </button>
               </div>
 
-              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplication} />
+              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplicationForDisplay} />
               <div className="submitted-label">Submitted Areas ({submittedAreas.length})</div>
 
               <div className="detail-grid">
@@ -511,7 +656,16 @@ export default function Review() {
                     </div>
                   ) : (
                     submittedAreas.map((area, i) => (
-                      <AreaCard key={i} area={area} />
+                      <AreaCard
+                        key={area.id ?? i}
+                        area={area}
+                        isExpanded={expandedAreaId === area.id}
+                        draftScore={draftScores[area.id] ?? ''}
+                        onToggle={handleToggleArea}
+                        onDraftChange={handleDraftScoreChange}
+                        onSave={handleSaveAreaScore}
+                        isSaving={savingAreaId === area.id}
+                      />
                     ))
                   )}
                   
@@ -552,9 +706,9 @@ export default function Review() {
           {/* ── SUMMARY / QUALIFICATION VIEW ── */}
           {view === 'summary' && (
             <>
-              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplication} />
+              <FacultyInfoCard facultyData={selectedFaculty} applicationData={selectedApplicationForDisplay} />
               <div className="submitted-label">Qualification Review</div>
-              <SummaryView onBack={handleBackToDetail} />
+              <SummaryView onBack={handleBackToDetail} areaScores={summaryAreaScores} />
             </>
           )}
 

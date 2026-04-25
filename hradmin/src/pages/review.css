@@ -106,6 +106,32 @@ tbody td:first-child { padding-left: 0; }
 .score-arrows { display: flex; flex-direction: column; gap: 1px; }
 .score-arrows button { background: none; border: none; cursor: pointer; padding: 0; line-height: 1; color: var(--muted); font-size: 0.55rem; }
 
+.score-editor { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.score-editor-row { display: flex; align-items: center; gap: 8px; }
+.score-editor-row label { font-size: 0.74rem; color: var(--muted); min-width: 58px; }
+.score-editor-row input {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: 'DM Sans', sans-serif;
+}
+.score-editor-row input:focus { outline: none; border-color: var(--green-mid); }
+.save-score-btn {
+  background: var(--green-btn);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+}
+.save-score-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.score-editor-help { margin-top: 6px; font-size: 0.7rem; color: var(--muted); }
+
 /* ══ AREA NAV ════════════════════════════ */
 .area-nav      { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); margin-top: 4px; }
 .btn-nav       { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 500; cursor: pointer; border: none; transition: opacity 0.15s; }
