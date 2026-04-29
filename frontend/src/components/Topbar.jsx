@@ -126,22 +126,28 @@ const styles = `
   }
 `;
 
-const NOTIF_ITEMS = [
-  {
-    icon: <AlertTriangle size={15} color="#b7950b" />,
-    iconClass: "tb-dd-gold",
-    text: <>Deadline Reminder — <strong>15 days remaining</strong></>,
-    meta: "Today, 8:00 AM · System",
-  },
-  {
-    icon: <Bell size={15} color="#2471a3" />,
-    iconClass: "tb-dd-blue",
-    text: <>Ranking Cycle Now Open — <strong>1st Sem AY 2026–2027</strong></>,
-    meta: "Feb 1, 2026 · HR Department",
-  },
-];
+function toDropdownItem(item, index) {
+  const iconColor = item.iconColor || "blue";
+  const iconClass =
+    iconColor === "gold"
+      ? "tb-dd-gold"
+      : iconColor === "green"
+        ? "tb-dd-gold"
+        : "tb-dd-blue";
 
-export default function Topbar({ title, notifCount, onMarkAllRead, onViewAllNotifs, onLogout }) {
+  return {
+    id: item.id || `item-${index}`,
+    icon: iconColor === "gold"
+      ? <AlertTriangle size={15} color="#b7950b" />
+      : <Bell size={15} color="#2471a3" />,
+    iconClass,
+    text: item.title || "Notification",
+    meta: item.meta || "System",
+    unread: Boolean(item.unread),
+  };
+}
+
+export default function Topbar({ title, notifCount, notifications, onMarkAllRead, onMarkRead, onViewAllNotifs, onLogout }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -158,6 +164,8 @@ export default function Topbar({ title, notifCount, onMarkAllRead, onViewAllNoti
   const today = new Date().toLocaleDateString("en-PH", {
     weekday: "short", year: "numeric", month: "short", day: "numeric",
   });
+
+  const dropdownItems = (Array.isArray(notifications) ? notifications : []).map(toDropdownItem);
 
   return (
     <>
@@ -189,21 +197,42 @@ export default function Topbar({ title, notifCount, onMarkAllRead, onViewAllNoti
             <div className={`tb-dropdown${dropdownOpen ? " open" : ""}`}>
               <div className="tb-dd-header">
                 <span className="tb-dd-title">Notifications</span>
-                <button className="tb-dd-mark" onClick={() => { onMarkAllRead(); setDropdownOpen(false); }}>
+                <button
+                  className="tb-dd-mark"
+                  onClick={() => { onMarkAllRead(); setDropdownOpen(false); }}
+                  disabled={notifCount <= 0}
+                >
                   ✓ Mark all as read
                 </button>
               </div>
               <div className="tb-dd-list">
-                {NOTIF_ITEMS.map((n, i) => (
-                  <div key={i} className={`tb-dd-item${notifCount > 0 ? " unread" : ""}`}>
-                    <div className={`tb-dd-icon ${n.iconClass}`}>{n.icon}</div>
-                    <div className="tb-dd-body">
-                      <div className="tb-dd-text">{n.text}</div>
-                      <div className="tb-dd-meta">{n.meta}</div>
+                {dropdownItems.length > 0 ? (
+                  dropdownItems.map((n, i) => (
+                    <div
+                      key={n.id || i}
+                      className={`tb-dd-item${n.unread ? " unread" : ""}`}
+                      onClick={() => {
+                        if (n.unread && onMarkRead) {
+                          onMarkRead(n.id);
+                        }
+                      }}
+                    >
+                      <div className={`tb-dd-icon ${n.iconClass}`}>{n.icon}</div>
+                      <div className="tb-dd-body">
+                        <div className="tb-dd-text">{n.text}</div>
+                        <div className="tb-dd-meta">{n.meta}</div>
+                      </div>
+                      {n.unread && <div className="tb-dd-dot" />}
                     </div>
-                    {notifCount > 0 && <div className="tb-dd-dot" />}
+                  ))
+                ) : (
+                  <div className="tb-dd-item">
+                    <div className="tb-dd-body">
+                      <div className="tb-dd-text">No notifications yet.</div>
+                      <div className="tb-dd-meta">Your updates will appear here.</div>
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
               <button className="tb-dd-footer" onClick={() => { setDropdownOpen(false); onViewAllNotifs(); }}>
                 View all notifications →

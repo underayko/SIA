@@ -390,7 +390,7 @@ const styles = `
 // PROFILE EDIT WINDOW FLAG
 // Default fallback used until ranking cycle data is hydrated from Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_PROFILE_EDIT_OPEN = false;
+const DEFAULT_PROFILE_EDIT_OPEN = false;
 const PROFILE_PICTURE_BUCKET =
     import.meta.env.VITE_SUPABASE_PROFILE_PICTURE_BUCKET || "profile-pictures";
 const CHANGE_REQUEST_TABLE_CANDIDATES = (
@@ -612,7 +612,7 @@ function EditableField({ label, value, onSave, pending, disabled }) {
 export default function Profile({ user }) {
     const userId = user?.id || null;
     const userEmail = user?.email || null;
-    const [profileEditOpen, setProfileEditOpen] = useState(MOCK_PROFILE_EDIT_OPEN);
+    const [profileEditOpen, setProfileEditOpen] = useState(DEFAULT_PROFILE_EDIT_OPEN);
     const [profilePicture, setProfilePicture] = useState("");
     const [memberSince, setMemberSince] = useState("Not available");
     const [lastName, setLastName] = useState("Candido");
@@ -737,8 +737,8 @@ export default function Profile({ user }) {
                 const cycle = cycleResult.rows[0];
                 setProfileEditOpen(
                     toBoolean(
-                        getFirstValue(cycle, ["profile_edit_open", "is_profile_edit_open"], MOCK_PROFILE_EDIT_OPEN),
-                        MOCK_PROFILE_EDIT_OPEN,
+                        getFirstValue(cycle, ["profile_edit_open", "is_profile_edit_open"], DEFAULT_PROFILE_EDIT_OPEN),
+                        DEFAULT_PROFILE_EDIT_OPEN,
                     ),
                 );
             }

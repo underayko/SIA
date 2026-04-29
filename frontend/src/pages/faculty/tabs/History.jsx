@@ -1,6 +1,7 @@
 // 📄 SIA/frontend/src/pages/faculty/tabs/History.jsx
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "../../../lib/supabase";
 
 // ─── Styles ──────────────────────────────────────────────────
 const css = `
@@ -120,61 +121,7 @@ const css = `
   .la-replace { background: #eaf4fb; color: #1a5276; }
 `;
 
-// ─── Mock data ────────────────────────────────────────────────
-const MOCK_CYCLES = [
-    {
-        id: 1,
-        tag: "Current Cycle",
-        title: "1st Semester AY 2026–2027",
-        meta: ["Started: Feb 1, 2026", "Deadline: March 15, 2026"],
-        status: "open",
-        statusLabel: "In Progress",
-        score: null,
-        rankFrom: "Instructor I",
-        rankTo: "Instructor II (target)",
-        retained: false,
-        isOpen: true,
-    },
-    {
-        id: 2,
-        tag: "Completed",
-        title: "2nd Semester AY 2025–2026",
-        meta: ["Started: Aug 1, 2025", "Published: Oct 10, 2025"],
-        status: "published",
-        statusLabel: "Published",
-        score: "86 / 200",
-        rankFrom: "Instructor I",
-        rankTo: "Retained (not qualified)",
-        retained: true,
-        isOpen: false,
-    },
-    {
-        id: 3,
-        tag: "Completed",
-        title: "1st Semester AY 2025–2026",
-        meta: ["Started: Feb 1, 2025", "Published: Apr 5, 2025"],
-        status: "published",
-        statusLabel: "Published",
-        score: "74 / 200",
-        rankFrom: "Instructor I",
-        rankTo: "Retained (not qualified)",
-        retained: true,
-        isOpen: false,
-    },
-];
-
-const MOCK_LOGS = [
-    { id: 1, datetime: "Feb 28, 2026 · 7:45 PM", cycle: "1st Sem AY 2026–27", action: "File Uploaded",  actionClass: "la-upload",  area: "Area VIII — Awards of Distinction (pending submission)",              by: "D. Candido" },
-    { id: 2, datetime: "Feb 28, 2026 · 5:02 PM", cycle: "1st Sem AY 2026–27", action: "File Replaced",  actionClass: "la-replace", area: "Area VII — Professional Organizations (updated before deadline)",    by: "D. Candido" },
-    { id: 3, datetime: "Feb 28, 2026 · 6:30 PM", cycle: "1st Sem AY 2026–27", action: "Submitted",      actionClass: "la-submit",  area: "Area VII — Professional Organizations",                             by: "D. Candido" },
-    { id: 4, datetime: "Feb 27, 2026 · 3:10 PM", cycle: "1st Sem AY 2026–27", action: "Submitted",      actionClass: "la-submit",  area: "Area VI — Expert Services",                                        by: "D. Candido" },
-    { id: 5, datetime: "Feb 25, 2026 · 11:20 AM",cycle: "1st Sem AY 2026–27", action: "Submitted",      actionClass: "la-submit",  area: "Areas I–V (batch submission)",                                     by: "D. Candido" },
-    { id: 6, datetime: "Oct 10, 2025 · 2:00 PM", cycle: "2nd Sem AY 2025–26", action: "Published",      actionClass: "la-publish", area: "Final Score: 86/200 · Rank retained (did not meet 120pt threshold)",by: "VPAA Office" },
-    { id: 7, datetime: "Sep 28, 2025 · 10:15 AM",cycle: "2nd Sem AY 2025–26", action: "VPAA Review",    actionClass: "la-review",  area: "Score certified · VPAA comment added",                             by: "Dr. M. Reyes (VPAA)" },
-    { id: 8, datetime: "Sep 12, 2025 · 9:00 AM", cycle: "2nd Sem AY 2025–26", action: "HR Scored",      actionClass: "la-review",  area: "All areas scored · Total: 86/200 · HR comment added",              by: "HR Department" },
-    { id: 9, datetime: "Aug 20, 2025 · 4:30 PM", cycle: "2nd Sem AY 2025–26", action: "Submitted",      actionClass: "la-submit",  area: "Full application submitted",                                       by: "D. Candido" },
-    { id:10, datetime: "Apr 5, 2025 · 2:00 PM",  cycle: "1st Sem AY 2025–26", action: "Published",      actionClass: "la-publish", area: "Final Score: 74/200 · Rank retained (did not meet 120pt threshold)",by: "VPAA Office" },
-];
+// Intentionally no mock rows here so History only shows live data.
 
 const ACTION_ICONS = {
     "File Uploaded": "📎",
@@ -186,6 +133,348 @@ const ACTION_ICONS = {
     "HR Scored":     "📋",
     "Draft Saved":   "📝",
 };
+
+const CYCLE_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_CYCLE_TABLE_CANDIDATES ||
+    "ranking_cycles,rankingcycles,cycles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+const APPLICATION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_APPLICATION_TABLE_CANDIDATES ||
+    "applications,ranking_applications,faculty_applications"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+const APPLICATION_LOG_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_APPLICATION_LOG_TABLE_CANDIDATES ||
+    "application_logs,applicationlogs,logs"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+const USER_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_USER_TABLE_CANDIDATES ||
+    "users,profiles,faculty_profiles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+function getFirstValue(source, keys, fallback = null) {
+    if (!source) return fallback;
+    for (const key of keys) {
+        const value = source[key];
+        if (value !== undefined && value !== null && value !== "") {
+            return value;
+        }
+    }
+    return fallback;
+}
+
+function isColumnOrTableError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    return (
+        message.includes("does not exist") ||
+        message.includes("column") ||
+        message.includes("relation")
+    );
+}
+
+function toTitleCase(value) {
+    const text = String(value || "").trim();
+    if (!text) return "Updated";
+    return text
+        .replace(/[_-]/g, " ")
+        .split(/\s+/)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+}
+
+function formatDateTime(value) {
+    if (!value) return "Unknown date";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown date";
+    return date.toLocaleString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function formatShortDate(value, fallback = "Unknown") {
+    if (!value) return fallback;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback;
+    return date.toLocaleDateString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function parseTimestamp(row) {
+    const raw = getFirstValue(row, [
+        "changed_at",
+        "updated_at",
+        "created_at",
+        "timestamp",
+        "published_at",
+        "submitted_at",
+    ]);
+    if (!raw) return 0;
+    const time = new Date(raw).getTime();
+    return Number.isFinite(time) ? time : 0;
+}
+
+async function queryRowsFromTableCandidates(tableCandidates, limit = 80) {
+    for (const table of tableCandidates) {
+        const ordered = await supabase
+            .from(table)
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        if (!ordered.error && Array.isArray(ordered.data)) {
+            return { table, rows: ordered.data };
+        }
+
+        const plain = await supabase.from(table).select("*").limit(limit);
+        if (!plain.error && Array.isArray(plain.data)) {
+            return { table, rows: plain.data };
+        }
+    }
+
+    return { table: null, rows: [] };
+}
+
+function buildUserFilterCandidates(user) {
+    return [
+        ["user_id", user?.id],
+        ["faculty_id", user?.id],
+        ["uid", user?.id],
+        ["id", user?.id],
+        ["email", user?.email],
+        ["user_email", user?.email],
+        ["domain_email", user?.email],
+    ].filter(([, value]) => Boolean(value));
+}
+
+async function queryRowsByUser(tableCandidates, user, limit = 120) {
+    const candidates = buildUserFilterCandidates(user);
+    if (candidates.length === 0) {
+        return { table: null, rows: [] };
+    }
+
+    for (const table of tableCandidates) {
+        for (const [column, value] of candidates) {
+            const result = await supabase
+                .from(table)
+                .select("*")
+                .eq(column, value)
+                .limit(limit);
+
+            if (!result.error && Array.isArray(result.data)) {
+                return { table, rows: result.data };
+            }
+
+            if (!isColumnOrTableError(result.error)) {
+                continue;
+            }
+        }
+    }
+
+    return { table: null, rows: [] };
+}
+
+async function querySingleByUser(tableCandidates, user) {
+    const candidates = buildUserFilterCandidates(user);
+    if (candidates.length === 0) {
+        return { table: null, row: null };
+    }
+
+    for (const table of tableCandidates) {
+        for (const [column, value] of candidates) {
+            const result = await supabase
+                .from(table)
+                .select("*")
+                .eq(column, value)
+                .maybeSingle();
+
+            if (!result.error) {
+                return { table, row: result.data || null };
+            }
+
+            if (!isColumnOrTableError(result.error)) {
+                continue;
+            }
+        }
+    }
+
+    return { table: null, row: null };
+}
+
+function mapStatusToCard(statusText, isOpen) {
+    const status = String(statusText || "").toLowerCase();
+    if (isOpen || status.includes("open")) {
+        return { status: "open", statusLabel: "In Progress", isOpen: true };
+    }
+    if (
+        status.includes("publish") ||
+        status.includes("complete") ||
+        status.includes("closed")
+    ) {
+        return { status: "published", statusLabel: "Published", isOpen: false };
+    }
+    if (status.includes("draft") || status.includes("pending")) {
+        return { status: "draft", statusLabel: "Draft", isOpen: false };
+    }
+    return { status: "closed", statusLabel: "Closed", isOpen: false };
+}
+
+function toCycleCards(cycleRows, applicationRows, currentRank) {
+    if (!Array.isArray(cycleRows) || cycleRows.length === 0) {
+        return [];
+    }
+
+    const appByCycleId = new Map();
+    for (const row of applicationRows || []) {
+        const cycleId = getFirstValue(row, ["cycle_id", "ranking_cycle_id", "cycleId"]);
+        if (!cycleId) continue;
+        const key = String(cycleId);
+        const existing = appByCycleId.get(key);
+        if (!existing || parseTimestamp(row) >= parseTimestamp(existing)) {
+            appByCycleId.set(key, row);
+        }
+    }
+
+    return cycleRows.map((cycle, index) => {
+        const cycleId = getFirstValue(cycle, ["cycle_id", "id"]);
+        const app = cycleId ? appByCycleId.get(String(cycleId)) : null;
+
+        const title = String(
+            getFirstValue(cycle, ["title", "cycle", "cycle_name", "name"], `Cycle ${index + 1}`),
+        );
+        const startDate = getFirstValue(cycle, ["start_date", "start_at", "created_at"]);
+        const deadlineDate = getFirstValue(cycle, ["deadline", "deadline_at", "submission_deadline"]);
+        const publishedAt = getFirstValue(cycle, ["published_at", "closed_at", "updated_at"]);
+        const statusBits = mapStatusToCard(
+            getFirstValue(cycle, ["status", "state"], ""),
+            Boolean(getFirstValue(cycle, ["is_open", "submission_open", "open"], false)),
+        );
+
+        const scoreValue = Number(
+            getFirstValue(app, ["final_score", "total_score", "score", "vpaa_score", "hr_score"], NaN),
+        );
+        const minimumValue = Number(
+            getFirstValue(app, ["minimum_score", "required_score", "score_threshold"], 200),
+        );
+        const hasScore = Number.isFinite(scoreValue);
+        const rankFrom = String(
+            getFirstValue(app, ["current_rank", "rank_from"], currentRank || "Current Rank"),
+        );
+        const rankTo = String(
+            getFirstValue(app, ["applying_for", "target_rank", "rank_to"], "Target Rank"),
+        );
+
+        const retained = hasScore && Number.isFinite(minimumValue)
+            ? scoreValue < minimumValue
+            : String(getFirstValue(app, ["result", "result_label", "status"], "")).toLowerCase().includes("retain");
+
+        return {
+            id: cycleId || `cycle-${index}`,
+            tag: statusBits.isOpen ? "Current Cycle" : "Completed",
+            title,
+            meta: [
+                `Started: ${formatShortDate(startDate, "Unknown")}`,
+                statusBits.isOpen
+                    ? `Deadline: ${formatShortDate(deadlineDate, "TBA")}`
+                    : `Published: ${formatShortDate(publishedAt || deadlineDate, "TBA")}`,
+            ],
+            status: statusBits.status,
+            statusLabel: statusBits.statusLabel,
+            score: hasScore ? `${scoreValue} / ${Number.isFinite(minimumValue) ? minimumValue : 200}` : null,
+            rankFrom,
+            rankTo: retained ? "Retained (not qualified)" : rankTo,
+            retained,
+            isOpen: statusBits.isOpen,
+        };
+    });
+}
+
+function mapActionClass(actionText) {
+    const action = String(actionText || "").toLowerCase();
+    if (action.includes("publish") || action.includes("approve")) return "la-publish";
+    if (action.includes("review") || action.includes("score")) return "la-review";
+    if (action.includes("upload")) return "la-upload";
+    if (action.includes("replace") || action.includes("update")) return "la-replace";
+    if (action.includes("draft") || action.includes("save")) return "la-draft";
+    return "la-submit";
+}
+
+function mapActionLabel(actionText) {
+    const raw = String(actionText || "").trim();
+    if (!raw) return "Submitted";
+    return toTitleCase(raw);
+}
+
+function toLogRows(logRows, cycleRows, fallbackBy) {
+    if (!Array.isArray(logRows) || logRows.length === 0) {
+        return [];
+    }
+
+    const cycleMap = new Map(
+        (cycleRows || []).map((cycle) => [
+            String(getFirstValue(cycle, ["cycle_id", "id"], "")),
+            String(getFirstValue(cycle, ["title", "cycle", "cycle_name", "name"], "Unknown cycle")),
+        ]),
+    );
+
+    return [...logRows]
+        .sort((a, b) => parseTimestamp(b) - parseTimestamp(a))
+        .slice(0, 100)
+        .map((row, index) => {
+            const action = mapActionLabel(
+                getFirstValue(row, ["action", "new_status", "status", "event"], "Submitted"),
+            );
+            const cycleId = getFirstValue(row, ["cycle_id", "ranking_cycle_id", "cycleId"]);
+            const cycleLabel = cycleId
+                ? cycleMap.get(String(cycleId))
+                : getFirstValue(row, ["cycle_label", "cycle_name"], "Unknown cycle");
+
+            const areaId = getFirstValue(row, ["area_id"], null);
+            const partId = getFirstValue(row, ["part_id", "subpart_id"], null);
+            const detail = getFirstValue(row, ["comment", "description", "details", "file_name"], null);
+            const areaDescription = detail
+                ? String(detail)
+                : areaId && partId
+                    ? `Area ${areaId} - ${partId}`
+                    : areaId
+                        ? `Area ${areaId}`
+                        : "Application update";
+
+            return {
+                id: getFirstValue(row, ["log_id", "id"], `log-${index}`),
+                datetime: formatDateTime(
+                    getFirstValue(row, ["changed_at", "created_at", "updated_at", "timestamp"], null),
+                ),
+                cycle: String(cycleLabel || "Unknown cycle"),
+                action,
+                actionClass: mapActionClass(action),
+                area: areaDescription,
+                by: String(
+                    getFirstValue(row, ["changed_by_name", "changed_by", "updated_by", "actor"], fallbackBy || "System"),
+                ),
+            };
+        });
+}
 
 // ─── Sub-components ───────────────────────────────────────────
 function CycleCard({ cycle }) {
@@ -221,12 +510,63 @@ function CycleCard({ cycle }) {
 }
 
 // ─── Main Export ──────────────────────────────────────────────
-export default function History({ cycles, logs }) {
-    const cycleData = cycles || MOCK_CYCLES;
-    const logData   = logs   || MOCK_LOGS;
+export default function History({ user, cycles, logs }) {
+    const [cycleData, setCycleData] = useState(cycles || []);
+    const [logData, setLogData] = useState(logs || []);
+    const [isLoading, setIsLoading] = useState(!cycles && !logs);
 
     const [showAll, setShowAll] = useState(false);
     const visibleCycles = showAll ? cycleData : cycleData.slice(0, 3);
+
+    useEffect(() => {
+        let isActive = true;
+
+        const hydrateHistory = async () => {
+            if (cycles && logs) {
+                if (!isActive) return;
+                setCycleData(cycles);
+                setLogData(logs);
+                setIsLoading(false);
+                return;
+            }
+
+            const [cycleResult, applicationResult, logResult, profileResult] =
+                await Promise.all([
+                    queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40),
+                    queryRowsByUser(APPLICATION_TABLE_CANDIDATES, user, 120),
+                    queryRowsByUser(APPLICATION_LOG_TABLE_CANDIDATES, user, 180),
+                    querySingleByUser(USER_TABLE_CANDIDATES, user),
+                ]);
+
+            if (!isActive) return;
+
+            const currentRank = String(
+                getFirstValue(
+                    profileResult.row,
+                    ["current_rank", "rank", "position_rank", "faculty_rank"],
+                    "Instructor I",
+                ),
+            );
+
+            const nextCycles = cycles
+                ? cycles
+                : toCycleCards(cycleResult.rows, applicationResult.rows, currentRank);
+            const fallbackBy = user?.displayName || user?.email || "System";
+            const nextLogs = logs
+                ? logs
+                : toLogRows(logResult.rows, cycleResult.rows, fallbackBy);
+
+            setCycleData(nextCycles);
+            setLogData(nextLogs);
+            setIsLoading(false);
+        };
+
+        void hydrateHistory();
+
+        return () => {
+            isActive = false;
+        };
+    }, [cycles, logs, user]);
 
     return (
         <>
@@ -250,7 +590,15 @@ export default function History({ cycles, logs }) {
                 </div>
 
                 <div className="hist-grid">
-                    {visibleCycles.map(c => <CycleCard key={c.id} cycle={c} />)}
+                    {visibleCycles.length > 0 ? (
+                        visibleCycles.map((c) => <CycleCard key={c.id} cycle={c} />)
+                    ) : (
+                        <div style={{ gridColumn: "1 / -1", color: "#6b7c70", fontSize: 13, fontStyle: "italic", padding: "6px 2px" }}>
+                            {isLoading
+                                ? "Loading cycle history..."
+                                : "No ranking cycles found for your account yet."}
+                        </div>
+                    )}
                 </div>
 
                 {cycleData.length > 3 && (
@@ -288,19 +636,29 @@ export default function History({ cycles, logs }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {logData.map(row => (
-                                <tr key={row.id}>
-                                    <td style={{ color: "#6b7c70", fontSize: 12 }}>{row.datetime}</td>
-                                    <td style={{ fontSize: 12 }}>{row.cycle}</td>
-                                    <td>
-                                        <span className={`la ${row.actionClass}`}>
-                                            {ACTION_ICONS[row.action] || "•"} {row.action}
-                                        </span>
+                            {logData.length > 0 ? (
+                                logData.map((row) => (
+                                    <tr key={row.id}>
+                                        <td style={{ color: "#6b7c70", fontSize: 12 }}>{row.datetime}</td>
+                                        <td style={{ fontSize: 12 }}>{row.cycle}</td>
+                                        <td>
+                                            <span className={`la ${row.actionClass}`}>
+                                                {ACTION_ICONS[row.action] || "•"} {row.action}
+                                            </span>
+                                        </td>
+                                        <td style={{ maxWidth: 320, whiteSpace: "normal" }}>{row.area}</td>
+                                        <td style={{ color: "#6b7c70" }}>{row.by}</td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={5} style={{ color: "#6b7c70", fontSize: 12.5, fontStyle: "italic", padding: "14px 12px" }}>
+                                        {isLoading
+                                            ? "Loading submission and review logs..."
+                                            : "No submission/review logs found for your account yet."}
                                     </td>
-                                    <td style={{ maxWidth: 320, whiteSpace: "normal" }}>{row.area}</td>
-                                    <td style={{ color: "#6b7c70" }}>{row.by}</td>
                                 </tr>
-                            ))}
+                            )}
                         </tbody>
                     </table>
                 </div>

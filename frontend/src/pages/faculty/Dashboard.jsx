@@ -1,6 +1,6 @@
 // 📄 SIA/frontend/src/pages/faculty/Dashboard.jsx
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import gcLogo from "../../assets/gclogo.png";
 import Sidebar from "../../components/Sidebar";
 import Topbar from "../../components/Topbar";
@@ -9,6 +9,83 @@ import History from "./tabs/History";
 import Profile from "./tabs/Profile";
 import Notifications from "./tabs/Notifications";
 import { LogOut } from "lucide-react";
+import { supabase } from "../../lib/supabase";
+
+const NOTIFICATION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_NOTIFICATION_TABLE_CANDIDATES ||
+    "notifications,notification,alerts"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+function getFirstValue(source, keys, fallback = null) {
+    if (!source) return fallback;
+    for (const key of keys) {
+        const value = source[key];
+        if (value !== undefined && value !== null && value !== "") {
+            return value;
+        }
+    }
+    return fallback;
+}
+
+function normalizeNotificationRow(row, index) {
+    const id = String(
+        getFirstValue(row, ["id", "notification_id", "notif_id"], `row-${index}`),
+    );
+    const message = String(
+        getFirstValue(row, ["message", "title", "description"], "Notification"),
+    );
+    const createdAt = getFirstValue(row, ["created_at", "createdAt", "timestamp"], null);
+
+    const rawRead = getFirstValue(row, ["is_read", "read", "isRead"], false);
+    const isRead =
+        rawRead === true ||
+        rawRead === 1 ||
+        rawRead === "1" ||
+        String(rawRead).toLowerCase() === "true";
+
+    return {
+        id,
+        unread: !isRead,
+        type: "system",
+        title: message,
+        desc: "",
+        meta: createdAt
+            ? new Date(createdAt).toLocaleString("en-PH", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+              })
+            : "System",
+        icon: "🔔",
+        iconColor: "blue",
+    };
+}
+
+async function queryNotifications(limit = 50) {
+    for (const table of NOTIFICATION_TABLE_CANDIDATES) {
+        const ordered = await supabase
+            .from(table)
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        if (!ordered.error && Array.isArray(ordered.data)) {
+            return { table, rows: ordered.data };
+        }
+
+        const plain = await supabase.from(table).select("*").limit(limit);
+        if (!plain.error && Array.isArray(plain.data)) {
+            return { table, rows: plain.data };
+        }
+    }
+
+    return { table: null, rows: [] };
+}
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
@@ -109,12 +186,82 @@ const PAGE_TITLES = {
 export default function Dashboard({ user, onLogout, _devInitialTab }) {
     const [activeTab, setActiveTab] = useState(_devInitialTab || "home");
     const [showLogout, setShowLogout] = useState(false);
-    const [notifCount, setNotifCount] = useState(2);
+    const [notificationTable, setNotificationTable] = useState(null);
+    const [notifications, setNotifications] = useState([]);
+    const [readOverrides, setReadOverrides] = useState([]);
 
     const navigate = (key) => {
         setActiveTab(key);
-        if (key === "notifications") setNotifCount(0);
     };
+
+    useEffect(() => {
+        let active = true;
+
+        const loadNotifications = async () => {
+            const { table, rows } = await queryNotifications(80);
+            if (!active) return;
+
+            setNotificationTable(table);
+            setNotifications(
+                rows.map((row, index) => normalizeNotificationRow(row, index)),
+            );
+        };
+
+        void loadNotifications();
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    const mergedNotifications = useMemo(() => {
+        if (readOverrides.length === 0) {
+            return notifications;
+        }
+
+        const readSet = new Set(readOverrides);
+        return notifications.map((notif) =>
+            readSet.has(notif.id)
+                ? {
+                      ...notif,
+                      unread: false,
+                  }
+                : notif,
+        );
+    }, [notifications, readOverrides]);
+
+    const notifCount = mergedNotifications.filter((item) => item.unread).length;
+
+    const markOneRead = useCallback(
+        async (id) => {
+            if (!id) return;
+            setReadOverrides((prev) => (prev.includes(id) ? prev : [...prev, id]));
+
+            if (!notificationTable) return;
+
+            await supabase
+                .from(notificationTable)
+                .update({ is_read: true })
+                .eq("id", id);
+        },
+        [notificationTable],
+    );
+
+    const markAllRead = useCallback(async () => {
+        const unreadIds = mergedNotifications
+            .filter((item) => item.unread)
+            .map((item) => item.id);
+
+        if (unreadIds.length === 0) return;
+        setReadOverrides((prev) => Array.from(new Set([...prev, ...unreadIds])));
+
+        if (!notificationTable) return;
+
+        await supabase
+            .from(notificationTable)
+            .update({ is_read: true })
+            .in("id", unreadIds);
+    }, [mergedNotifications, notificationTable]);
 
     const renderTab = () => {
         switch (activeTab) {
@@ -125,7 +272,14 @@ export default function Dashboard({ user, onLogout, _devInitialTab }) {
             case "profile":
                 return <Profile user={user} />;
             case "notifications":
-                return <Notifications user={user} />;
+                return (
+                    <Notifications
+                        user={user}
+                        notifications={mergedNotifications}
+                        onMarkAllRead={markAllRead}
+                        onMarkRead={markOneRead}
+                    />
+                );
             default:
                 return <Home user={user} onNavigate={navigate} />;
         }
@@ -150,7 +304,9 @@ export default function Dashboard({ user, onLogout, _devInitialTab }) {
                         title={PAGE_TITLES[activeTab]}
                         user={user}
                         notifCount={notifCount}
-                        onMarkAllRead={() => setNotifCount(0)}
+                        notifications={mergedNotifications}
+                        onMarkAllRead={markAllRead}
+                        onMarkRead={markOneRead}
                         onViewAllNotifs={() => navigate("notifications")}
                         onLogout={() => setShowLogout(true)}
                     />

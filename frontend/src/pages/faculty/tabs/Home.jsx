@@ -18,7 +18,7 @@
 // ── REVISIONS ────────────────────────────────────────────────────────────────
 // • Area II restructured: A/B/C/D are group headers; A.1/A.2/etc. are
 //   separate submission slots; A.1.1/A.1.2/etc. are rubric bullets.
-// • Submission window flag (MOCK_SUBMISSION_OPEN) gates upload/submit controls.
+// • Submission window flag (DEFAULT_SUBMISSION_OPEN) gates upload/submit controls.
 // • 2-level nav: Area list → Area detail with Part cards / group headers.
 // • Score breakdown removed (HR-only), Ranking Summary added.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ import { supabase } from "../../../lib/supabase";
 // SUBMISSION WINDOW FLAG
 // Default fallback used until ranking cycle data is hydrated from Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
-const MOCK_SUBMISSION_OPEN = false;
+const DEFAULT_SUBMISSION_OPEN = false;
 
 const AREAS_DATA = [
     // ── AREA I ─────────────────────────────────────────────────────────────────
@@ -86,9 +86,9 @@ const AREAS_DATA = [
                     "Official TOR showing completion of a 4 or 5-year Bachelor's program",
                     "Diploma (front and back)",
                 ],
-                status: "submitted",
-                file: "TOR_Bachelors_Candido.pdf",
-                date: "March 1, 2026 at 2:15 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "I-C",
@@ -134,9 +134,9 @@ const AREAS_DATA = [
                     "Diploma of completion for a non-thesis Master's program",
                     "Official TOR showing all units completed and degree conferred",
                 ],
-                status: "submitted",
-                file: "TOR_Masters_Candido.pdf",
-                date: "March 1, 2026 at 2:18 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "I-G",
@@ -242,9 +242,9 @@ const AREAS_DATA = [
                             "A.1.3 Level — International: 1.00 · National/Regional: 0.75 · Institutional: 0.50",
                             "Required: front cover/title page, abstract, proof of publication (ISBN, DOI, publisher certificate). Indicate: no. of authors, your designation, and publication level.",
                         ],
-                        status: "submitted",
-                        file: "Books_A1_Candido.pdf",
-                        date: "Feb 25, 2026 at 10:00 AM",
+                        status: "empty",
+                        file: null,
+                        date: null,
                     },
                     {
                         id: "II-A-2",
@@ -305,9 +305,9 @@ const AREAS_DATA = [
                             "B.1.3 Level — External: 0.50 · Institutional: 0.25",
                             "Required: title page, abstract, endorsement or certification from the Research Office or Dean. Indicate: no. of researchers, your designation, and level.",
                         ],
-                        status: "submitted",
-                        file: "InstitutionalMaterials_B1_Candido.pdf",
-                        date: "Feb 25, 2026 at 10:05 AM",
+                        status: "empty",
+                        file: null,
+                        date: null,
                     },
                     {
                         id: "II-B-2",
@@ -353,8 +353,8 @@ const AREAS_DATA = [
                             "C.1.2 Type of Publication — Refereed: 1.25 · Non-refereed: 0.75",
                             "Required: certificate or letter of appointment, front page of the journal showing your name and role.",
                         ],
-                        status: "draft",
-                        file: "Editor_Chief_C1_Candido.pdf",
+                        status: "empty",
+                        file: null,
                         date: null,
                     },
                     {
@@ -453,9 +453,9 @@ const AREAS_DATA = [
                     "Required documents: Service Record from Gordon College HR, or Certificate of Employment specifying full-time or part-time designation and years covered.",
                     "Compile Part A.1 and A.2 records into one PDF.",
                 ],
-                status: "submitted",
-                file: "TeachingGC_PartA_Candido.pdf",
-                date: "Feb 24, 2026 at 3:30 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "III-B",
@@ -467,9 +467,9 @@ const AREAS_DATA = [
                     "Required documents: Certificate of Employment from each institution outside Gordon College, indicating full-time or part-time status and period covered.",
                     "Compile all other-institution records into one PDF.",
                 ],
-                status: "submitted",
-                file: "TeachingOther_PartB_Candido.pdf",
-                date: "Feb 24, 2026 at 3:33 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "III-C",
@@ -549,9 +549,9 @@ const AREAS_DATA = [
                     "A.5 Institutional training course: 1.00 pt per training",
                     "Required documents: Certificates of Completion or Attendance for each training course attended. Compile all training certificates into one organized PDF, grouped by level.",
                 ],
-                status: "submitted",
-                file: "Training_PartA_Candido.pdf",
-                date: "Feb 22, 2026 at 11:15 AM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "V-B",
@@ -565,9 +565,9 @@ const AREAS_DATA = [
                     "B.5 Institutional conference/seminar/workshop: 1.00 pt per event",
                     "Required documents: Certificates of Participation or Attendance for each event. Compile all conference and seminar certificates into one organized PDF, grouped by level.",
                 ],
-                status: "submitted",
-                file: "Seminars_PartB_Candido.pdf",
-                date: "Feb 22, 2026 at 11:18 AM",
+                status: "empty",
+                file: null,
+                date: null,
             },
         ],
     },
@@ -588,9 +588,9 @@ const AREAS_DATA = [
                     "Required documents: Contract, Memorandum of Agreement (MOA), or Certificate of Service as consultant or expert. Indicate the level of the engagement.",
                     "Compile all applicable consultancy documents into one PDF.",
                 ],
-                status: "submitted",
-                file: "Consultancy_PartA_Candido.pdf",
-                date: "Feb 27, 2026 at 2:00 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "VI-B",
@@ -601,9 +601,9 @@ const AREAS_DATA = [
                     "Required documents: Certificate of Service as coordinator, lecturer, or resource person from the organizing body. Indicate the level of the event.",
                     "Compile all applicable certificates into one PDF.",
                 ],
-                status: "submitted",
-                file: "Lecturer_PartB_Candido.pdf",
-                date: "Feb 27, 2026 at 2:04 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "VI-C",
@@ -689,9 +689,9 @@ const AREAS_DATA = [
                     "Required documents: Membership ID, certificate of membership, or certificate of appointment as officer. Indicate the level and your role (Officer or Member).",
                     "Compile all professional organization documents into one organized PDF.",
                 ],
-                status: "submitted",
-                file: "ProfOrg_PartA_Candido.pdf",
-                date: "Today at 6:30 PM",
+                status: "empty",
+                file: null,
+                date: null,
             },
             {
                 id: "VII-B",
@@ -745,8 +745,8 @@ const AREAS_DATA = [
                     "Required documents: Award certificate, plaque citation, trophy documentation, or official publication/news citation. Must be received in recognition of achievements in your area of specialization or faculty assignment.",
                     "Compile all award documents into one organized PDF, grouped by level (A–E).",
                 ],
-                status: "draft",
-                file: "Awards_PartA_Candido.pdf",
+                status: "empty",
+                file: null,
                 date: null,
             },
         ],
@@ -867,42 +867,8 @@ function getProgress(area) {
     };
 }
 
-// Activity log
-const ACTIVITY_LOG = [
-    {
-        icon: "gold",
-        IconComp: Paperclip,
-        text: "Area VIII — Part A (Awards) file saved as draft",
-        meta: "Today, 7:45 PM",
-    },
-    {
-        icon: "green",
-        IconComp: CheckCircle,
-        text: "Area VII — Part A (Professional Organizations) submitted",
-        meta: "Today, 6:30 PM",
-    },
-    {
-        icon: "green",
-        IconComp: CheckCircle,
-        text: "Area VI — Parts A & B submitted",
-        meta: "Feb 27, 2026",
-    },
-    {
-        icon: "green",
-        IconComp: CheckCircle,
-        text: "Areas I–V multiple parts submitted",
-        meta: "Feb 20–25, 2026",
-    },
-    {
-        icon: "blue",
-        IconComp: Megaphone,
-        text: "Ranking cycle opened — 1st Semester AY 2026–2027",
-        meta: "Feb 1, 2026 · Deadline: March 15, 2026",
-    },
-];
-
-const DEFAULT_CYCLE_LABEL = "1st Semester AY 2026–2027";
-const DEFAULT_DEADLINE_LABEL = "March 15, 2026";
+const DEFAULT_CYCLE_LABEL = "No active cycle";
+const DEFAULT_DEADLINE_LABEL = "TBA";
 const TEMPLATE_BUCKET =
     import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "templates";
 const SUBMISSIONS_BUCKET =
@@ -918,6 +884,48 @@ const AREA_TABLE_CANDIDATES = (
 const AREA_PART_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_AREA_PART_TABLE_CANDIDATES ||
     "areaparts,area_parts,ranking_parts,area_criteria"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const CYCLE_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_CYCLE_TABLE_CANDIDATES ||
+    "ranking_cycles,rankingcycles,cycles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const PROFILE_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_PROFILE_TABLE_CANDIDATES ||
+    "users,profiles,faculty_profiles"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const APPLICATION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_APPLICATION_TABLE_CANDIDATES ||
+    "applications,ranking_applications,faculty_applications"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const POSITION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_POSITION_TABLE_CANDIDATES ||
+    "positions,rank_positions"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const AREA_SUBMISSION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_AREA_SUBMISSION_TABLE_CANDIDATES ||
+    "area_submissions,areasubmissions,submissions"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const APPLICATION_LOG_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_APPLICATION_LOG_TABLE_CANDIDATES ||
+    "application_logs,applicationlogs,logs"
 )
     .split(",")
     .map((value) => value.trim())
@@ -1057,6 +1065,56 @@ function sanitizeFileName(fileName) {
         .replace(/\s+/g, "_")
         .replace(/[^a-zA-Z0-9._-]/g, "")
         .slice(0, 120);
+}
+
+function romanToNumber(value) {
+    const normalized = String(value || "").trim().toUpperCase();
+    const map = {
+        I: 1,
+        II: 2,
+        III: 3,
+        IV: 4,
+        V: 5,
+        VI: 6,
+        VII: 7,
+        VIII: 8,
+        IX: 9,
+        X: 10,
+    };
+    return map[normalized] || null;
+}
+
+function toAreaFolderName(areaId) {
+    const raw = String(areaId || "").trim();
+    if (!raw) return "Area 00";
+
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+        return `Area ${String(numeric).padStart(2, "0")}`;
+    }
+
+    const romanValue = romanToNumber(raw);
+    if (romanValue) {
+        return `Area ${String(romanValue).padStart(2, "0")}`;
+    }
+
+    return `Area ${raw}`;
+}
+
+function toPartFolderName(part) {
+    const labelMatch = String(part?.label || "").match(/Part\s+([A-Za-z](?:\.\d+)?)/i);
+    if (labelMatch?.[1]) {
+        return `Part ${labelMatch[1].toUpperCase()}`;
+    }
+
+    const partId = String(part?.id || "").trim();
+    const tokens = partId.split("-").filter(Boolean);
+    if (tokens.length >= 2) {
+        const token = tokens.length >= 3 ? `${tokens[1]}.${tokens[2]}` : tokens[1];
+        return `Part ${token.toUpperCase()}`;
+    }
+
+    return "Part Unknown";
 }
 
 function buildTemplatePathForPart(part) {
@@ -1452,6 +1510,132 @@ async function queryRowsByCandidates(table, selectClause, candidates) {
         if (!isColumnOrTableError(result.error)) continue;
     }
     return [];
+}
+
+async function querySingleFromTableCandidates(tableCandidates, selectClause, candidates) {
+    for (const table of tableCandidates) {
+        const row = await querySingleByCandidates(table, selectClause, candidates);
+        if (row) {
+            return { table, row };
+        }
+
+        const probe = await supabase.from(table).select("*").limit(1);
+        if (!probe.error) {
+            return { table, row: null };
+        }
+    }
+
+    return { table: null, row: null };
+}
+
+async function queryRowsFromTableCandidates(tableCandidates, selectClause, candidates) {
+    for (const table of tableCandidates) {
+        const rows = await queryRowsByCandidates(table, selectClause, candidates);
+        if (rows.length > 0) {
+            return { table, rows };
+        }
+
+        const probe = await supabase.from(table).select("*").limit(1);
+        if (!probe.error) {
+            return { table, rows: [] };
+        }
+    }
+
+    return { table: null, rows: [] };
+}
+
+async function queryLatestCycleFromCandidates(tableCandidates) {
+    for (const table of tableCandidates) {
+        const ordered = await supabase
+            .from(table)
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (!ordered.error) {
+            return { table, row: ordered.data || null };
+        }
+
+        const plain = await supabase.from(table).select("*").limit(1).maybeSingle();
+        if (!plain.error) {
+            return { table, row: plain.data || null };
+        }
+    }
+
+    return { table: null, row: null };
+}
+
+async function querySingleByColumnCandidates(tableCandidates, selectClause, columnCandidates, value) {
+    if (!value) return { table: null, row: null };
+
+    for (const table of tableCandidates) {
+        for (const column of columnCandidates) {
+            const result = await supabase
+                .from(table)
+                .select(selectClause)
+                .eq(column, value)
+                .maybeSingle();
+
+            if (!result.error) {
+                return { table, row: result.data || null };
+            }
+
+            if (!isColumnOrTableError(result.error)) {
+                continue;
+            }
+        }
+    }
+
+    return { table: null, row: null };
+}
+
+function toActivityItems(rows, cycleLabel) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return [];
+    }
+
+    return rows.slice(0, 8).map((row, index) => {
+        const action = String(
+            getFirstValue(row, ["action", "new_status", "status", "event"], "updated"),
+        ).toLowerCase();
+        const partId = getFirstValue(row, ["part_id", "subpart_id"], null);
+        const areaId = getFirstValue(row, ["area_id"], null);
+        const oldStatus = getFirstValue(row, ["old_status", "from_status"], null);
+        const newStatus = getFirstValue(row, ["new_status", "to_status"], null);
+
+        let icon = "blue";
+        if (action.includes("submit") || action.includes("approve") || action.includes("publish")) {
+            icon = "green";
+        } else if (action.includes("draft") || action.includes("pending") || action.includes("return")) {
+            icon = "gold";
+        }
+
+        let text = "Application activity updated";
+        if (oldStatus && newStatus) {
+            text = `Status changed: ${oldStatus} -> ${newStatus}`;
+        } else if (partId && areaId) {
+            text = `Area ${areaId} - ${partId} ${action}`;
+        } else if (areaId) {
+            text = `Area ${areaId} ${action}`;
+        } else if (action) {
+            text = `Application ${action}`;
+        }
+
+        const metaDate = formatDateTime(
+            getFirstValue(row, ["changed_at", "created_at", "updated_at", "timestamp"], null),
+        );
+
+        return {
+            icon,
+            IconComp: icon === "green" ? CheckCircle : icon === "gold" ? Paperclip : Megaphone,
+            text,
+            meta: metaDate
+                ? `${metaDate}${cycleLabel ? ` · ${cycleLabel}` : ""}`
+                : cycleLabel || "System",
+            id: getFirstValue(row, ["log_id", "id"], `log-${index}`),
+        };
+    });
 }
 
 // ── Styles ──
@@ -2021,30 +2205,38 @@ export default function Home({ user }) {
     const [openAreaId, setOpenAreaId] = useState(null);
 
     const [areasData, setAreasData] = useState(DEFAULT_AREAS_DATA);
-    const [submissionOpen, setSubmissionOpen] = useState(MOCK_SUBMISSION_OPEN);
+    const [submissionOpen, setSubmissionOpen] = useState(false);
     const [cycleInfo, setCycleInfo] = useState({
         id: null,
         label: DEFAULT_CYCLE_LABEL,
         deadlineLabel: DEFAULT_DEADLINE_LABEL,
-        daysLeft: 15,
+        daysLeft: 0,
     });
     const [profileInfo, setProfileInfo] = useState({
-        currentRank: "Instructor I",
-        department: "Department of Computer Studies",
+        currentRank: "Not set",
+        department: "Not set",
     });
     const [applicationInfo, setApplicationInfo] = useState({
         id: null,
-        targetRank: "Instructor II",
-        status: "Draft",
-        minimumScore: 200,
-        lastScore: 86,
-        lastCycleLabel: "2nd Sem AY 2025–2026",
-        lastCycleResult: "Rank Retained",
+        targetRank: "Not set",
+        status: "Not started",
+        minimumScore: 0,
+        lastScore: 0,
+        lastCycleLabel: "No published cycle",
+        lastCycleResult: "Pending",
     });
     const [isSubmittingApplication, setIsSubmittingApplication] =
         useState(false);
     const [partActionMap, setPartActionMap] = useState({});
     const [toasts, setToasts] = useState([]);
+    const [activityLog, setActivityLog] = useState([]);
+    const [resolvedTables, setResolvedTables] = useState({
+        applications: APPLICATION_TABLE_CANDIDATES[0] || "applications",
+        areaSubmissions:
+            AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions",
+        applicationLogs:
+            APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
+    });
 
     const setPartAction = (partId, action) => {
         setPartActionMap((prev) => {
@@ -2127,13 +2319,7 @@ export default function Home({ user }) {
         input.click();
     };
 
-    const writeSubmissionRow = async ({
-        part,
-        status,
-        fileName,
-        fileUrl,
-        storagePath,
-    }) => {
+    const writeSubmissionRow = async ({ part, storagePath }) => {
         const nowIso = new Date().toISOString();
         const areaId = resolvePartAreaId(part);
         const userPairs = [
@@ -2143,51 +2329,53 @@ export default function Home({ user }) {
             ["email", userEmail],
             ["user_email", userEmail],
         ].filter(([, value]) => Boolean(value));
-        const cyclePairs = [
-            ["cycle_id", cycleInfo.id],
-            ["ranking_cycle_id", cycleInfo.id],
-            ["cycleId", cycleInfo.id],
-        ].filter(([, value]) => Boolean(value));
+        // Adjust payloads to match detected `area_submissions` schema.
+        // Detected keys include: submission_id, application_id, area_id, file_path, uploaded_at
+        const appId = applicationInfo.id || null;
 
-        const userPair = userPairs[0] || null;
-        const cyclePair = cyclePairs[0] || null;
-
-        const basePayload = {
+        const base = {
             area_id: areaId,
-            part_id: part.id,
-            file_name: fileName,
-            file_url: fileUrl,
             file_path: storagePath,
-            status,
-            updated_at: nowIso,
             uploaded_at: nowIso,
-            submitted_at: status === "submitted" ? nowIso : undefined,
         };
 
+        if (appId) base.application_id = appId;
+
         const payloadVariants = [
-            stripUndefined(basePayload),
+            stripUndefined(base),
+            // Try adding part_id if the table supports it
+            stripUndefined({ ...base, part_id: part.id }),
+            // Try with user pairing columns (if present)
             stripUndefined({
-                ...basePayload,
-                ...(userPair ? { [userPair[0]]: userPair[1] } : {}),
-            }),
-            stripUndefined({
-                ...basePayload,
-                ...(userPair ? { [userPair[0]]: userPair[1] } : {}),
-                ...(cyclePair ? { [cyclePair[0]]: cyclePair[1] } : {}),
+                ...base,
+                ...(userPairs[0] ? { [userPairs[0][0]]: userPairs[0][1] } : {}),
             }),
         ];
 
         let saved = null;
+
+        // Try update by known submissionId (submission_id or id)
         if (part.submissionId) {
             for (const payload of payloadVariants) {
                 const result = await supabase
-                    .from("areasubmissions")
+                    .from(resolvedTables.areaSubmissions)
                     .update(payload)
-                    .eq("id", part.submissionId)
+                    .eq("submission_id", part.submissionId)
                     .select("*")
                     .maybeSingle();
                 if (!result.error) {
                     saved = result.data;
+                    break;
+                }
+                // try fallback to eq id
+                const tryAlt = await supabase
+                    .from(resolvedTables.areaSubmissions)
+                    .update(payload)
+                    .eq("id", part.submissionId)
+                    .select("*")
+                    .maybeSingle();
+                if (!tryAlt.error) {
+                    saved = tryAlt.data;
                     break;
                 }
             }
@@ -2196,7 +2384,7 @@ export default function Home({ user }) {
         if (!saved) {
             for (const payload of payloadVariants) {
                 const result = await supabase
-                    .from("areasubmissions")
+                    .from(resolvedTables.areaSubmissions)
                     .insert([payload])
                     .select("*")
                     .maybeSingle();
@@ -2213,7 +2401,7 @@ export default function Home({ user }) {
     const deleteSubmissionRow = async (part) => {
         if (part.submissionId) {
             const byIdResult = await supabase
-                .from("areasubmissions")
+                .from(resolvedTables.areaSubmissions)
                 .delete()
                 .eq("id", part.submissionId);
             if (!byIdResult.error) return true;
@@ -2249,7 +2437,7 @@ export default function Home({ user }) {
             const attempts = [scopedPairs, userPairs.slice(0, 1), []];
             for (const pairs of attempts) {
                 let query = supabase
-                    .from("areasubmissions")
+                    .from(resolvedTables.areaSubmissions)
                     .delete()
                     .eq(partColumn, part.id);
                 for (const [column, value] of pairs) {
@@ -2269,8 +2457,10 @@ export default function Home({ user }) {
         const areaId = resolvePartAreaId(part);
         const cycleSegment = cycleInfo.id || "current-cycle";
         const userSegment = userId || userEmail || "anonymous";
+        const areaFolder = toAreaFolderName(areaId);
+        const partFolder = toPartFolderName(part);
         const cleanName = sanitizeFileName(file.name);
-        const storagePath = `${cycleSegment}/${userSegment}/area_${areaId}/${part.id}/${Date.now()}_${cleanName}`;
+        const storagePath = `Faculty/${areaFolder}/${partFolder}/${cycleSegment}/${userSegment}/${Date.now()}_${cleanName}`;
 
         const uploadResult = await supabase.storage
             .from(SUBMISSIONS_BUCKET)
@@ -2283,14 +2473,50 @@ export default function Home({ user }) {
             .from(SUBMISSIONS_BUCKET)
             .createSignedUrl(storagePath, 3600);
         const fileUrl = signed.data?.signedUrl || null;
+        // Try to POST metadata to the backend upload endpoint (recommended)
+        const backendUrl = import.meta.env.VITE_BACKEND_UPLOAD_URL || 'http://localhost:3001';
+        const uploadEndpoint = `${backendUrl.replace(/\/$/, '')}/api/uploads`;
+        const backendKey = import.meta.env.VITE_BACKEND_UPLOAD_KEY || '';
 
-        const saved = await writeSubmissionRow({
-            part,
-            status: nextStatus,
-            fileName: file.name,
-            fileUrl,
-            storagePath,
-        });
+        let saved = null;
+        try {
+            const body = {
+                application_id: applicationInfo.id || null,
+                area_id: areaId,
+                file_path: storagePath,
+                uploaded_at: new Date().toISOString(),
+            };
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (backendKey) headers['x-upload-key'] = backendKey;
+
+            const resp = await fetch(uploadEndpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            });
+
+            if (resp.ok) {
+                const json = await resp.json();
+                saved = json.data || null;
+            } else {
+                console.warn('Backend upload endpoint responded with', resp.status);
+            }
+        } catch (e) {
+            console.warn('Backend upload endpoint call failed:', e?.message || e);
+        }
+
+        // Fallback: write directly to DB if backend didn't return saved row
+        if (!saved) {
+            try {
+                saved = await writeSubmissionRow({
+                    part,
+                    storagePath,
+                });
+            } catch (e) {
+                console.warn('Direct DB write fallback failed:', e?.message || e);
+            }
+        }
 
         const nowText = formatDateTime(new Date().toISOString()) || part.date;
         patchPartLocal(part.id, (prev) => ({
@@ -2301,9 +2527,7 @@ export default function Home({ user }) {
             fileUrl,
             storagePath,
             submissionId:
-                getFirstValue(saved, ["id", "submission_id"], null) ||
-                prev.submissionId ||
-                null,
+                getFirstValue(saved, ['submission_id', 'id'], null) || prev.submissionId || null,
         }));
     };
 
@@ -2444,13 +2668,10 @@ export default function Home({ user }) {
 
             const saved = await writeSubmissionRow({
                 part,
-                status: "submitted",
-                fileName,
-                fileUrl: part.fileUrl || null,
                 storagePath: part.storagePath || null,
             });
 
-            await supabase.from("applicationlogs").insert([
+            await supabase.from(resolvedTables.applicationLogs).insert([
                 stripUndefined({
                     user_id: userId,
                     cycle_id: cycleInfo.id,
@@ -2485,7 +2706,10 @@ export default function Home({ user }) {
 
         const hydrateHome = async () => {
             const backendAreas = await fetchAreaDefinitions();
-            const baseAreas = backendAreas || DEFAULT_AREAS_DATA;
+            const baseAreas =
+                Array.isArray(backendAreas) && backendAreas.length > 0
+                    ? backendAreas
+                    : DEFAULT_AREAS_DATA;
 
             if (!userId && !userEmail) {
                 if (!isActive) return;
@@ -2498,23 +2722,20 @@ export default function Home({ user }) {
                 email: userEmail,
             });
 
-            let nextSubmissionOpen = MOCK_SUBMISSION_OPEN;
+            let nextSubmissionOpen = false;
             let nextCycleInfo = {
                 id: null,
                 label: DEFAULT_CYCLE_LABEL,
                 deadlineLabel: DEFAULT_DEADLINE_LABEL,
-                daysLeft: 15,
+                daysLeft: 0,
             };
 
-            const cycleResult = await supabase
-                .from("rankingcycles")
-                .select("*")
-                .order("created_at", { ascending: false })
-                .limit(1)
-                .maybeSingle();
+            const cycleResult = await queryLatestCycleFromCandidates(
+                CYCLE_TABLE_CANDIDATES,
+            );
 
-            if (!cycleResult.error && cycleResult.data) {
-                const cycle = cycleResult.data;
+            if (cycleResult.row) {
+                const cycle = cycleResult.row;
                 const deadline = getFirstValue(cycle, [
                     "deadline",
                     "deadline_at",
@@ -2522,14 +2743,19 @@ export default function Home({ user }) {
                     "end_date",
                     "closing_date",
                 ]);
+                const cycleStatus = getFirstValue(cycle, [
+                    "status",
+                    "state",
+                    "cycle_status",
+                ], "");
 
                 nextSubmissionOpen = toBoolean(
                     getFirstValue(cycle, [
                         "submission_open",
                         "is_open",
                         "open",
-                    ]),
-                    MOCK_SUBMISSION_OPEN,
+                    ], cycleStatus),
+                    false,
                 );
 
                 nextCycleInfo = {
@@ -2546,11 +2772,12 @@ export default function Home({ user }) {
             setSubmissionOpen(nextSubmissionOpen);
             setCycleInfo(nextCycleInfo);
 
-            const profileRow = await querySingleByCandidates(
-                "users",
+            const profileResult = await querySingleFromTableCandidates(
+                PROFILE_TABLE_CANDIDATES,
                 "*",
                 candidates,
             );
+            const profileRow = profileResult.row;
             if (profileRow && isActive) {
                 setProfileInfo({
                     currentRank: String(
@@ -2562,7 +2789,7 @@ export default function Home({ user }) {
                                 "position_rank",
                                 "faculty_rank",
                             ],
-                            "Instructor I",
+                            "Not set",
                         ),
                     ),
                     department: String(
@@ -2574,29 +2801,46 @@ export default function Home({ user }) {
                                 "dept",
                                 "college_department",
                             ],
-                            "Department of Computer Studies",
+                            "Not set",
                         ),
                     ),
                 });
             }
 
-            let applicationRow = await querySingleByCandidates(
-                "applications",
+            let applicationResult = await querySingleFromTableCandidates(
+                APPLICATION_TABLE_CANDIDATES,
                 "*",
                 candidates,
             );
+            let applicationRow = applicationResult.row;
+
+            const nextResolvedTables = {
+                applications:
+                    applicationResult.table ||
+                    APPLICATION_TABLE_CANDIDATES[0] ||
+                    "applications",
+                areaSubmissions:
+                    AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions",
+                applicationLogs:
+                    APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
+            };
 
             let positionRow = null;
-            if (applicationRow?.position_id) {
-                const positionResult = await supabase
-                    .from("positions")
-                    .select("*")
-                    .eq("id", applicationRow.position_id)
-                    .maybeSingle();
+            const positionId = getFirstValue(applicationRow, [
+                "position_id",
+                "target_position_id",
+                "rank_position_id",
+            ]);
 
-                if (!positionResult.error) {
-                    positionRow = positionResult.data;
-                }
+            if (positionId) {
+                const positionResult = await querySingleByColumnCandidates(
+                    POSITION_TABLE_CANDIDATES,
+                    "*",
+                    ["id", "position_id"],
+                    positionId,
+                );
+
+                positionRow = positionResult.row;
             }
 
             if (applicationRow && isActive) {
@@ -2608,7 +2852,7 @@ export default function Home({ user }) {
                             "required_score",
                             "score_threshold",
                         ],
-                        getFirstValue(positionRow, ["minimum_score"], 200),
+                        getFirstValue(positionRow, ["minimum_score"], 0),
                     ),
                 );
                 const lastScore = Number(
@@ -2620,7 +2864,7 @@ export default function Home({ user }) {
                             "score",
                             "total_score",
                         ],
-                        86,
+                        0,
                     ),
                 );
 
@@ -2630,18 +2874,18 @@ export default function Home({ user }) {
                         getFirstValue(
                             applicationRow,
                             ["target_rank", "applying_for"],
-                            getFirstValue(positionRow, ["name", "position_name", "rank", "title"], "Instructor II"),
+                            getFirstValue(positionRow, ["name", "position_name", "rank", "title"], "Not set"),
                         ),
                     ),
                     status: String(
                         getFirstValue(
                             applicationRow,
                             ["status", "application_status"],
-                            "Draft",
+                            "Not started",
                         ),
                     ),
-                    minimumScore: Number.isFinite(minScore) ? minScore : 200,
-                    lastScore: Number.isFinite(lastScore) ? lastScore : 86,
+                    minimumScore: Number.isFinite(minScore) ? minScore : 0,
+                    lastScore: Number.isFinite(lastScore) ? lastScore : 0,
                     lastCycleLabel: String(
                         getFirstValue(
                             applicationRow,
@@ -2650,26 +2894,39 @@ export default function Home({ user }) {
                                 "previous_cycle",
                                 "cycle_label",
                             ],
-                            "2nd Sem AY 2025–2026",
+                            "No published cycle",
                         ),
                     ),
                     lastCycleResult: String(
                         getFirstValue(
                             applicationRow,
                             ["last_cycle_result", "result", "result_label"],
-                            "Rank Retained",
+                            "Pending",
                         ),
                     ),
                 });
             }
 
-            const submissionRows = await queryRowsByCandidates(
-                "areasubmissions",
+            const submissionResult = await queryRowsFromTableCandidates(
+                AREA_SUBMISSION_TABLE_CANDIDATES,
+                "*",
+                candidates,
+            );
+            const submissionRows = submissionResult.rows;
+
+            const logResult = await queryRowsFromTableCandidates(
+                APPLICATION_LOG_TABLE_CANDIDATES,
                 "*",
                 candidates,
             );
 
             if (!isActive) return;
+
+            nextResolvedTables.areaSubmissions =
+                submissionResult.table || nextResolvedTables.areaSubmissions;
+            nextResolvedTables.applicationLogs =
+                logResult.table || nextResolvedTables.applicationLogs;
+            setResolvedTables(nextResolvedTables);
 
             const scopedRows = nextCycleInfo.id
                 ? submissionRows.filter((row) => {
@@ -2689,6 +2946,21 @@ export default function Home({ user }) {
             } else {
                 setAreasData(baseAreas);
             }
+
+            const scopedLogs = nextCycleInfo.id
+                ? logResult.rows.filter((row) => {
+                      const cycleId = getFirstValue(row, [
+                          "cycle_id",
+                          "ranking_cycle_id",
+                          "cycleId",
+                      ]);
+                      return cycleId
+                          ? String(cycleId) === String(nextCycleInfo.id)
+                          : true;
+                  })
+                : logResult.rows;
+
+            setActivityLog(toActivityItems(scopedLogs, nextCycleInfo.label));
         };
 
         void hydrateHome();
@@ -2716,12 +2988,14 @@ export default function Home({ user }) {
     ).length;
     const allDone = completed === submittable.length;
 
-    const appStatus = String(applicationInfo.status || "Draft").toLowerCase();
+        const appStatus = String(applicationInfo.status || "Not started").toLowerCase();
     const appStatusLabel = appStatus.includes("submit")
         ? "Submitted"
         : appStatus.includes("review")
           ? "Under Review"
-          : "Draft";
+                    : appStatus.includes("draft")
+                        ? "Draft"
+                        : "Not Started";
     const isApplicationSubmitted = appStatus.includes("submit");
 
     const scoreShort = Math.max(
@@ -2748,7 +3022,7 @@ export default function Home({ user }) {
 
         setIsSubmittingApplication(true);
         const { error } = await supabase
-            .from("applications")
+            .from(resolvedTables.applications)
             .update({
                 status: "Submitted",
                 submitted_at: new Date().toISOString(),
@@ -3064,20 +3338,29 @@ export default function Home({ user }) {
                                 Submission and review activity for this cycle
                             </div>
                         </div>
-                        <span className="hm-badge-green">Current Cycle</span>
+                        <span className="hm-badge-green">{cycleInfo.label || "Cycle"}</span>
                     </div>
                     <div className="hm-activity-list">
-                        {ACTIVITY_LOG.map((a, i) => (
-                            <div className="hm-act-item" key={i}>
-                                <div className={`hm-act-icon hm-ai-${a.icon}`}>
-                                    <a.IconComp size={15} />
+                        {activityLog.length > 0 ? (
+                            activityLog.map((a, i) => (
+                                <div className="hm-act-item" key={a.id || i}>
+                                    <div className={`hm-act-icon hm-ai-${a.icon}`}>
+                                        <a.IconComp size={15} />
+                                    </div>
+                                    <div>
+                                        <div className="hm-act-title">{a.text}</div>
+                                        <div className="hm-act-meta">{a.meta}</div>
+                                    </div>
                                 </div>
+                            ))
+                        ) : (
+                            <div className="hm-act-item">
                                 <div>
-                                    <div className="hm-act-title">{a.text}</div>
-                                    <div className="hm-act-meta">{a.meta}</div>
+                                    <div className="hm-act-title">No activity yet</div>
+                                    <div className="hm-act-meta">Submission and review updates will appear here once records are created.</div>
                                 </div>
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
             )}

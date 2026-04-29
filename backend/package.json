@@ -2,6 +2,11 @@
 	"name": "backend",
 	"private": true,
 	"type": "module",
+	"scripts": {
+		"dev": "node ./functions/placeholder.js",
+		"start": "node ./functions/placeholder.js",
+		"serve": "node ./server.js"
+	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.57.4",
 		"dotenv": "^16.6.1"

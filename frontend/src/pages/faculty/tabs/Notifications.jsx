@@ -89,77 +89,27 @@ const css = `
   }
 `;
 
-// ─── Mock data ────────────────────────────────────────────────
-const MOCK_NOTIFS = [
-    {
-        id: 1,
-        type: "system",
-        unread: true,
-        icon: "⚠️",
-        iconColor: "gold",
-        title: "Deadline Reminder — <strong>15 days remaining</strong>",
-        desc: "You have 3 areas pending submission. The deadline for 1st Semester AY 2026–2027 is <strong>March 15, 2026</strong>. Complete your application before the cycle closes.",
-        meta: "Today, 8:00 AM · System",
-        group: null,
-    },
-    {
-        id: 2,
-        type: "hr",
-        unread: true,
-        icon: "🔔",
-        iconColor: "blue",
-        title: "Ranking Cycle Now Open — <strong>1st Semester AY 2026–2027</strong>",
-        desc: "The HR Department has opened the ranking cycle. You may now upload documents for all 10 areas. Download your templates from the Dashboard and submit before the deadline.",
-        meta: "Feb 1, 2026 · HR Department",
-        group: null,
-    },
-    {
-        id: 3,
-        type: "hr",
-        unread: false,
-        icon: "🏆",
-        iconColor: "green",
-        title: "Score Published — <strong>86 / 200</strong>",
-        desc: "Your ranking score for 2nd Semester AY 2025–2026 has been published by the VPAA. Your current rank of <strong>Instructor I</strong> is retained. Check the Score Breakdown for detailed feedback.",
-        meta: "Oct 10, 2025 · VPAA Office",
-        group: "Previous Cycle — 2nd Semester AY 2025–2026",
-    },
-    {
-        id: 4,
-        type: "hr",
-        unread: false,
-        icon: "🔍",
-        iconColor: "blue",
-        title: "VPAA Review Completed",
-        desc: "Dr. M. Reyes (VPAA) has reviewed and verified your HR scoring for the previous cycle. Results will be published shortly.",
-        meta: "Sep 28, 2025 · VPAA Office",
-        group: null,
-    },
-    {
-        id: 5,
-        type: "hr",
-        unread: false,
-        icon: "📋",
-        iconColor: "blue",
-        title: "HR Scoring Completed",
-        desc: "The HR Department has finished scoring all submitted areas for the previous cycle. Your application is now under VPAA review.",
-        meta: "Sep 12, 2025 · HR Department",
-        group: null,
-    },
-];
-
 const TABS = ["all", "unread", "system", "hr"];
 const TAB_LABELS = { all: "All", unread: "Unread", system: "System", hr: "HR / VPAA" };
 
 // ─── Main Export ──────────────────────────────────────────────
-export default function Notifications({ notifications }) {
-    const [notifs, setNotifs] = useState(notifications || MOCK_NOTIFS);
+export default function Notifications({ notifications, onMarkAllRead, onMarkRead }) {
     const [activeTab, setActiveTab] = useState("all");
+    const notifs = Array.isArray(notifications) ? notifications : [];
 
     const unreadCount = notifs.filter(n => n.unread).length;
 
-    const markAllRead = () => setNotifs(prev => prev.map(n => ({ ...n, unread: false })));
-    const markRead = (id) => setNotifs(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+    const markAllRead = () => {
+        if (onMarkAllRead) {
+            onMarkAllRead();
+        }
+    };
+
+    const markRead = (id) => {
+        if (onMarkRead) {
+            onMarkRead(id);
+        }
+    };
 
     const filtered = notifs.filter(n => {
         if (activeTab === "all")    return true;
