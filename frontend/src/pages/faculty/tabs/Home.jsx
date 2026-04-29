@@ -1045,6 +1045,101 @@ function parseTimestamp(row) {
     return Number.isFinite(time) ? time : 0;
 }
 
+function toFriendlyLabel(value) {
+    return String(value || "")
+        .replace(/[_-]/g, " ")
+        .trim()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function resolveLastCycleResult(applicationRow, minimumScore, lastScore) {
+    const explicitResult = String(
+        getFirstValue(
+            applicationRow,
+            [
+                "last_cycle_result",
+                "result",
+                "result_label",
+                "outcome",
+                "outcome_label",
+                "status",
+                "application_status",
+            ],
+            "",
+        ),
+    )
+        .replace(/[_-]/g, " ")
+        .trim();
+
+    const normalizedResult = explicitResult.toLowerCase();
+    const numericMinimum = Number(minimumScore);
+    const numericScore = Number(lastScore);
+    const hasScoredResult =
+        Number.isFinite(numericMinimum) &&
+        numericMinimum > 0 &&
+        Number.isFinite(numericScore);
+
+    if (normalizedResult) {
+        if (
+            normalizedResult.includes("pending") ||
+            normalizedResult.includes("submitted") ||
+            normalizedResult.includes("draft") ||
+            normalizedResult.includes("not started") ||
+            normalizedResult.includes("review") ||
+            normalizedResult.includes("processing")
+        ) {
+            return { label: "Pending", tone: "pending" };
+        }
+
+        if (
+            normalizedResult.includes("retain") ||
+            normalizedResult.includes("qualified") ||
+            normalizedResult.includes("approve") ||
+            normalizedResult.includes("pass") ||
+            normalizedResult.includes("success")
+        ) {
+            return { label: "Retained", tone: "positive" };
+        }
+
+        if (
+            normalizedResult.includes("reject") ||
+            normalizedResult.includes("fail") ||
+            normalizedResult.includes("deny") ||
+            normalizedResult.includes("disapprove") ||
+            normalizedResult.includes("not qualified") ||
+            normalizedResult.includes("not retained")
+        ) {
+            return { label: "Not Retained", tone: "negative" };
+        }
+
+        return {
+            label: toFriendlyLabel(explicitResult),
+            tone: normalizedResult.includes("retain") ? "positive" : "neutral",
+        };
+    }
+
+    if (hasScoredResult) {
+        return numericScore >= numericMinimum
+            ? { label: "Retained", tone: "positive" }
+            : { label: "Not Retained", tone: "negative" };
+    }
+
+    return { label: "Pending", tone: "pending" };
+}
+
+function getLastCycleResultClass(tone) {
+    switch (tone) {
+        case "positive":
+            return "hm-rs-badge hm-rs-badge-positive";
+        case "negative":
+            return "hm-rs-badge hm-rs-badge-negative";
+        case "neutral":
+            return "hm-rs-badge hm-rs-badge-neutral";
+        default:
+            return "hm-rs-badge hm-rs-badge-pending";
+    }
+}
+
 function stripUndefined(obj) {
     return Object.fromEntries(
         Object.entries(obj).filter(([, value]) => value !== undefined),
@@ -1681,7 +1776,10 @@ const styles = `
   .hm-rs-value{font-family:'Playfair Display',serif;font-size:15px;font-weight:600;color:var(--text-dark);line-height:1.2;display:flex;align-items:center;gap:6px;}
   .hm-rs-sub{font-size:11px;color:var(--text-muted);margin-top:1px;}
   .hm-rs-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:8px;}
-  .hm-rs-badge-retained{background:#fdf0ee;color:var(--danger);}
+    .hm-rs-badge-positive{background:#eef8f1;color:var(--gc-green);}
+    .hm-rs-badge-negative{background:#fdf0ee;color:var(--danger);}
+    .hm-rs-badge-pending{background:#fff4e8;color:#c56a18;}
+    .hm-rs-badge-neutral{background:#eef1f4;color:#56616b;}
   .hm-rs-bar{height:5px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:5px;}
   .hm-rs-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gc-green),var(--gc-green-light));}
   /* SUBMIT BAR */
@@ -2224,6 +2322,7 @@ export default function Home({ user }) {
         lastScore: 0,
         lastCycleLabel: "No published cycle",
         lastCycleResult: "Pending",
+        lastCycleResultTone: "pending",
     });
     const [isSubmittingApplication, setIsSubmittingApplication] =
         useState(false);
@@ -2886,6 +2985,11 @@ export default function Home({ user }) {
                     ),
                     minimumScore: Number.isFinite(minScore) ? minScore : 0,
                     lastScore: Number.isFinite(lastScore) ? lastScore : 0,
+                    ...resolveLastCycleResult(
+                        applicationRow,
+                        Number.isFinite(minScore) ? minScore : 0,
+                        Number.isFinite(lastScore) ? lastScore : 0,
+                    ),
                     lastCycleLabel: String(
                         getFirstValue(
                             applicationRow,
@@ -3185,7 +3289,7 @@ export default function Home({ user }) {
                 <div className="hm-rs-item">
                     <div className="hm-rs-label">Last Cycle Result</div>
                     <div className="hm-rs-value">
-                        <span className="hm-rs-badge hm-rs-badge-retained">
+                        <span className={getLastCycleResultClass(applicationInfo.lastCycleResultTone)}>
                             {applicationInfo.lastCycleResult}
                         </span>
                     </div>
