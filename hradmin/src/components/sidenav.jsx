@@ -37,6 +37,15 @@ const navLinks = [
     ),
   },
   {
+    to: '/perfeval',
+    label: 'Performance Evaluation',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 2v20M2 12h20M6 6l12 12M18 6l-12 12"/>
+      </svg>
+    ),
+  },
+  {
     to: '/usermanagement',
     label: 'User Management',
     icon: (

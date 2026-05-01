@@ -62,11 +62,13 @@ Per-area file uploads and scores.
 |-------|------|---------|-------|
 | `submission_id` | number | `900` | |
 | `area_id` | string | `"4"` | References `areas` |
-| `file_path` | string | `"uploads/faculty_01/evaluation.csv"` | File location |
+| `file_path` | string | `"https://supabase-bucket.../evaluation.pdf"` | Supabase Storage URL or direct downloadable link to PDF |
 | `csv_total_average_rate` | number | `92.5` | CSV-based calculation |
-| `hr_points` | number | `10` | HR points assigned |
+| `hr_points` | number | `10` | HR points assigned (editable in review screen) |
 | `vpaa_points` | number | `0` | VPAA points |
 | `uploaded_at` | Timestamp | `Timestamp(...)` | Upload timestamp |
+
+**PDF Storage:** PDFs are stored in Supabase Storage bucket and referenced via `file_path`. The file is downloadable directly from the provided URL. The review interface shows a "Download PDF" button instead of the file path, providing a cleaner user experience.
 
 ---
 
@@ -245,6 +247,30 @@ Per-area file uploads and scores.
 | `faculty.status` | `"ranking"`, `"inactive"` |
 | `ranking_cycles.status` | `"open"`, `"close"` |
 | `users.role` | `"admin"`, (faculty have no role field) |
+
+---
+
+## Review & Scoring Interface
+
+### Eye Icon - View Detailed Scoring Criteria
+When an HR reviewer clicks the **eye icon** next to an area in the review screen:
+
+1. **Detail Scoring Criteria Panel** opens on the right side
+2. Displays the area name and current **Area Score** (HR Points)
+3. Shows **Edit Score** button with an input field and save option
+4. Reviewer can modify the score and save it to the database
+
+### PDF Evidence Management
+- Each area submission has a **file_path** field pointing to a Supabase Storage URL
+- The review panel shows a **Download PDF** button (instead of displaying the path)
+- Clicking the button downloads the PDF evidence directly
+- The actual file path is hidden from the UI for a cleaner user experience
+
+### Actual Score Editing
+- Editable field for **HR Points**: The reviewer can change the score
+- Scores are validated (must be numeric, within min/max bounds)
+- Changes are saved to the `hr_points` field in `area_submissions` table
+- Total application score is automatically recalculated
 
 ---
 

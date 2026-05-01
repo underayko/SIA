@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Sidebar from '../components/sidenav';
 import './perfeval.css';
 import '../styles/layout.css';
@@ -112,7 +113,7 @@ const criteriaData = [
 /* ══════════════════════════════════════════
    FACULTY INFORMATION CARD
    ══════════════════════════════════════════ */
-function FacultyInfoCard() {
+function FacultyInfoCard({ faculty = faculty }) {
   return (
     <div className="pe-card">
       <div className="pe-card-header">
@@ -177,7 +178,7 @@ function FacultyInfoCard() {
         {/* Educational Attainment */}
         <div className="pe-info-col">
           <div className="pe-col-label"><Icons.GraduationCap /> Educational Attainment</div>
-          {faculty.education.map((ed, i) => (
+          {faculty.education && faculty.education.map((ed, i) => (
             <div className="pe-edu-box" key={i}>
               <div className="pe-edu-degree">{ed.degree}</div>
               <div className="pe-edu-school">{ed.school}</div>
@@ -378,8 +379,123 @@ function SubmittedAreaPanel() {
    PAGE EXPORT
    ══════════════════════════════════════════ */
 export default function PerfEval() {
-  const [filter,    setFilter]    = useState('');
+  const [searchParams] = useSearchParams();
+  const applicationId = searchParams.get('appId');
+  const [filter, setFilter] = useState('');
   const [showPanel, setShowPanel] = useState(true);
+  const [evalData, setEvalData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Fetch evaluation data if applicationId is provided
+  useEffect(() => {
+    if (applicationId) {
+      fetchEvaluationData(applicationId);
+    }
+  }, [applicationId]);
+
+  const fetchEvaluationData = async (appId) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`http://localhost:5000/perfeval/${appId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch evaluation data');
+      }
+      const data = await response.json();
+      setEvalData(data);
+    } catch (err) {
+      console.error('Error fetching evaluation:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCommitEvaluation = async () => {
+    if (!applicationId) {
+      alert('No application selected');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/perfeval/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: parseInt(applicationId),
+          hrScore: 0,
+          vpaaScore: 0,
+          finalScore: 0,
+          hrComment: 'Evaluation completed',
+          reviewedBy: 1, // Replace with actual user ID
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to commit evaluation');
+      }
+
+      alert('Evaluation submitted successfully!');
+    } catch (err) {
+      console.error('Error submitting evaluation:', err);
+      alert('Error submitting evaluation: ' + err.message);
+    }
+  };
+
+  // Use fetched data if available, otherwise use hardcoded data
+  const currentFaculty = evalData?.faculty ? {
+    name: evalData.faculty.name_last + ', ' + evalData.faculty.name_first,
+    instructor: evalData.application.current_rank_at_time,
+    department: evalData.faculty.department,
+    presentRank: evalData.application.current_rank_at_time,
+    nature: evalData.faculty.nature_of_appointment || 'Permanent',
+    salary: evalData.faculty.current_salary ? '₱' + evalData.faculty.current_salary.toLocaleString() : 'N/A',
+    teachingExp: evalData.faculty.teaching_experience_years ? evalData.faculty.teaching_experience_years + ' years' : 'N/A',
+    industryExp: evalData.faculty.industry_experience_years ? evalData.faculty.industry_experience_years + ' years' : 'N/A',
+    rating: evalData.application.final_score || '0',
+    ratingDesc: 'Very Satisfactory',
+    education: [],
+    eligibility: evalData.faculty.eligibility_exams || 'Civil Service Professional',
+    applyingFor: evalData.faculty.applying_for || 'Instructor II',
+    lastPromotion: evalData.faculty.date_of_last_promotion || 'Not set',
+  } : faculty;
+
+  if (loading) {
+    return (
+      <div className="app">
+        <Sidebar />
+        <div className="main">
+          <div className="content">
+            <div className="rk-card-header">
+              <span className="rk-card-title">Performance Evaluation</span>
+            </div>
+            <div style={{ padding: '2rem', textAlign: 'center' }}>
+              <p>Loading evaluation data...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && applicationId) {
+    return (
+      <div className="app">
+        <Sidebar />
+        <div className="main">
+          <div className="content">
+            <div className="rk-card-header">
+              <span className="rk-card-title">Performance Evaluation</span>
+            </div>
+            <div style={{ padding: '2rem', color: 'red' }}>
+              <p>Error: {error}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -393,7 +509,7 @@ export default function PerfEval() {
           </div>
 
           <div className="pe-body">
-          <FacultyInfoCard />
+          <FacultyInfoCard faculty={currentFaculty} />
 
           <div className="pe-summary-row">
             <div className="pe-summary-left">
@@ -404,8 +520,11 @@ export default function PerfEval() {
           </div>
 
           <div className="pe-submit-row">
-            <button className="pe-btn-submit" onClick={() => setShowPanel(v => !v)}>
-              {showPanel ? 'Hide Evaluation' : 'Submit Evaluation'}
+            <button 
+              className="pe-btn-submit" 
+              onClick={() => showPanel ? setShowPanel(false) : handleCommitEvaluation()}
+            >
+              {showPanel ? 'Commit Evaluation' : 'Hide Evaluation'}
             </button>
           </div>
 

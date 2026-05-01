@@ -81,8 +81,252 @@ function ReviewRow({ faculty, onReview }) {
   );
 }
 
+// ══ SCORING CRITERIA PANEL ════════════════════════════════════
+function ScoringCriteriaPanel({ area, submission, criteria, onClose, areaEvalData, onScoreChange, isSavingScore }) {
+  const [editingScore, setEditingScore] = useState(false);
+  const [scoreValue, setScoreValue] = useState(submission?.hr_points || '');
+
+  const handleSaveScore = () => {
+    const parsedScore = parseFloat(scoreValue);
+    if (!isFinite(parsedScore)) {
+      alert('Please enter a valid number');
+      return;
+    }
+    if (onScoreChange) {
+      onScoreChange(submission?.submission_id, parsedScore);
+    }
+    setEditingScore(false);
+  };
+
+  const totalCriteriaScore = criteria && criteria.length > 0
+    ? criteria.reduce((sum, c) => sum + (c.score || 0), 0)
+    : 0;
+
+  if (!area) {
+    return (
+      <div className="pdf-panel">
+        <div className="pdf-panel-header">
+          <div className="pdf-panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Scoring Details
+          </div>
+          <button className="close-btn" onClick={onClose} style={{ fontSize: '20px', cursor: 'pointer', background: 'none', border: 'none' }}>×</button>
+        </div>
+        <div className="pdf-no-submission">
+          <p>Select an area to view scoring criteria and submitted documents</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pdf-panel">
+      <div className="pdf-panel-header">
+        <div className="pdf-panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          {area.label || area.area_name}
+        </div>
+        <button className="close-btn" onClick={onClose} style={{ fontSize: '20px', cursor: 'pointer', background: 'none', border: 'none' }}>×</button>
+      </div>
+
+      {/* Area Score Block */}
+      {submission && (
+        <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Area Score</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#059669', marginTop: '4px' }}>
+                {Number(submission.hr_points || 0).toFixed(2)}
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginLeft: '8px' }}>/ {area.max || 100} pts</span>
+              </div>
+            </div>
+            {!editingScore ? (
+              <button
+                onClick={() => {
+                  setScoreValue(submission?.hr_points || '');
+                  setEditingScore(true);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#dbeafe',
+                  color: '#0284c7',
+                  border: '1px solid #0284c7',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ✏ Edit Score
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  value={scoreValue}
+                  onChange={(e) => setScoreValue(e.target.value)}
+                  min="0"
+                  max={area.max || 100}
+                  step="0.01"
+                  style={{
+                    padding: '8px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    width: '100px'
+                  }}
+                />
+                <button
+                  onClick={handleSaveScore}
+                  disabled={isSavingScore}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    opacity: isSavingScore ? 0.6 : 1
+                  }}
+                >
+                  {isSavingScore ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={() => setEditingScore(false)}
+                  style={{
+                    padding: '8px 12px',
+                    background: '#f3f4f6',
+                    color: '#6b7280',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Description */}
+      {area.description && (
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', fontSize: '14px', color: '#666' }}>
+          <strong>Description:</strong> {area.description}
+        </div>
+      )}
+
+      {/* Scoring Criteria Table */}
+      <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb' }}>
+        <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>Performance Criteria</div>
+        {criteria && criteria.length > 0 ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #d1d5db' }}>
+                <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#374151' }}>Criteria</th>
+                <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#374151', width: '80px' }}>Max Points</th>
+                <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#374151', width: '80px' }}>Weight</th>
+                <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#374151', width: '80px' }}>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {criteria.map((criterion, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '8px', color: '#1f2937' }}>{criterion.label}</td>
+                  <td style={{ textAlign: 'right', padding: '8px', color: '#6b7280' }}>{Number(criterion.max || 0).toFixed(2)}</td>
+                  <td style={{ textAlign: 'right', padding: '8px', color: '#6b7280' }}>{(Number(criterion.weight || 0) * 100).toFixed(0)}%</td>
+                  <td style={{ textAlign: 'right', padding: '8px', color: '#059669', fontWeight: '600' }}>{Number(criterion.score || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ color: '#6b7280', fontSize: '13px' }}>No criteria defined for this area</div>
+        )}
+      </div>
+
+      {/* Submission Details */}
+      {submission && (
+        <>
+          <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>Submitted Details</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+              <div>
+                <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '4px' }}>HR Points</div>
+                <div style={{ fontWeight: '600', color: '#1f2937' }}>{Number(submission.hr_points || 0).toFixed(2)}</div>
+              </div>
+              <div>
+                <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '4px' }}>VPAA Points</div>
+                <div style={{ fontWeight: '600', color: '#1f2937' }}>{Number(submission.vpaa_points || 0).toFixed(2)}</div>
+              </div>
+              {submission.csv_total_average_rate && (
+                <div>
+                  <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '4px' }}>CSV Average Rate</div>
+                  <div style={{ fontWeight: '600', color: '#1f2937' }}>{Number(submission.csv_total_average_rate).toFixed(2)}</div>
+                </div>
+              )}
+              {submission.uploaded_at && (
+                <div>
+                  <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '4px' }}>Uploaded</div>
+                  <div style={{ fontWeight: '600', color: '#1f2937' }}>{new Date(submission.uploaded_at).toLocaleDateString()}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Evidence PDF */}
+          {submission.file_path && (
+            <div style={{ padding: '16px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', color: '#1f2937' }}>Evidence PDF</div>
+              <a 
+                href={submission.file_path}
+                download
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 16px',
+                  background: '#059669',
+                  color: 'white',
+                  borderRadius: '6px',
+                  textDecoration: 'none',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                  border: 'none'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#047857'}
+                onMouseLeave={(e) => e.target.style.background = '#059669'}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '18px', height: '18px' }}>
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download PDF
+              </a>
+            </div>
+          )}
+        </>
+      )}
+
+      {!submission && (
+        <div style={{ padding: '16px', color: '#6b7280', textAlign: 'center', fontSize: '13px' }}>
+          No submission found for this area
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ══ AREA CARD (scoring view) ══════════════════════════════════
-function AreaCard({ area, isExpanded, draftScore, onToggle, onDraftChange, onSave, isSaving }) {
+function AreaCard({ area, isExpanded, draftScore, onToggle, onDraftChange, onSave, isSaving, onSelectArea }) {
   const maxPoints = Number(area.max || 0);
 
   return (
@@ -94,7 +338,14 @@ function AreaCard({ area, isExpanded, draftScore, onToggle, onDraftChange, onSav
         </div>
         <div className="area-card-right">
           <span className="area-score">{area.score}</span>
-          <button className="icon-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button 
+            className="icon-btn" 
+            type="button"
+            onClick={() => onSelectArea(area)}
+            title="View criteria and submission"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
           <button className="icon-btn" type="button" onClick={() => onToggle(area.id)} aria-label={isExpanded ? 'Collapse scoring controls' : 'Expand scoring controls'}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={isExpanded ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}/></svg>
           </button>
@@ -223,6 +474,10 @@ export default function Review() {
   const [expandedAreaId, setExpandedAreaId] = useState(null);
   const [draftScores, setDraftScores] = useState({});
   const [savingAreaId, setSavingAreaId] = useState(null);
+  const [selectedArea, setSelectedArea] = useState(null);
+  const [areaCriteria, setAreaCriteria] = useState([]);
+  const [loadingAreaDetails, setLoadingAreaDetails] = useState(false);
+  const [savingAreaScore, setSavingAreaScore] = useState(false);
 
   // Fetch data on component mount
   useEffect(() => {
@@ -452,6 +707,88 @@ export default function Review() {
     }
   };
 
+  const handleSelectArea = async (area) => {
+    setLoadingAreaDetails(true);
+    try {
+      // Fetch detailed area evaluation data from backend
+      const areaId = area.area_id || area.id || 1;
+      const appId = selectedApplication?.id;
+      
+      const response = await fetch(`http://localhost:5000/review/area-evaluation/${appId}/${areaId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch area details');
+      }
+      const data = await response.json();
+      setSelectedArea(data.area);
+      setAreaCriteria(data.criteria || []);
+    } catch (err) {
+      console.error('Error fetching area details:', err);
+      setSelectedArea(area);
+      setAreaCriteria([]);
+    } finally {
+      setLoadingAreaDetails(false);
+    }
+  };
+
+  const handleCloseAreaDetails = () => {
+    setSelectedArea(null);
+    setAreaCriteria([]);
+  };
+
+  const handleAreaScoreChange = async (submissionId, newScore) => {
+    if (!submissionId) {
+      alert('No submission ID found');
+      return;
+    }
+
+    setSavingAreaScore(true);
+    try {
+      const response = await fetch(`http://localhost:5000/review/area-score/${submissionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hrPoints: newScore }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update score');
+      }
+
+      const updatedSubmission = await response.json();
+      
+      // Update local state
+      const updatedSubmissions = areaSubmissions.map((sub) =>
+        sub.id === submissionId ? { ...sub, hr_points: newScore } : sub
+      );
+      setAreaSubmissions(updatedSubmissions);
+
+      // Update total score in application
+      const totalScore = updatedSubmissions.reduce((sum, submission) => {
+        return sum + Number(submission.hr_points || 0);
+      }, 0);
+
+      if (selectedApplication?.id) {
+        const { error: appUpdateError } = await supabase
+          .from('applications')
+          .update({ hr_score: totalScore })
+          .eq('application_id', selectedApplication.id);
+        if (!appUpdateError) {
+          const updatedApp = { ...selectedApplication, hr_score: totalScore, display_score: selectedApplication.final_score ?? totalScore };
+          setSelectedApplication(updatedApp);
+          setApplications((prev) =>
+            prev.map((app) => app.id === selectedApplication.id ? { ...app, hr_score: totalScore, display_score: app.final_score ?? totalScore } : app)
+          );
+        }
+      }
+
+      alert('Score updated successfully');
+    } catch (err) {
+      console.error('Error updating score:', err);
+      alert('Failed to update score: ' + err.message);
+    } finally {
+      setSavingAreaScore(false);
+    }
+  };
+
   // Filter applications based on search and filters
   const filteredApplications = applications.filter(app => {
     const matchesSearch = !searchTerm || 
@@ -665,6 +1002,12 @@ export default function Review() {
                         onDraftChange={handleDraftScoreChange}
                         onSave={handleSaveAreaScore}
                         isSaving={savingAreaId === area.id}
+                        onSelectArea={() => handleSelectArea({
+                          ...area,
+                          area_id: areaSubmissions.find(s => s.id === area.id)?.area_id,
+                          application_id: selectedApplication?.id,
+                          label: area.label
+                        })}
                       />
                     ))
                   )}
@@ -684,20 +1027,30 @@ export default function Review() {
                 </div>
 
                 <div className="pdf-panel">
-                  <div className="pdf-panel-header">
-                    <div className="pdf-panel-title">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      Submitted Documents
-                    </div>
-                    <div className="pdf-actions">
-                      <button className="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                      <button className="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
-                    </div>
-                  </div>
-                  <div className="pdf-no-submission">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    {areaSubmissions.length > 0 ? `${areaSubmissions.length} files submitted` : 'No submissions yet'}
-                  </div>
+                  {selectedArea ? (
+                    <ScoringCriteriaPanel 
+                      area={selectedArea}
+                      submission={areaSubmissions.find(s => s.id === selectedArea.id)}
+                      criteria={areaCriteria}
+                      onClose={handleCloseAreaDetails}
+                      areaEvalData={null}
+                      onScoreChange={handleAreaScoreChange}
+                      isSavingScore={savingAreaScore}
+                    />
+                  ) : (
+                    <>
+                      <div className="pdf-panel-header">
+                        <div className="pdf-panel-title">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                          Scoring Details
+                        </div>
+                      </div>
+                      <div className="pdf-no-submission">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Click the eye icon on an area to view scoring criteria and submission details
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </>
