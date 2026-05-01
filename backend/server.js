@@ -12,7 +12,7 @@ function jsonResponse(res, status, payload) {
     'Content-Length': Buffer.byteLength(body, 'utf8'),
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-upload-key',
   });
   res.end(body);
 }

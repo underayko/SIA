@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, FileCheck2, Users } from "lucide-react";
+import { BarChart3, Eye, FileCheck2, Users } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 
@@ -26,6 +26,15 @@ const CYCLE_TABLE_CANDIDATES = (
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+const AREA_SUBMISSION_TABLE_CANDIDATES = (
+    import.meta.env.VITE_SUPABASE_AREA_SUBMISSION_TABLE_CANDIDATES ||
+    "areasubmissions,area_submissions,submissions"
+)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+const SUBMISSIONS_BUCKET =
+    import.meta.env.VITE_SUPABASE_SUBMISSIONS_BUCKET || "submissions";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
@@ -209,6 +218,11 @@ const styles = `
         align-items: center;
     }
 
+    .hr-actions.wrap {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
     .hr-btn {
         border: 1px solid var(--hr-border);
         border-radius: 8px;
@@ -234,6 +248,12 @@ const styles = `
         border-color: #c0392b;
         color: #c0392b;
         background: #fdf0ee;
+    }
+
+    .hr-btn.file:hover:not(:disabled) {
+        border-color: var(--hr-green);
+        color: var(--hr-green);
+        background: #eef7f2;
     }
 
     .hr-btn:disabled {
@@ -343,6 +363,12 @@ function toTitleCase(value) {
         .join(" ");
 }
 
+function fileNameFromPath(value) {
+    const text = String(value || "").trim();
+    if (!text) return "Attached file";
+    return text.split("/").filter(Boolean).pop() || text;
+}
+
 function stripUndefined(obj) {
     return Object.fromEntries(
         Object.entries(obj).filter(([, value]) => value !== undefined),
@@ -422,6 +448,45 @@ function OverviewPage({ metrics, isLoading }) {
                     <div className="hr-card-value">{isLoading ? "..." : metrics.verificationCount}</div>
                 </article>
             </div>
+        </section>
+    );
+}
+
+function SubmissionsPage({ rows, isLoading, onOpenFile, openingId, errorMessage }) {
+    return (
+        <section className="hr-panel">
+            <h2 className="hr-section-title">
+                <Files size={16} style={{ verticalAlign: "-2px", marginRight: 6 }} />
+                Submitted Files
+            </h2>
+            <p className="hr-section-sub">
+                Open faculty uploads from the `area_submissions` table.
+            </p>
+            {isLoading ? (
+                <div className="hr-empty">Loading submitted files...</div>
+            ) : rows.length === 0 ? (
+                <div className="hr-empty">No submitted files found yet.</div>
+            ) : (
+                <ul className="hr-list">
+                    {rows.map((item) => (
+                        <li className="hr-item" key={item.id}>
+                            <span>{item.text}</span>
+                            <div className="hr-actions wrap">
+                                <span className="hr-item-tag">{item.tag}</span>
+                                <button
+                                    type="button"
+                                    className="hr-btn file"
+                                    onClick={() => onOpenFile(item)}
+                                    disabled={Boolean(openingId)}
+                                >
+                                    <Eye size={12} /> {openingId === item.id ? "Opening..." : "Open File"}
+                                </button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {errorMessage && <div className="hr-error">{errorMessage}</div>}
         </section>
     );
 }
@@ -522,10 +587,34 @@ export default function HrDashboard({ user, onLogout }) {
     });
     const [cycles, setCycles] = useState([]);
     const [reviewRows, setReviewRows] = useState([]);
+    const [submissionRows, setSubmissionRows] = useState([]);
     const [applicationTable, setApplicationTable] = useState(null);
     const [actingAction, setActingAction] = useState("");
+    const [openingId, setOpeningId] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
     const [reloadKey, setReloadKey] = useState(0);
+
+    const openSubmissionFile = async (item) => {
+        if (!item?.filePath) return;
+
+        setOpeningId(item.id);
+        setErrorMessage("");
+        try {
+            const signed = await supabase.storage
+                .from(SUBMISSIONS_BUCKET)
+                .createSignedUrl(item.filePath, 3600);
+
+            if (!signed.error && signed.data?.signedUrl) {
+                window.open(signed.data.signedUrl, "_blank", "noopener,noreferrer");
+            } else {
+                setErrorMessage("Unable to open that submitted file right now.");
+            }
+        } catch {
+            setErrorMessage("Unable to open that submitted file right now.");
+        } finally {
+            setOpeningId("");
+        }
+    };
 
     const handleReviewAction = async (item, nextStatus) => {
         if (!item?.dbId || !applicationTable) return;
@@ -588,10 +677,11 @@ export default function HrDashboard({ user, onLogout }) {
             setIsLoading(true);
             setErrorMessage("");
 
-            const [users, appResult, cycleRows] = await Promise.all([
+            const [users, appResult, cycleRows, submissionResult] = await Promise.all([
                 queryRowsFromCandidates(USER_TABLE_CANDIDATES),
                 queryRowsWithTableFromCandidates(APPLICATION_TABLE_CANDIDATES),
                 queryRowsFromCandidates(CYCLE_TABLE_CANDIDATES),
+                queryRowsWithTableFromCandidates(AREA_SUBMISSION_TABLE_CANDIDATES),
             ]);
 
             const applications = appResult.rows;
@@ -607,6 +697,7 @@ export default function HrDashboard({ user, onLogout }) {
             }).length;
 
             const userIndex = buildUserIndex(users);
+            const applicationIndex = new Map();
             const normalizedApplications = applications.map((row, index) => {
                 const status = normalizeStatus(
                     getFirstValue(row, ["status", "application_status", "state"], "draft"),
@@ -629,6 +720,10 @@ export default function HrDashboard({ user, onLogout }) {
 
                 const dbId = getFirstValue(row, ["id", "application_id"], null);
 
+                if (dbId !== null && dbId !== undefined) {
+                    applicationIndex.set(String(dbId), { name, targetRank, id });
+                }
+
                 return {
                     id,
                     dbId,
@@ -645,6 +740,26 @@ export default function HrDashboard({ user, onLogout }) {
             const verificationRows = normalizedApplications.filter((row) =>
                 isForVerification(row.status),
             );
+
+            const normalizedSubmissions = submissionResult.rows.map((row, index) => {
+                const filePath = String(
+                    getFirstValue(row, ["file_path", "storage_path", "path", "object_path"], ""),
+                );
+                const applicationId = String(
+                    getFirstValue(row, ["application_id", "applicationId"], ""),
+                );
+                const areaId = String(getFirstValue(row, ["area_id", "areaId"], "Area"));
+                const application = applicationIndex.get(applicationId) || null;
+                const fileName = fileNameFromPath(filePath);
+                const id = String(getFirstValue(row, ["submission_id", "id"], index + 1));
+
+                return {
+                    id,
+                    filePath,
+                    text: `${application?.name || `Application ${applicationId || id}`} · ${areaId} · ${fileName}`,
+                    tag: `Submitted${application?.targetRank ? ` · ${application.targetRank}` : ""}`,
+                };
+            });
 
             const mappedCycles = cycleRows.slice(0, 5).map((cycle, index) => {
                 const id = String(getFirstValue(cycle, ["id", "cycle_id"], index + 1));
@@ -676,6 +791,7 @@ export default function HrDashboard({ user, onLogout }) {
             setApplicationTable(applicationSourceTable);
             setCycles(mappedCycles);
             setReviewRows(verificationRows.slice(0, 6));
+            setSubmissionRows(normalizedSubmissions.slice(0, 12));
             setIsLoading(false);
         };
 
@@ -723,6 +839,12 @@ export default function HrDashboard({ user, onLogout }) {
                         >
                             Review Queue
                         </NavLink>
+                        <NavLink
+                            to="/hr/submissions"
+                            className={({ isActive }) => `hr-nav-link${isActive ? " active" : ""}`}
+                        >
+                            Submitted Files
+                        </NavLink>
                     </nav>
 
                     <Routes>
@@ -742,6 +864,18 @@ export default function HrDashboard({ user, onLogout }) {
                                     isLoading={isLoading}
                                     onAction={handleReviewAction}
                                     actingAction={actingAction}
+                                    errorMessage={errorMessage}
+                                />
+                            }
+                        />
+                        <Route
+                            path="submissions"
+                            element={
+                                <SubmissionsPage
+                                    rows={submissionRows}
+                                    isLoading={isLoading}
+                                    onOpenFile={openSubmissionFile}
+                                    openingId={openingId}
                                     errorMessage={errorMessage}
                                 />
                             }

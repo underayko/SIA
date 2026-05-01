@@ -870,7 +870,7 @@ function getProgress(area) {
 const DEFAULT_CYCLE_LABEL = "No active cycle";
 const DEFAULT_DEADLINE_LABEL = "TBA";
 const TEMPLATE_BUCKET =
-    import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "templates";
+    import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "documents";
 const SUBMISSIONS_BUCKET =
     import.meta.env.VITE_SUPABASE_SUBMISSIONS_BUCKET || "submissions";
 const TOAST_TTL_MS = 3200;
@@ -1155,6 +1155,23 @@ function resolvePartAreaId(part) {
     return part?.areaId || inferAreaIdFromPartId(part?.id);
 }
 
+function normalizeDbAreaId(areaId) {
+    const raw = String(areaId || '').trim();
+    if (!raw) return null;
+
+    const numeric = Number(raw);
+    if (Number.isInteger(numeric) && numeric > 0) {
+        return numeric;
+    }
+
+    const romanValue = romanToNumber(raw);
+    if (romanValue) {
+        return romanValue;
+    }
+
+    return null;
+}
+
 function sanitizeFileName(fileName) {
     return String(fileName || "document")
         .replace(/\s+/g, "_")
@@ -1215,7 +1232,20 @@ function toPartFolderName(part) {
 function buildTemplatePathForPart(part) {
     const areaId = resolvePartAreaId(part);
     if (!areaId || !part?.id) return null;
-    return `area_${areaId}/${part.id}_template.xlsx`;
+    return `Templates/${toAreaFolderName(areaId)}/${toPartFolderName(part)}/template.xlsx`;
+}
+
+function buildTemplatePathCandidatesForPart(part) {
+    const areaId = resolvePartAreaId(part);
+    if (!areaId || !part?.id) return [];
+
+    return [
+        `Templates/${toAreaFolderName(areaId)}/${toPartFolderName(part)}/template.xlsx`,
+        `Templates/${toAreaFolderName(areaId)}/${toPartFolderName(part)}/Template.xlsx`,
+        `Templates/${toAreaFolderName(areaId)}/${toPartFolderName(part)}/template.XLSX`,
+        `Templates/${toAreaFolderName(areaId)}/${toPartFolderName(part)}/${part.id}_template.xlsx`,
+        `template.xlsx`,
+    ];
 }
 
 function normalizeWhatList(raw) {
@@ -1960,20 +1990,21 @@ function PartCard({
     }
 
     // ── SUBMISSION SLOT BRANCH (existing code below) ──
-    const sc = part.auto
-        ? "auto"
-        : part.status === "submitted"
-          ? "s"
-          : part.status === "draft"
-            ? "d"
-            : "e";
-    const statusLabel = part.auto
-        ? "Auto-scored"
-        : part.status === "submitted"
-          ? "✓ Submitted"
-          : part.status === "draft"
-            ? "Draft"
-            : "Pending";
+        const isDraft = part.status === "draft" || part.status === "draft-local";
+        const sc = part.auto
+                ? "auto"
+                : part.status === "submitted"
+                    ? "s"
+                    : isDraft
+                        ? "d"
+                        : "e";
+        const statusLabel = part.auto
+                ? "Auto-scored"
+                : part.status === "submitted"
+                    ? "✓ Submitted"
+                    : isDraft
+                        ? "Draft"
+                        : "Pending";
         const partBusyAction = getBusyAction?.(part.id) || null;
         const isBusy = Boolean(partBusyAction);
 
@@ -2036,8 +2067,7 @@ function PartCard({
                             </button>
 
                             {/* Show existing file (view/download only) if one was submitted */}
-                            {(part.status === "submitted" ||
-                                part.status === "draft") && (
+                            {(part.status === "submitted" || isDraft) && (
                                 <div className="hm-file-zone">
                                     <FileText size={12} />
                                     <span className="hm-file-name">
@@ -2120,13 +2150,12 @@ function PartCard({
                             </button>
 
                             {/* File slot */}
-                            {part.status === "submitted" ||
-                            part.status === "draft" ? (
+                            {part.status === "submitted" || isDraft ? (
                                 <>
                                     <div className="hm-file-zone">
                                         <FileText size={12} />
                                         <span className="hm-file-name">
-                                            {part.file}
+                                            {part.file || "Attached draft"}
                                         </span>
                                         <button
                                             type="button"
@@ -2146,7 +2175,7 @@ function PartCard({
                                         >
                                             <Download size={11} />
                                         </button>
-                                        {part.status === "draft" && (
+                                        {isDraft && (
                                             <button
                                                 type="button"
                                                 className="hm-fab hm-fab-del"
@@ -2190,7 +2219,7 @@ function PartCard({
                                 >
                                     <CheckCircle size={12} /> Submitted
                                 </button>
-                                                        ) : part.status === "draft" ? (
+                                                        ) : isDraft ? (
                                 <button
                                     type="button"
                                     className="hm-btn-submit"
@@ -2382,7 +2411,7 @@ export default function Home({ user }) {
 
     const getPartFileUrl = async (part) => {
         const directUrl = part.fileUrl;
-        if (directUrl && /^https?:\/\//i.test(directUrl)) {
+        if (directUrl && /^(https?:|blob:)/i.test(directUrl)) {
             return directUrl;
         }
 
@@ -2420,7 +2449,7 @@ export default function Home({ user }) {
 
     const writeSubmissionRow = async ({ part, storagePath }) => {
         const nowIso = new Date().toISOString();
-        const areaId = resolvePartAreaId(part);
+        const areaId = normalizeDbAreaId(resolvePartAreaId(part));
         const userPairs = [
             ["user_id", userId],
             ["faculty_id", userId],
@@ -2490,8 +2519,14 @@ export default function Home({ user }) {
                 if (!result.error) {
                     saved = result.data;
                     break;
+                } else {
+                    console.warn('writeSubmissionRow: insert variant failed:', result.error?.message || result.error);
                 }
             }
+        }
+
+        if (!saved) {
+            console.warn('writeSubmissionRow: all insert variants failed');
         }
 
         return saved;
@@ -2552,26 +2587,8 @@ export default function Home({ user }) {
         return false;
     };
 
-    const uploadFileForPart = async (part, file, nextStatus) => {
-        const areaId = resolvePartAreaId(part);
-        const cycleSegment = cycleInfo.id || "current-cycle";
-        const userSegment = userId || userEmail || "anonymous";
-        const areaFolder = toAreaFolderName(areaId);
-        const partFolder = toPartFolderName(part);
-        const cleanName = sanitizeFileName(file.name);
-        const storagePath = `Faculty/${areaFolder}/${partFolder}/${cycleSegment}/${userSegment}/${Date.now()}_${cleanName}`;
-
-        const uploadResult = await supabase.storage
-            .from(SUBMISSIONS_BUCKET)
-            .upload(storagePath, file, { upsert: true });
-        if (uploadResult.error) {
-            throw uploadResult.error;
-        }
-
-        const signed = await supabase.storage
-            .from(SUBMISSIONS_BUCKET)
-            .createSignedUrl(storagePath, 3600);
-        const fileUrl = signed.data?.signedUrl || null;
+    const persistSubmissionRow = async (part, storagePath) => {
+    const areaId = normalizeDbAreaId(resolvePartAreaId(part));
         // Try to POST metadata to the backend upload endpoint (recommended)
         const backendUrl = import.meta.env.VITE_BACKEND_UPLOAD_URL || 'http://localhost:3001';
         const uploadEndpoint = `${backendUrl.replace(/\/$/, '')}/api/uploads`;
@@ -2599,13 +2616,23 @@ export default function Home({ user }) {
                 const json = await resp.json();
                 saved = json.data || null;
             } else {
-                console.warn('Backend upload endpoint responded with', resp.status);
+                let bodyText = null;
+                try {
+                    bodyText = await resp.text();
+                } catch (e) {
+                    bodyText = String(e?.message || e);
+                }
+                console.warn('persistSubmissionRow: ✗ backend error', resp.status, bodyText);
+                pushToast('error', `Upload registration failed (${resp.status}). Trying fallback...`);
+                if (resp.status === 403) {
+                    console.warn('Upload rejected: backend expects an upload key. Set VITE_BACKEND_UPLOAD_KEY to match BACKEND_UPLOAD_KEY on the backend.');
+                }
             }
         } catch (e) {
-            console.warn('Backend upload endpoint call failed:', e?.message || e);
+            console.warn('persistSubmissionRow: ✗ fetch failed:', e?.message || e);
+            pushToast('error', `Upload registration network error: ${e?.message || e}`);
         }
 
-        // Fallback: write directly to DB if backend didn't return saved row
         if (!saved) {
             try {
                 saved = await writeSubmissionRow({
@@ -2613,11 +2640,47 @@ export default function Home({ user }) {
                     storagePath,
                 });
             } catch (e) {
-                console.warn('Direct DB write fallback failed:', e?.message || e);
+                console.warn('persistSubmissionRow: ✗ direct DB write failed:', e?.message || e);
+                pushToast('error', `Failed to register submission in database: ${e?.message || e}`);
             }
         }
 
+        return saved;
+    };
+
+    const uploadFileForPart = async (part, file, nextStatus) => {
+        const areaId = resolvePartAreaId(part);
+        const cycleSegment = cycleInfo.id || "current-cycle";
+        const userSegment = userId || userEmail || "anonymous";
+        const areaFolder = toAreaFolderName(areaId);
+        const partFolder = toPartFolderName(part);
+        const cleanName = sanitizeFileName(file.name);
+        const storagePath = `Faculty/${areaFolder}/${partFolder}/${cycleSegment}/${userSegment}/${Date.now()}_${cleanName}`;
+
+        const uploadResult = await supabase.storage
+            .from(SUBMISSIONS_BUCKET)
+            .upload(storagePath, file, { upsert: true });
+        if (uploadResult.error) {
+            console.error('uploadFileForPart: storage upload failed:', uploadResult.error);
+            throw uploadResult.error;
+        }
+
+        const signed = await supabase.storage
+            .from(SUBMISSIONS_BUCKET)
+            .createSignedUrl(storagePath, 3600);
+        const fileUrl = signed.data?.signedUrl || null;
         const nowText = formatDateTime(new Date().toISOString()) || part.date;
+        // Persist submission row and attach submissionId when possible
+        let saved = null;
+        try {
+            saved = await persistSubmissionRow(part, storagePath);
+            if (!saved) {
+                console.warn('uploadFileForPart: persistSubmissionRow returned no row (but did not throw)');
+            }
+        } catch (e) {
+            console.warn('uploadFileForPart: persistSubmissionRow threw error:', e?.message || e);
+        }
+
         patchPartLocal(part.id, (prev) => ({
             ...prev,
             status: nextStatus,
@@ -2625,31 +2688,47 @@ export default function Home({ user }) {
             date: nowText,
             fileUrl,
             storagePath,
-            submissionId:
-                getFirstValue(saved, ['submission_id', 'id'], null) || prev.submissionId || null,
+            submissionId: getFirstValue(saved, ['submission_id', 'id'], prev.submissionId || null),
+        }));
+
+        return { storagePath, fileUrl, saved };
+    };
+
+    // Save a draft locally without uploading to storage.
+    const saveDraftLocally = (part, file) => {
+        const previewUrl = file ? URL.createObjectURL(file) : null;
+        patchPartLocal(part.id, (prev) => ({
+            ...prev,
+            status: 'draft-local',
+            file: file ? file.name : prev.file,
+            fileObject: file || null,
+            fileUrl: previewUrl || prev.fileUrl,
+            storagePath: null,
         }));
     };
 
     const handleDownloadTemplate = async (part) => {
-        const templatePath = buildTemplatePathForPart(part);
-        if (!templatePath) return;
+        const templatePaths = buildTemplatePathCandidatesForPart(part);
+        if (templatePaths.length === 0) return;
 
         setPartAction(part.id, "template");
         try {
-            const signed = await supabase.storage
-                .from(TEMPLATE_BUCKET)
-                .createSignedUrl(templatePath, 600);
+            for (const templatePath of templatePaths) {
+                const signed = await supabase.storage
+                    .from(TEMPLATE_BUCKET)
+                    .createSignedUrl(templatePath, 600);
 
-            if (signed.error || !signed.data?.signedUrl) {
-                pushToast(
-                    "error",
-                    "Template file is not available yet for this part.",
-                );
-                return;
+                if (!signed.error && signed.data?.signedUrl) {
+                    openUrl(signed.data.signedUrl);
+                    pushToast("success", "Template download is ready.");
+                    return;
+                }
             }
 
-            openUrl(signed.data.signedUrl);
-            pushToast("success", "Template download is ready.");
+            pushToast(
+                "error",
+                "Template file is not available yet for this part.",
+            );
         } finally {
             setPartAction(part.id, null);
         }
@@ -2694,12 +2773,14 @@ export default function Home({ user }) {
         pickSingleFile(async (file) => {
             if (!file) return;
 
+            // Keep attach local — upload only when user submits the part.
             setPartAction(part.id, "attach");
             try {
-                await uploadFileForPart(part, file, "draft");
-                pushToast("success", "Draft file attached successfully.");
-            } catch {
-                pushToast("error", "File upload failed. Please try again.");
+                saveDraftLocally(part, file);
+                pushToast("success", "Draft attached locally. Click Submit to upload.");
+            } catch (e) {
+                console.error(e);
+                pushToast("error", "Unable to attach draft locally.");
             }
             setPartAction(part.id, null);
         });
@@ -2711,23 +2792,59 @@ export default function Home({ user }) {
 
             setPartAction(part.id, "replace");
             try {
-                await uploadFileForPart(part, file, part.status || "draft");
-                pushToast("success", "File replaced successfully.");
-            } catch {
-                pushToast(
-                    "error",
-                    "File replacement failed. Please try again.",
-                );
+                // If there's already an uploaded file (storagePath present), replace remotely.
+                if (part.storagePath) {
+                    const uploadResult = await uploadFileForPart(part, file, part.status || "draft");
+                    const saved = uploadResult?.saved || null;
+                    if (saved) {
+                        patchPartLocal(part.id, (prev) => ({
+                            ...prev,
+                            submissionId:
+                                getFirstValue(saved, ["submission_id", "id"], null) ||
+                                prev.submissionId ||
+                                null,
+                        }));
+                    }
+                    pushToast("success", "File replaced on storage.");
+                } else {
+                    // Otherwise replace the local draft file only.
+                    saveDraftLocally(part, file);
+                    pushToast("success", "Local draft replaced. Click Submit to upload.");
+                }
+            } catch (e) {
+                console.error(e);
+                pushToast("error", "File replacement failed. Please try again.");
             }
             setPartAction(part.id, null);
         });
     };
 
     const handleRemoveDraft = async (part) => {
-        if (part.status !== "draft") return;
+        if (part.status !== "draft" && part.status !== "draft-local") return;
 
         setPartAction(part.id, "remove");
         try {
+            const isLocalDraft = part.status === "draft-local" || (!part.storagePath && part.fileObject);
+
+            if (isLocalDraft) {
+                if (part.fileUrl && String(part.fileUrl).startsWith("blob:")) {
+                    URL.revokeObjectURL(part.fileUrl);
+                }
+
+                patchPartLocal(part.id, (prev) => ({
+                    ...prev,
+                    status: "empty",
+                    file: null,
+                    fileObject: null,
+                    date: null,
+                    fileUrl: null,
+                    storagePath: null,
+                    submissionId: null,
+                }));
+                pushToast("success", "Draft removed.");
+                return;
+            }
+
             const deleted = await deleteSubmissionRow(part);
             if (!deleted) {
                 pushToast("error", "Unable to remove draft right now.");
@@ -2744,6 +2861,7 @@ export default function Home({ user }) {
                 ...prev,
                 status: "empty",
                 file: null,
+                fileObject: null,
                 date: null,
                 fileUrl: null,
                 storagePath: null,
@@ -2758,42 +2876,68 @@ export default function Home({ user }) {
     };
 
     const handleSubmitPart = async (part) => {
-        if (part.status !== "draft") return;
+        // Allow submitting either an already-uploaded draft or a locally attached draft.
+        if (!part) return;
+        const isLocalDraft = part.fileObject && !part.storagePath;
+        const isRemoteDraft = part.status === "draft" && part.storagePath;
+        if (!isLocalDraft && !isRemoteDraft && part.status !== "draft-local") return;
 
         setPartAction(part.id, "submit");
         try {
             const nowIso = new Date().toISOString();
-            const fileName = part.file || `${part.id}.pdf`;
 
-            const saved = await writeSubmissionRow({
-                part,
-                storagePath: part.storagePath || null,
-            });
+            // If there's a local file object, upload it now (this will also write the submission row).
+            if (isLocalDraft) {
+                const uploadResult = await uploadFileForPart(part, part.fileObject, "submitted");
+                let saved = uploadResult?.saved || null;
+                if (!saved) {
+                    saved = await persistSubmissionRow(part, uploadResult.storagePath);
+                }
+                if (saved) {
+                    patchPartLocal(part.id, (prev) => ({
+                        ...prev,
+                        submissionId:
+                            getFirstValue(saved, ["submission_id", "id"], null) ||
+                            prev.submissionId ||
+                            null,
+                    }));
+                }
+            } else if (isRemoteDraft) {
+                // If already uploaded as draft, promote to submitted by writing the log and updating status.
+                let saved = null;
+                if (!part.submissionId) {
+                    saved = await persistSubmissionRow(part, part.storagePath);
+                }
+                await supabase.from(resolvedTables.applicationLogs).insert([
+                    stripUndefined({
+                        user_id: userId,
+                        cycle_id: cycleInfo.id,
+                        area_id: resolvePartAreaId(part),
+                        part_id: part.id,
+                        action: "submitted",
+                        file_name: part.file || `${part.id}.pdf`,
+                        timestamp: nowIso,
+                        created_at: nowIso,
+                    }),
+                ]);
 
-            await supabase.from(resolvedTables.applicationLogs).insert([
-                stripUndefined({
-                    user_id: userId,
-                    cycle_id: cycleInfo.id,
-                    area_id: resolvePartAreaId(part),
-                    part_id: part.id,
-                    action: "submitted",
-                    file_name: fileName,
-                    timestamp: nowIso,
-                    created_at: nowIso,
-                }),
-            ]);
+                patchPartLocal(part.id, (prev) => ({
+                    ...prev,
+                    status: "submitted",
+                    date: formatDateTime(nowIso) || prev.date,
+                    submissionId:
+                        getFirstValue(saved, ["submission_id", "id"], null) ||
+                        prev.submissionId ||
+                        null,
+                }));
+            } else if (part.status === "draft-local") {
+                // local draft but without fileObject (shouldn't normally happen) — treat as error
+                throw new Error('No local file to upload');
+            }
 
-            patchPartLocal(part.id, (prev) => ({
-                ...prev,
-                status: "submitted",
-                date: formatDateTime(nowIso) || prev.date,
-                submissionId:
-                    getFirstValue(saved, ["id", "submission_id"], null) ||
-                    prev.submissionId ||
-                    null,
-            }));
             pushToast("success", "Part submitted successfully.");
-        } catch {
+        } catch (e) {
+            console.error(e);
             pushToast("error", "Unable to submit this part right now.");
         } finally {
             setPartAction(part.id, null);
