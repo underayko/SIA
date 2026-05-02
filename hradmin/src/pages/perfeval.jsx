@@ -311,69 +311,7 @@ function EvaluatorCard() {
   );
 }
 
-/* ══════════════════════════════════════════
-   SUBMITTED AREA PANEL
-   ══════════════════════════════════════════ */
-function SubmittedAreaPanel() {
-  const [current, setCurrent] = useState(0);
-  const total = areaResults.length;
 
-  return (
-    <div className="pe-submitted-panel">
-      <div className="pe-submitted-header">Submitted Area Evaluation</div>
-
-      <div className="pe-score-block">
-        <div className="pe-score-label">Final Score</div>
-        <div className="pe-score-value">139<span> / 200</span></div>
-        <div className="pe-score-note">Instructor III threshold: 320 pts</div>
-      </div>
-
-      <div className="pe-breakdown">
-        <div className="pe-breakdown-title">
-          AREA I — Educational Qualifications
-          <span className="pe-score-tag">56.00</span>
-        </div>
-
-        <table className="pe-criteria-table">
-          <thead>
-            <tr>
-              <th>Criteria</th>
-              <th style={{ textAlign: 'right' }}>Max Points</th>
-              <th style={{ textAlign: 'right' }}>Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {criteriaData.map((row, i) => (
-              <tr key={i}>
-                <td>{row.label}</td>
-                <td className="num">{row.max != null ? row.max.toFixed(2) : ''}</td>
-                <td className={`num${row.score === 0 ? ' zero' : ''}`}>
-                  {row.score != null ? row.score.toFixed(2) : ''}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="pe-panel-nav">
-        <button
-          className={`pe-btn-nav${current === 0 ? ' disabled' : ''}`}
-          onClick={() => current > 0 && setCurrent(c => c - 1)}
-        >
-          <Icons.ChevronLeft /> Previous Area
-        </button>
-        <span className="pe-nav-counter">{current + 1} / {total}</span>
-        <button
-          className={`pe-btn-nav${current === total - 1 ? ' disabled' : ''}`}
-          onClick={() => current < total - 1 && setCurrent(c => c + 1)}
-        >
-          Next Area <Icons.ChevronRight />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════
    PAGE EXPORT
@@ -382,7 +320,6 @@ export default function PerfEval() {
   const [searchParams] = useSearchParams();
   const applicationId = searchParams.get('appId');
   const [filter, setFilter] = useState('');
-  const [showPanel, setShowPanel] = useState(true);
   const [evalData, setEvalData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -519,16 +456,7 @@ export default function PerfEval() {
             <EvaluatorCard />
           </div>
 
-          <div className="pe-submit-row">
-            <button 
-              className="pe-btn-submit" 
-              onClick={() => showPanel ? setShowPanel(false) : handleCommitEvaluation()}
-            >
-              {showPanel ? 'Commit Evaluation' : 'Hide Evaluation'}
-            </button>
-          </div>
 
-          {showPanel && <SubmittedAreaPanel />}
           </div>
         </div>
       </div>

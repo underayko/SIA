@@ -562,6 +562,85 @@ app.patch("/review/area-score/:submissionId", async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════
+// DEBUG ENDPOINTS (For troubleshooting)
+// ══════════════════════════════════════════
+
+// GET /debug/area-submissions
+// Check raw area_submissions data to diagnose filtering issues
+app.get("/debug/area-submissions", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("area_submissions")
+      .select("*")
+      .order("application_id");
+
+    if (error) throw error;
+
+    // Group by application_id to show the issue
+    const grouped = {};
+    (data || []).forEach(submission => {
+      const appId = submission.application_id;
+      if (!grouped[appId]) grouped[appId] = [];
+      grouped[appId].push({
+        submission_id: submission.submission_id,
+        application_id: submission.application_id,
+        area_id: submission.area_id,
+        file_path: submission.file_path ? '✓ Has file' : '✗ No file'
+      });
+    });
+
+    res.json({
+      totalSubmissions: data?.length || 0,
+      byApplicationId: grouped,
+      firstFewRecords: (data || []).slice(0, 5)
+    });
+  } catch (err) {
+    console.error("Error fetching area submissions:", err);
+    res.status(500).json({ error: "Failed to fetch area submissions", details: err.message });
+  }
+});
+
+// GET /debug/area-submissions/:applicationId
+// Check submissions for a specific application
+app.get("/debug/area-submissions/:applicationId", async (req, res) => {
+  const { applicationId } = req.params;
+  
+  try {
+    const { data, error } = await supabase
+      .from("area_submissions")
+      .select("*")
+      .eq("application_id", applicationId);
+
+    if (error) throw error;
+
+    const { data: appData, error: appError } = await supabase
+      .from("applications")
+      .select("application_id, faculty_id")
+      .eq("application_id", applicationId)
+      .single();
+
+    const { data: facultyData, error: facultyError } = appData && appData.faculty_id ? await supabase
+      .from("users")
+      .select("user_id, name_first, name_last")
+      .eq("user_id", appData.faculty_id)
+      .single() : { data: null, error: null };
+
+    res.json({
+      applicationId,
+      applicationExists: !!appData,
+      application: appData,
+      facultyName: facultyData ? `${facultyData.name_first} ${facultyData.name_last}` : 'Unknown',
+      submissionCount: data?.length || 0,
+      submissions: data || [],
+      message: data?.length === 0 ? '⚠️ NO submissions found for this application!' : `✓ Found ${data?.length} submissions`
+    });
+  } catch (err) {
+    console.error("Error fetching submissions for app:", err);
+    res.status(500).json({ error: "Failed to fetch submissions", details: err.message });
+  }
+});
+
 // Start server
 const PORT = 5000;
 app.listen(PORT, () => {

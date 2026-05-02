@@ -259,6 +259,36 @@ export default function Ranking() {
 
     const fileUrl = signedData?.signedUrl ?? '';
 
+    // Save rubric template to database so it's available to all faculty applications in review
+    try {
+      const areaToUpdate = areas.find(a => a.id === areaId);
+      console.log('💾 Attempting to save rubric to database...', { areaId, fileUrl: fileUrl.substring(0, 50) + '...' });
+      
+      const { error: updateError } = await supabase
+        .from('areas')
+        .update({
+          template_file_path: fileUrl
+        })
+        .eq('area_id', areaId);
+
+      if (updateError) {
+        console.error('❌ Error saving rubric to database:', updateError);
+        console.error('Database error details:', {
+          code: updateError.code,
+          message: updateError.message,
+          details: updateError.details
+        });
+        alert('File uploaded to storage, but failed to save to database. Please try again.');
+        return;
+      }
+
+      console.log('✅ Rubric template saved to database for area', areaId);
+    } catch (dbError) {
+      console.error('❌ Database save error:', dbError);
+      alert('File uploaded, but failed to register in system. Please try again.');
+      return;
+    }
+
     setAreas(prevAreas => 
       prevAreas.map(area => 
         area.id === areaId 
@@ -266,7 +296,7 @@ export default function Ranking() {
           : area
       )
     );
-    alert(`✅ File "${file.name}" uploaded successfully for ${areas.find(a => a.id === areaId)?.title}`);
+    alert(`✅ File "${file.name}" uploaded successfully for ${areas.find(a => a.id === areaId)?.title}\n📢 This template is now available to all faculty in Review & Score`);
 
     // Reset file input
     event.target.value = '';
