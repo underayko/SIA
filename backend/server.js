@@ -52,7 +52,7 @@ async function handleUpload(req, res) {
     }
   }
 
-  // If application_id is missing, try to infer a reasonable candidate from configured tables
+  // If application_id is missing, try to infer a reasonable candidate from the submitting faculty user_id
   let applicationId = payload.application_id || null;
   if (!applicationId) {
     const appCandidates = (process.env.SUPABASE_APPLICATION_TABLE_CANDIDATES || 'applications,ranking_applications,faculty_applications')
@@ -60,15 +60,38 @@ async function handleUpload(req, res) {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    for (const t of appCandidates) {
-      try {
-        const probe = await supabase.from(t).select('*').limit(1).maybeSingle();
-        if (!probe.error && probe.data) {
-          applicationId = probe.data.id || probe.data.application_id || null;
-          if (applicationId) break;
+    const facultyId = payload.user_id || null;
+    if (facultyId !== null && facultyId !== undefined && facultyId !== '') {
+      for (const t of appCandidates) {
+        try {
+          const probe = await supabase
+            .from(t)
+            .select('*')
+            .eq('faculty_id', facultyId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!probe.error && probe.data) {
+            applicationId = probe.data.id || probe.data.application_id || null;
+            if (applicationId) break;
+          }
+        } catch (e) {
+          // ignore and continue
         }
-      } catch (e) {
-        // ignore and continue
+      }
+
+      if (!applicationId) {
+        for (const t of appCandidates) {
+          try {
+            const probe = await supabase.from(t).select('*').limit(1).maybeSingle();
+            if (!probe.error && probe.data) {
+              applicationId = probe.data.id || probe.data.application_id || null;
+              if (applicationId) break;
+            }
+          } catch (e) {
+            // ignore and continue
+          }
+        }
       }
     }
   }
@@ -141,6 +164,7 @@ async function handleUpload(req, res) {
     area_id: areaId,
     file_path: payload.file_path,
     uploaded_at: payload.uploaded_at || new Date().toISOString(),
+    user_id: payload.user_id || null,
   };
 
   try {

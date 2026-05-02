@@ -872,7 +872,7 @@ const DEFAULT_DEADLINE_LABEL = "TBA";
 const TEMPLATE_BUCKET =
     import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "documents";
 const SUBMISSIONS_BUCKET =
-    import.meta.env.VITE_SUPABASE_SUBMISSIONS_BUCKET || "submissions";
+    import.meta.env.VITE_SUPABASE_SUBMISSIONS_BUCKET || "documents";
 const TOAST_TTL_MS = 3200;
 const AREA_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_AREA_TABLE_CANDIDATES ||
@@ -925,7 +925,7 @@ const AREA_SUBMISSION_TABLE_CANDIDATES = (
     .filter(Boolean);
 const APPLICATION_LOG_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_APPLICATION_LOG_TABLE_CANDIDATES ||
-    "application_logs,applicationlogs,logs"
+    ""  // Skip application_logs queries - table schema incompatible
 )
     .split(",")
     .map((value) => value.trim())
@@ -1355,14 +1355,6 @@ function withAreaIds(areas) {
 
 async function queryAllByTableCandidates(candidates) {
     for (const table of candidates) {
-        const ordered = await supabase
-            .from(table)
-            .select("*")
-            .order("sort_order", { ascending: true });
-        if (!ordered.error && Array.isArray(ordered.data)) {
-            return ordered.data;
-        }
-
         const fallback = await supabase.from(table).select("*");
         if (!fallback.error && Array.isArray(fallback.data)) {
             return fallback.data;
@@ -1484,12 +1476,9 @@ function buildAreasFromRows(areaRows, partRows) {
 }
 
 async function fetchAreaDefinitions() {
-    const areaRows = await queryAllByTableCandidates(AREA_TABLE_CANDIDATES);
-    if (areaRows.length === 0) return null;
-
-    const partRows = await queryAllByTableCandidates(AREA_PART_TABLE_CANDIDATES);
-    const built = buildAreasFromRows(areaRows, partRows);
-    return built.length > 0 ? built : null;
+    // Skip database fetch - use hardcoded DEFAULT_AREAS_DATA instead
+    // Database tables (area_parts, ranking_parts, etc.) don't exist yet
+    return null;
 }
 
 function updatePartInAreas(areas, partId, updater) {
@@ -1601,10 +1590,10 @@ function mergeAreasWithSubmissions(areas, submissionRows) {
 
 function pickUserFilterCandidates(user) {
     return [
-        ["user_id", user?.id],
-        ["faculty_id", user?.id],
-        ["uid", user?.id],
-        ["id", user?.id],
+        ["user_id", user?.user_id],
+        ["faculty_id", user?.user_id],
+        ["uid", user?.user_id],
+        ["domain_email", user?.email],
         ["email", user?.email],
         ["user_email", user?.email],
     ].filter(([, value]) => Boolean(value));
@@ -2325,8 +2314,9 @@ function AreaListCard({ area, onClick }) {
 
 // ── Main Export ──
 export default function Home({ user }) {
-    const userId = user?.id || null;
+    const userId = user?.user_id || null;
     const userEmail = user?.email || null;
+    const [facultyRecordId, setFacultyRecordId] = useState(null);
 
     const [view, setView] = useState("list");
     const [openAreaId, setOpenAreaId] = useState(null);
@@ -2432,6 +2422,8 @@ export default function Home({ user }) {
         input.type = "file";
         input.accept = ".pdf,.doc,.docx,.png,.jpg,.jpeg";
         input.style.display = "none";
+        input.id = "file-upload-input";
+        input.name = "file-upload";
         const cleanup = () => {
             if (document.body.contains(input)) {
                 document.body.removeChild(input);
@@ -2447,38 +2439,23 @@ export default function Home({ user }) {
         input.click();
     };
 
-    const writeSubmissionRow = async ({ part, storagePath }) => {
+    const writeSubmissionRow = async ({ part, storagePath, appId }) => {
         const nowIso = new Date().toISOString();
         const areaId = normalizeDbAreaId(resolvePartAreaId(part));
-        const userPairs = [
-            ["user_id", userId],
-            ["faculty_id", userId],
-            ["uid", userId],
-            ["email", userEmail],
-            ["user_email", userEmail],
-        ].filter(([, value]) => Boolean(value));
         // Adjust payloads to match detected `area_submissions` schema.
         // Detected keys include: submission_id, application_id, area_id, file_path, uploaded_at
-        const appId = applicationInfo.id || null;
+        const submitterId = facultyRecordId || null;
 
         const base = {
             area_id: areaId,
             file_path: storagePath,
             uploaded_at: nowIso,
+            user_id: submitterId,
         };
 
         if (appId) base.application_id = appId;
 
-        const payloadVariants = [
-            stripUndefined(base),
-            // Try adding part_id if the table supports it
-            stripUndefined({ ...base, part_id: part.id }),
-            // Try with user pairing columns (if present)
-            stripUndefined({
-                ...base,
-                ...(userPairs[0] ? { [userPairs[0][0]]: userPairs[0][1] } : {}),
-            }),
-        ];
+        const payloadVariants = [stripUndefined(base)];
 
         let saved = null;
 
@@ -2550,9 +2527,9 @@ export default function Home({ user }) {
             "criterionId",
         ];
         const userPairs = [
-            ["user_id", userId],
-            ["faculty_id", userId],
-            ["uid", userId],
+            ["user_id", facultyRecordId],
+            ["faculty_id", facultyRecordId],
+            ["uid", facultyRecordId],
             ["email", userEmail],
             ["user_email", userEmail],
         ].filter(([, value]) => Boolean(value));
@@ -2587,20 +2564,132 @@ export default function Home({ user }) {
         return false;
     };
 
+    const ensureApplicationExists = async () => {
+        // If application already exists, return it
+        if (applicationInfo.id) return applicationInfo.id;
+
+        // If no cycle or faculty record, can't create application
+        if (!cycleInfo.id || !facultyRecordId) {
+            console.warn('ensureApplicationExists: cannot create - missing cycle or facultyRecordId');
+            return null;
+        }
+
+        // Build required fields: application_number, target_position_id
+        const appNumber = `APP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+        let targetPositionId = null;
+
+        try {
+            const positionsTable =
+                resolvedTables.positions || POSITION_TABLE_CANDIDATES[0] || 'positions';
+
+            if (positionsTable) {
+                // Try to fetch an existing position
+                const posResp = await supabase
+                    .from(positionsTable)
+                    .select('position_id')
+                    .limit(1)
+                    .maybeSingle();
+                if (!posResp.error && posResp.data) {
+                    targetPositionId = posResp.data.position_id || posResp.data.id || null;
+                }
+
+                // If none exists, create a default position record
+                if (!targetPositionId) {
+                    try {
+                        const ins = await supabase
+                            .from(positionsTable)
+                            .insert([
+                                {
+                                    position_name: 'Instructor I',
+                                    description: 'Default position created by frontend',
+                                    required_area_count: 10,
+                                    is_active: true,
+                                },
+                            ])
+                            .select('position_id')
+                            .single();
+                        if (!ins.error && ins.data) {
+                            targetPositionId = ins.data.position_id || ins.data.id || null;
+                            console.log('ensureApplicationExists: created default position', targetPositionId);
+                        }
+                    } catch (ie) {
+                        console.warn('ensureApplicationExists: failed to create default position', ie?.message || ie);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('ensureApplicationExists: failed to fetch default position', e?.message || e);
+        }
+
+        // If still no position id, leave null (DB requires it, so insert may fail and will be caught)
+        try {
+            const payload = {
+                application_number: appNumber,
+                faculty_id: facultyRecordId,
+                cycle_id: cycleInfo.id,
+                status: 'Draft',
+                current_rank_at_time: profileInfo.currentRank || null,
+                created_at: new Date().toISOString(),
+            };
+            if (targetPositionId) payload.target_position_id = targetPositionId;
+
+            const { data, error } = await supabase
+                .from(resolvedTables.applications)
+                .insert([payload])
+                .select('*')
+                .single();
+
+            if (!error && data) {
+                const appId = data.application_id || data.id || null;
+                if (appId) {
+                    console.log('ensureApplicationExists: created new application', appId);
+                    // Update local state
+                    setApplicationInfo(prev => ({
+                        ...prev,
+                        id: appId,
+                        status: 'Draft',
+                    }));
+                    return appId;
+                }
+            }
+
+            console.warn('ensureApplicationExists: insert failed', error?.message || error, data);
+            return null;
+        } catch (e) {
+            console.warn('ensureApplicationExists: error', e?.message || e);
+            return null;
+        }
+    };
+
     const persistSubmissionRow = async (part, storagePath) => {
-    const areaId = normalizeDbAreaId(resolvePartAreaId(part));
+        const areaId = normalizeDbAreaId(resolvePartAreaId(part));
+        
+        // Auto-create application if it doesn't exist
+        let appId = applicationInfo.id;
+        if (!appId) {
+            appId = await ensureApplicationExists();
+        }
+
+        if (!appId) {
+            console.warn('persistSubmissionRow: no application_id resolved for current faculty user');
+            pushToast('error', 'No application record was found for this account. Contact HR to create the application first.');
+            return null;
+        }
         // Try to POST metadata to the backend upload endpoint (recommended)
         const backendUrl = import.meta.env.VITE_BACKEND_UPLOAD_URL || 'http://localhost:3001';
         const uploadEndpoint = `${backendUrl.replace(/\/$/, '')}/api/uploads`;
         const backendKey = import.meta.env.VITE_BACKEND_UPLOAD_KEY || '';
 
         let saved = null;
+
         try {
             const body = {
-                application_id: applicationInfo.id || null,
+                application_id: appId,
                 area_id: areaId,
                 file_path: storagePath,
                 uploaded_at: new Date().toISOString(),
+                user_id: facultyRecordId || null,
+                email: userEmail || null,
             };
 
             const headers = { 'Content-Type': 'application/json' };
@@ -2638,6 +2727,7 @@ export default function Home({ user }) {
                 saved = await writeSubmissionRow({
                     part,
                     storagePath,
+                    appId,
                 });
             } catch (e) {
                 console.warn('persistSubmissionRow: ✗ direct DB write failed:', e?.message || e);
@@ -2910,7 +3000,7 @@ export default function Home({ user }) {
                 }
                 await supabase.from(resolvedTables.applicationLogs).insert([
                     stripUndefined({
-                        user_id: userId,
+                        user_id: facultyRecordId,
                         cycle_id: cycleInfo.id,
                         area_id: resolvePartAreaId(part),
                         part_id: part.id,
@@ -2961,7 +3051,7 @@ export default function Home({ user }) {
             }
 
             const candidates = pickUserFilterCandidates({
-                id: userId,
+                user_id: userId,
                 email: userEmail,
             });
 
@@ -2992,14 +3082,25 @@ export default function Home({ user }) {
                     "cycle_status",
                 ], "");
 
-                nextSubmissionOpen = toBoolean(
-                    getFirstValue(cycle, [
-                        "submission_open",
-                        "is_open",
-                        "open",
-                    ], cycleStatus),
-                    false,
-                );
+                // Check cycle status to determine if submissions are open:
+                // - 'open' → submissions allowed
+                // - 'submissions_closed' or 'finished' → submissions blocked
+                // - Falls back to old fields for backward compatibility
+                if (cycleStatus === 'submissions_closed' || cycleStatus === 'finished') {
+                    nextSubmissionOpen = false;
+                } else if (cycleStatus === 'open') {
+                    nextSubmissionOpen = true;
+                } else {
+                    // Fallback to submission_open/is_open/open fields for backward compatibility
+                    nextSubmissionOpen = toBoolean(
+                        getFirstValue(cycle, [
+                            "submission_open",
+                            "is_open",
+                            "open",
+                        ], cycleStatus),
+                        false,
+                    );
+                }
 
                 nextCycleInfo = {
                     id: getFirstValue(cycle, ["id", "cycle_id"], null),
@@ -3021,6 +3122,8 @@ export default function Home({ user }) {
                 candidates,
             );
             const profileRow = profileResult.row;
+            let resolvedFacultyId = null;
+            let numericFacultyId = null;
             if (profileRow && isActive) {
                 setProfileInfo({
                     currentRank: String(
@@ -3048,12 +3151,21 @@ export default function Home({ user }) {
                         ),
                     ),
                 });
+
+                resolvedFacultyId = getFirstValue(profileRow, ["user_id", "id"], null);
+                numericFacultyId = resolvedFacultyId === null || resolvedFacultyId === undefined
+                    ? null
+                    : Number(resolvedFacultyId);
+                setFacultyRecordId(Number.isFinite(numericFacultyId) ? numericFacultyId : null);
             }
 
+            const applicationCandidates = Number.isFinite(numericFacultyId)
+                ? [["faculty_id", numericFacultyId]]
+                : [];
             let applicationResult = await querySingleFromTableCandidates(
                 APPLICATION_TABLE_CANDIDATES,
                 "*",
-                candidates,
+                applicationCandidates,
             );
             let applicationRow = applicationResult.row;
 
@@ -3158,14 +3270,18 @@ export default function Home({ user }) {
             const submissionResult = await queryRowsFromTableCandidates(
                 AREA_SUBMISSION_TABLE_CANDIDATES,
                 "*",
-                candidates,
+                Number.isFinite(numericFacultyId)
+                    ? [["user_id", numericFacultyId], ["faculty_id", numericFacultyId], ["uid", numericFacultyId]]
+                    : [],
             );
             const submissionRows = submissionResult.rows;
 
             const logResult = await queryRowsFromTableCandidates(
                 APPLICATION_LOG_TABLE_CANDIDATES,
                 "*",
-                candidates,
+                Number.isFinite(numericFacultyId)
+                    ? [["user_id", numericFacultyId], ["faculty_id", numericFacultyId], ["uid", numericFacultyId]]
+                    : [],
             );
 
             if (!isActive) return;
@@ -3269,15 +3385,29 @@ export default function Home({ user }) {
         if (!applicationInfo.id || isApplicationSubmitted) return;
 
         setIsSubmittingApplication(true);
+        // Try both 'id' and 'application_id' as the primary key
         const { error } = await supabase
             .from(resolvedTables.applications)
             .update({
                 status: "Submitted",
                 submitted_at: new Date().toISOString(),
             })
-            .eq("id", applicationInfo.id);
+            .eq("application_id", applicationInfo.id);
 
-        if (!error) {
+        // If that fails, try with 'id'
+        let finalError = error;
+        if (error?.message?.includes("does not exist")) {
+            const result = await supabase
+                .from(resolvedTables.applications)
+                .update({
+                    status: "Submitted",
+                    submitted_at: new Date().toISOString(),
+                })
+                .eq("id", applicationInfo.id);
+            finalError = result.error;
+        }
+
+        if (!finalError) {
             setApplicationInfo((prev) => ({
                 ...prev,
                 status: "Submitted",

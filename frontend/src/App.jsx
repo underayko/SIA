@@ -28,6 +28,7 @@ function LoadingScreen() {
 export default function App() {
     const {
         user,
+        profile,
         role,
         isLoading,
         needsPasswordChange,
@@ -38,6 +39,8 @@ export default function App() {
     const portalUser = user
         ? {
               ...user,
+              ...profile,
+              user_id: profile?.user_id ?? null,
               displayName:
                   user.user_metadata?.full_name ||
                   user.user_metadata?.display_name ||

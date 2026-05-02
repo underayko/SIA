@@ -152,7 +152,7 @@ const APPLICATION_TABLE_CANDIDATES = (
 
 const APPLICATION_LOG_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_APPLICATION_LOG_TABLE_CANDIDATES ||
-    "application_logs,applicationlogs,logs"
+    ""  // Skip application_logs queries - table schema incompatible
 )
     .split(",")
     .map((value) => value.trim())
@@ -257,10 +257,9 @@ async function queryRowsFromTableCandidates(tableCandidates, limit = 80) {
 
 function buildUserFilterCandidates(user) {
     return [
-        ["user_id", user?.id],
-        ["faculty_id", user?.id],
-        ["uid", user?.id],
-        ["id", user?.id],
+        ["user_id", user?.user_id],
+        ["faculty_id", user?.user_id],
+        ["uid", user?.user_id],
         ["email", user?.email],
         ["user_email", user?.email],
         ["domain_email", user?.email],
@@ -285,7 +284,8 @@ async function queryRowsByUser(tableCandidates, user, limit = 120) {
                 return { table, rows: result.data };
             }
 
-            if (!isColumnOrTableError(result.error)) {
+            // If column doesn't exist, continue to next candidate
+            if (isColumnOrTableError(result.error)) {
                 continue;
             }
         }

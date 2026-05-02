@@ -384,6 +384,114 @@ const styles = `
     from { opacity:0; transform:translateY(14px); }
     to   { opacity:1; transform:translateY(0); }
   }
+
+  /* ── MODAL OVERLAY ── */
+  .pf-modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex;
+    align-items:center; justify-content:center; z-index:1000;
+    animation:fadeIn 0.2s ease;
+  }
+  .pf-modal {
+    background:var(--white); border-radius:14px; max-width:500px;
+    width:90vw; max-height:85vh; overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,0.3);
+    animation:slideUp 0.3s ease;
+  }
+  @keyframes slideUp {
+    from { transform:translateY(30px); opacity:0; }
+    to { transform:translateY(0); opacity:1; }
+  }
+  @keyframes fadeIn {
+    from { opacity:0; }
+    to { opacity:1; }
+  }
+  .pf-modal-header {
+    display:flex; align-items:center; gap:12px;
+    padding:20px; border-bottom:1px solid var(--border);
+    background:var(--gc-green-pale);
+  }
+  .pf-modal-icon {
+    width:36px; height:36px; border-radius:9px;
+    background:var(--gc-green-light); color:var(--white);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .pf-modal-title {
+    font-family:'Playfair Display',serif; font-size:16px;
+    font-weight:600; color:var(--text-dark); flex:1;
+  }
+  .pf-modal-close {
+    width:32px; height:32px; border-radius:8px; border:none;
+    background:rgba(26,107,60,0.1); color:var(--gc-green);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all 0.15s; flex-shrink:0;
+  }
+  .pf-modal-close:hover { background:var(--gc-green); color:var(--white); }
+  .pf-modal-body {
+    padding:20px; display:flex; flex-direction:column; gap:16px;
+  }
+  .pf-modal-field {
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .pf-modal-label {
+    font-size:11px; font-weight:600; color:var(--text-muted);
+    letter-spacing:0.5px; text-transform:uppercase;
+    display:flex; align-items:center; gap:5px;
+  }
+  .pf-modal-label-required { color:var(--gc-gold); font-size:10px; }
+  .pf-modal-input,
+  .pf-modal-select,
+  .pf-modal-textarea {
+    padding:10px 12px; border:1.5px solid var(--border);
+    border-radius:8px; font-family:'Source Sans 3',sans-serif;
+    font-size:14px; color:var(--text-dark); outline:none;
+    background:var(--white); transition:border-color 0.2s;
+  }
+  .pf-modal-input:focus,
+  .pf-modal-select:focus,
+  .pf-modal-textarea:focus {
+    border-color:var(--gc-green);
+    box-shadow:0 0 0 3px rgba(26,107,60,0.1);
+  }
+  .pf-modal-textarea {
+    resize:vertical; min-height:70px; font-size:13px;
+  }
+  .pf-modal-grid-2 {
+    display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  }
+  .pf-modal-error {
+    background:var(--danger-pale); border:1px solid rgba(192,57,43,0.2);
+    color:var(--danger); padding:10px 12px; border-radius:8px;
+    font-size:13px;
+  }
+  .pf-modal-footer {
+    display:flex; gap:10px; justify-content:flex-end;
+    padding:16px 20px; border-top:1px solid var(--border);
+    background:var(--off-white);
+  }
+  .pf-modal-btn {
+    padding:9px 20px; border-radius:8px; border:none;
+    font-size:13px; font-weight:600; cursor:pointer;
+    font-family:'Source Sans 3',sans-serif; transition:all 0.15s;
+  }
+  .pf-modal-btn-cancel {
+    background:var(--white); color:var(--text-muted);
+    border:1.5px solid var(--border);
+  }
+  .pf-modal-btn-cancel:hover { background:var(--off-white); }
+  .pf-modal-btn-save {
+    background:linear-gradient(135deg,var(--gc-green),var(--gc-green-light));
+    color:var(--white);
+    box-shadow:0 4px 12px rgba(26,107,60,0.25);
+  }
+  .pf-modal-btn-save:hover { opacity:0.9; transform:translateY(-1px); }
+  .pf-modal-btn-save:disabled {
+    opacity:0.5; cursor:not-allowed; transform:none;
+  }
+
+  @media (max-width: 640px) {
+    .pf-modal { width:95vw; }
+    .pf-modal-grid-2 { grid-template-columns:1fr; }
+  }
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -465,6 +573,121 @@ function formatShortDate(value, fallback = "Not available") {
         day: "numeric",
         year: "numeric",
     });
+}
+
+function parseWindowDate(value, { endOfDay = false } = {}) {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+            const suffix = endOfDay ? "T23:59:59.999" : "T00:00:00.000";
+            const parsedDateOnly = new Date(`${trimmed}${suffix}`);
+            return Number.isNaN(parsedDateOnly.getTime()) ? null : parsedDateOnly;
+        }
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatWindowDateTime(value) {
+    if (!value) return null;
+
+    return value.toLocaleString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function buildEditWindowLabel(startAt, deadlineAt) {
+    const startLabel = formatWindowDateTime(startAt);
+    const deadlineLabel = formatWindowDateTime(deadlineAt);
+
+    if (startLabel && deadlineLabel) {
+        return `Editable from ${startLabel} to ${deadlineLabel}.`;
+    }
+    if (startLabel) {
+        return `Editable starting ${startLabel}.`;
+    }
+    if (deadlineLabel) {
+        return `Editable until ${deadlineLabel}.`;
+    }
+
+    return "";
+}
+
+function resolveProfileEditWindow(cycle) {
+    if (!cycle) {
+        return { isOpen: DEFAULT_PROFILE_EDIT_OPEN, windowLabel: "" };
+    }
+
+    const manualFlagRaw = getFirstValue(cycle, ["profile_edit_open", "is_profile_edit_open"], null);
+    const manualFlag =
+        manualFlagRaw === null || manualFlagRaw === undefined
+            ? null
+            : toBoolean(manualFlagRaw, false);
+
+    const startAt = parseWindowDate(
+        getFirstValue(cycle, [
+            "profile_edit_start",
+            "profile_edit_start_at",
+            "edit_start",
+            "edit_start_at",
+            "start_date",
+            "start_at",
+        ]),
+        { endOfDay: false },
+    );
+
+    const deadlineAt = parseWindowDate(
+        getFirstValue(cycle, [
+            "profile_edit_deadline",
+            "profile_edit_deadline_at",
+            "edit_deadline",
+            "edit_deadline_at",
+            "deadline",
+            "end_date",
+            "end_at",
+        ]),
+        { endOfDay: true },
+    );
+
+    const now = new Date();
+
+    let isWithinWindow = null;
+    if (startAt && deadlineAt) {
+        isWithinWindow = now >= startAt && now <= deadlineAt;
+    } else if (startAt) {
+        isWithinWindow = now >= startAt;
+    } else if (deadlineAt) {
+        isWithinWindow = now <= deadlineAt;
+    }
+
+    let isOpen = DEFAULT_PROFILE_EDIT_OPEN;
+    if (isWithinWindow === null && manualFlag === null) {
+        isOpen = DEFAULT_PROFILE_EDIT_OPEN;
+    } else if (isWithinWindow === null) {
+        isOpen = Boolean(manualFlag);
+    } else if (manualFlag === null) {
+        isOpen = isWithinWindow;
+    } else {
+        isOpen = manualFlag && isWithinWindow;
+    }
+
+    return {
+        isOpen,
+        windowLabel: buildEditWindowLabel(startAt, deadlineAt),
+    };
 }
 
 function parseArrayOrLines(value) {
@@ -609,10 +832,299 @@ function EditableField({ label, value, onSave, pending, disabled }) {
     );
 }
 
+// ── Education Modal Component ──
+function EducationModal({ isOpen, onClose, onSubmit, isLoading }) {
+    const [level, setLevel] = useState("Bachelor's");
+    const [degree, setDegree] = useState("");
+    const [institution, setInstitution] = useState("");
+    const [yearGraduated, setYearGraduated] = useState("");
+    const [error, setError] = useState("");
+
+    const handleSubmit = () => {
+        setError("");
+        if (!degree.trim()) {
+            setError("Degree title is required.");
+            return;
+        }
+        if (!institution.trim()) {
+            setError("Institution is required.");
+            return;
+        }
+        if (yearGraduated && !/^\d{4}$/.test(yearGraduated)) {
+            setError("Year must be in YYYY format.");
+            return;
+        }
+
+        onSubmit({
+            level,
+            degree: degree.trim(),
+            institution: institution.trim(),
+            yearGraduated: yearGraduated.trim(),
+        });
+
+        // Reset form
+        setLevel("Bachelor's");
+        setDegree("");
+        setInstitution("");
+        setYearGraduated("");
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="pf-modal-overlay" onClick={onClose}>
+            <div className="pf-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="pf-modal-header">
+                    <div className="pf-modal-icon">
+                        <GraduationCap size={18} />
+                    </div>
+                    <div className="pf-modal-title">Add Educational Attainment</div>
+                    <button
+                        className="pf-modal-close"
+                        onClick={onClose}
+                        aria-label="Close"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+                <div className="pf-modal-body">
+                    {error && <div className="pf-modal-error">{error}</div>}
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Degree Level
+                            <span className="pf-modal-label-required">*</span>
+                        </label>
+                        <select
+                            className="pf-modal-select"
+                            value={level}
+                            onChange={(e) => setLevel(e.target.value)}
+                        >
+                            <option value="Bachelor's">Bachelor's Degree</option>
+                            <option value="Master's">Master's Degree</option>
+                            <option value="Doctorate">Doctorate/PhD</option>
+                            <option value="Professional">Professional License</option>
+                            <option value="Certificate">Certificate/Diploma</option>
+                        </select>
+                    </div>
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Degree / Title
+                            <span className="pf-modal-label-required">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            className="pf-modal-input"
+                            placeholder="e.g., Bachelor of Science in Computer Science"
+                            value={degree}
+                            onChange={(e) => setDegree(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Institution / School
+                            <span className="pf-modal-label-required">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            className="pf-modal-input"
+                            placeholder="e.g., Gordon College"
+                            value={institution}
+                            onChange={(e) => setInstitution(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Year Graduated
+                        </label>
+                        <input
+                            type="text"
+                            className="pf-modal-input"
+                            placeholder="YYYY (e.g., 2014)"
+                            value={yearGraduated}
+                            onChange={(e) =>
+                                setYearGraduated(e.target.value.slice(0, 4))
+                            }
+                            maxLength="4"
+                        />
+                    </div>
+                </div>
+                <div className="pf-modal-footer">
+                    <button
+                        className="pf-modal-btn pf-modal-btn-cancel"
+                        onClick={onClose}
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        className="pf-modal-btn pf-modal-btn-save"
+                        onClick={handleSubmit}
+                        disabled={isLoading}
+                    >
+                        {isLoading ? "Adding..." : "Add Education"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Eligibility Modal Component ──
+function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
+    const [examName, setExamName] = useState("");
+    const [datePassed, setDatePassed] = useState("");
+    const [rating, setRating] = useState("");
+    const [licenseNumber, setLicenseNumber] = useState("");
+    const [error, setError] = useState("");
+
+    const handleSubmit = () => {
+        setError("");
+        if (!examName.trim()) {
+            setError("Exam/License name is required.");
+            return;
+        }
+        if (datePassed && !/^\d{4}-\d{2}-\d{2}$/.test(datePassed)) {
+            setError("Date must be in YYYY-MM-DD format.");
+            return;
+        }
+
+        let textEntry = examName.trim();
+        if (datePassed) {
+            const dateObj = new Date(datePassed);
+            const formattedDate = dateObj.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+            });
+            textEntry += ` — Passed ${formattedDate}`;
+        }
+        if (rating) {
+            textEntry += ` (${rating.trim()})`;
+        }
+        if (licenseNumber) {
+            textEntry += ` [License #: ${licenseNumber.trim()}]`;
+        }
+
+        onSubmit({
+            text: textEntry,
+            examName: examName.trim(),
+            datePassed: datePassed.trim(),
+            rating: rating.trim(),
+            licenseNumber: licenseNumber.trim(),
+        });
+
+        // Reset form
+        setExamName("");
+        setDatePassed("");
+        setRating("");
+        setLicenseNumber("");
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="pf-modal-overlay" onClick={onClose}>
+            <div className="pf-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="pf-modal-header">
+                    <div className="pf-modal-icon">
+                        <ClipboardList size={18} />
+                    </div>
+                    <div className="pf-modal-title">Add Eligibility or License</div>
+                    <button
+                        className="pf-modal-close"
+                        onClick={onClose}
+                        aria-label="Close"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+                <div className="pf-modal-body">
+                    {error && <div className="pf-modal-error">{error}</div>}
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Exam / License Name
+                            <span className="pf-modal-label-required">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            className="pf-modal-input"
+                            placeholder="e.g., Civil Service Professional (CSC)"
+                            value={examName}
+                            onChange={(e) => setExamName(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="pf-modal-field">
+                        <label className="pf-modal-label">
+                            Date Passed
+                        </label>
+                        <input
+                            type="date"
+                            className="pf-modal-input"
+                            value={datePassed}
+                            onChange={(e) => setDatePassed(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="pf-modal-grid-2">
+                        <div className="pf-modal-field">
+                            <label className="pf-modal-label">
+                                Rating / Score
+                            </label>
+                            <input
+                                type="text"
+                                className="pf-modal-input"
+                                placeholder="e.g., 85%"
+                                value={rating}
+                                onChange={(e) => setRating(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="pf-modal-field">
+                            <label className="pf-modal-label">
+                                License Number
+                            </label>
+                            <input
+                                type="text"
+                                className="pf-modal-input"
+                                placeholder="Optional"
+                                value={licenseNumber}
+                                onChange={(e) => setLicenseNumber(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div className="pf-modal-footer">
+                    <button
+                        className="pf-modal-btn pf-modal-btn-cancel"
+                        onClick={onClose}
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        className="pf-modal-btn pf-modal-btn-save"
+                        onClick={handleSubmit}
+                        disabled={isLoading}
+                    >
+                        {isLoading ? "Adding..." : "Add Eligibility"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function Profile({ user }) {
     const userId = user?.id || null;
     const userEmail = user?.email || null;
     const [profileEditOpen, setProfileEditOpen] = useState(DEFAULT_PROFILE_EDIT_OPEN);
+    const [profileEditWindowLabel, setProfileEditWindowLabel] = useState("");
+    const [activeCycleRow, setActiveCycleRow] = useState(null);
     const [profilePicture, setProfilePicture] = useState("");
     const [memberSince, setMemberSince] = useState("Not available");
     const [lastName, setLastName] = useState("Candido");
@@ -669,6 +1181,12 @@ export default function Profile({ user }) {
     const [cpSuccess, setCpSuccess] = useState(false);
     const [cpError, setCpError] = useState("");
     const [toasts, setToasts] = useState([]);
+
+    // Modal states
+    const [eduModalOpen, setEduModalOpen] = useState(false);
+    const [eligModalOpen, setEligModalOpen] = useState(false);
+    const [isSubmittingEdu, setIsSubmittingEdu] = useState(false);
+    const [isSubmittingElig, setIsSubmittingElig] = useState(false);
 
     const strength = getStrength(cpNew);
     const passwordsMatch = cpNew.length > 0 && cpNew === cpConfirm;
@@ -731,16 +1249,24 @@ export default function Profile({ user }) {
         const hydrateProfile = async () => {
             const cycleResult = await queryRowsWithTableFromCandidates(
                 CYCLE_TABLE_CANDIDATES,
-                1,
+                50,
             );
-            if (isActive && cycleResult.rows.length > 0) {
-                const cycle = cycleResult.rows[0];
-                setProfileEditOpen(
-                    toBoolean(
-                        getFirstValue(cycle, ["profile_edit_open", "is_profile_edit_open"], DEFAULT_PROFILE_EDIT_OPEN),
-                        DEFAULT_PROFILE_EDIT_OPEN,
-                    ),
-                );
+            if (isActive) {
+                const activeCycle = cycleResult.rows.find((row) => {
+                    const status = normalizeStatus(getFirstValue(row, ["status", "cycle_status"], ""));
+                    return ["open", "active", "in_progress", "in progress"].includes(status);
+                });
+
+                if (activeCycle) {
+                    const editState = resolveProfileEditWindow(activeCycle);
+                    setProfileEditOpen(editState.isOpen);
+                    setProfileEditWindowLabel(editState.windowLabel);
+                    setActiveCycleRow(activeCycle);
+                } else {
+                    setProfileEditOpen(false);
+                    setProfileEditWindowLabel("");
+                    setActiveCycleRow(null);
+                }
             }
 
             let userRow = null;
@@ -929,6 +1455,23 @@ export default function Profile({ user }) {
         };
     }, [userEmail, userId]);
 
+    useEffect(() => {
+        if (!activeCycleRow) return;
+
+        const syncEditWindow = () => {
+            const editState = resolveProfileEditWindow(activeCycleRow);
+            setProfileEditOpen(editState.isOpen);
+            setProfileEditWindowLabel(editState.windowLabel);
+        };
+
+        syncEditWindow();
+        const interval = window.setInterval(syncEditWindow, 30000);
+
+        return () => {
+            window.clearInterval(interval);
+        };
+    }, [activeCycleRow]);
+
     // ── Handlers ──
 
     const handleFieldSave = async (field, value) => {
@@ -990,61 +1533,68 @@ export default function Profile({ user }) {
         document.body.removeChild(input);
     };
 
-    const handleAddEdu = async () => {
-        const level = window.prompt("Degree level (e.g., Bachelor's, Master's)", "Bachelor's");
-        if (!level) return;
-        const degree = window.prompt("Degree title", "");
-        if (!degree) return;
-        const school = window.prompt("School and year", "");
+    const handleAddEdu = async (eduData) => {
+        setIsSubmittingEdu(true);
+        try {
+            const newEntry = {
+                level: eduData.level,
+                levelClass:
+                    eduData.level.toLowerCase().includes("doctor")
+                        ? "edu-doctorate"
+                        : eduData.level.toLowerCase().includes("master")
+                          ? "edu-masters"
+                          : "edu-bachelor",
+                degree: eduData.degree,
+                school: eduData.yearGraduated
+                    ? `${eduData.institution} · ${eduData.yearGraduated}`
+                    : eduData.institution,
+                pending: true,
+            };
 
-        const newEntry = {
-            level,
-            levelClass:
-                level.toLowerCase().includes("doctor")
-                    ? "edu-doctorate"
-                    : level.toLowerCase().includes("master")
-                      ? "edu-masters"
-                      : "edu-bachelor",
-            degree,
-            school: school || "",
-            pending: true,
-        };
+            const saved = await writeChangeRequest({
+                field: "educational_attainment",
+                oldValue: "",
+                newValue: JSON.stringify(newEntry),
+            });
 
-        const saved = await writeChangeRequest({
-            field: "educational_attainment",
-            oldValue: "",
-            newValue: JSON.stringify(newEntry),
-        });
-        if (!saved) {
-            pushToast("error", "Unable to add degree right now.");
-            return;
+            if (!saved) {
+                pushToast("error", "Unable to add degree right now.");
+                return;
+            }
+
+            setEduList((prev) => [...prev, newEntry]);
+            pushToast("success", "Degree entry submitted for HR verification.");
+            setEduModalOpen(false);
+        } finally {
+            setIsSubmittingEdu(false);
         }
-
-        setEduList((prev) => [...prev, newEntry]);
-        pushToast("success", "Degree entry submitted for HR verification.");
     };
 
-    const handleAddElig = async () => {
-        const text = window.prompt("Eligibility or board exam", "");
-        if (!text) return;
+    const handleAddElig = async (eligData) => {
+        setIsSubmittingElig(true);
+        try {
+            const newEntry = {
+                text: eligData.text,
+                pending: true,
+            };
 
-        const newEntry = {
-            text,
-            pending: true,
-        };
+            const saved = await writeChangeRequest({
+                field: "eligibility_exams",
+                oldValue: "",
+                newValue: eligData.text,
+            });
 
-        const saved = await writeChangeRequest({
-            field: "eligibility_exams",
-            oldValue: "",
-            newValue: text,
-        });
-        if (!saved) {
-            pushToast("error", "Unable to add eligibility right now.");
-            return;
+            if (!saved) {
+                pushToast("error", "Unable to add eligibility right now.");
+                return;
+            }
+
+            setEligList((prev) => [...prev, newEntry]);
+            pushToast("success", "Eligibility entry submitted for HR verification.");
+            setEligModalOpen(false);
+        } finally {
+            setIsSubmittingElig(false);
         }
-
-        setEligList((prev) => [...prev, newEntry]);
-        pushToast("success", "Eligibility entry submitted for HR verification.");
     };
 
     const handleCpSubmit = async () => {
@@ -1190,6 +1740,7 @@ export default function Profile({ user }) {
                         has not yet opened the profile edit window for this
                         cycle. You will be notified when you can update your
                         information.
+                        {profileEditWindowLabel ? ` ${profileEditWindowLabel}` : ""}
                     </p>
                 </div>
             )}
@@ -1392,7 +1943,7 @@ export default function Profile({ user }) {
                         {profileEditOpen && (
                             <button
                                 className="pf-edu-add"
-                                onClick={handleAddEdu}
+                                onClick={() => setEduModalOpen(true)}
                             >
                                 <Plus size={14} /> Add degree or credential
                             </button>
@@ -1434,7 +1985,7 @@ export default function Profile({ user }) {
                         {profileEditOpen && (
                             <button
                                 className="pf-elig-add"
-                                onClick={handleAddElig}
+                                onClick={() => setEligModalOpen(true)}
                             >
                                 <Plus size={14} /> Add eligibility or board exam
                             </button>
@@ -1716,6 +2267,22 @@ export default function Profile({ user }) {
                     ))}
                 </div>
             )}
+
+            {/* Education Modal */}
+            <EducationModal
+                isOpen={eduModalOpen}
+                onClose={() => setEduModalOpen(false)}
+                onSubmit={handleAddEdu}
+                isLoading={isSubmittingEdu}
+            />
+
+            {/* Eligibility Modal */}
+            <EligibilityModal
+                isOpen={eligModalOpen}
+                onClose={() => setEligModalOpen(false)}
+                onSubmit={handleAddElig}
+                isLoading={isSubmittingElig}
+            />
         </>
     );
 }

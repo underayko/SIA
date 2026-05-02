@@ -89,64 +89,87 @@ export function AuthProvider({ children }) {
 		setProfileLoading(true);
 		let profileRow = null;
 
-		const byId = await supabase
-			.from("users")
-			.select("*")
-			.eq("id", currentUser.id)
-			.maybeSingle();
+		try {
+			if (currentUser.email) {
+				const byEmail = await supabase
+					.from("users")
+					.select("*")
+					.eq("domain_email", currentUser.email)
+					.maybeSingle();
 
-		if (!byId.error) {
-			profileRow = byId.data;
-		}
-
-		if (!profileRow && currentUser.email) {
-			const byEmail = await supabase
-				.from("users")
-				.select("*")
-				.eq("email", currentUser.email)
-				.maybeSingle();
-
-			if (!byEmail.error) {
-				profileRow = byEmail.data;
+				if (!byEmail.error) {
+					profileRow = byEmail.data;
+				}
 			}
+
+			if (!profileRow && currentUser.email) {
+				const byEmailFallback = await supabase
+					.from("users")
+					.select("*")
+					.eq("email", currentUser.email)
+					.maybeSingle();
+
+				if (!byEmailFallback.error) {
+					profileRow = byEmailFallback.data;
+				}
+			}
+
+			setProfile(profileRow);
+			setRole(resolveRole(profileRow, currentUser));
+
+			const firstLoginFromProfile = readFirstLoginFlag(profileRow);
+			setNeedsPasswordChange(
+				typeof firstLoginFromProfile === "boolean"
+					? firstLoginFromProfile
+					: detectFirstLoginFromUser(currentUser),
+			);
+		} catch (err) {
+			console.error("Profile hydration error:", err);
+			setProfile(null);
+			setRole("Faculty");
+			setNeedsPasswordChange(false);
+		} finally {
+			setProfileLoading(false);
 		}
-
-		setProfile(profileRow);
-		setRole(resolveRole(profileRow, currentUser));
-
-		const firstLoginFromProfile = readFirstLoginFlag(profileRow);
-		setNeedsPasswordChange(
-			typeof firstLoginFromProfile === "boolean"
-				? firstLoginFromProfile
-				: detectFirstLoginFromUser(currentUser),
-		);
-
-		setProfileLoading(false);
 	}, []);
 
 	useEffect(() => {
 		let mounted = true;
 
 		const boot = async () => {
-			const { data } = await supabase.auth.getSession();
-			if (!mounted) return;
+			try {
+				const { data } = await supabase.auth.getSession();
+				if (!mounted) return;
 
-			const nextSession = data?.session ?? null;
-			setSession(nextSession);
-			setUser(nextSession?.user ?? null);
-			setAuthLoading(false);
-			void hydrateProfile(nextSession?.user ?? null);
+				const nextSession = data?.session ?? null;
+				setSession(nextSession);
+				setUser(nextSession?.user ?? null);
+				
+				// Mark auth as loaded IMMEDIATELY - hydrate profile in background
+				setAuthLoading(false);
+				
+				// Then hydrate profile asynchronously without blocking
+				if (nextSession?.user) {
+					void hydrateProfile(nextSession.user);
+				}
+			} catch (err) {
+				console.error("Auth boot error:", err);
+				if (!mounted) return;
+				setAuthLoading(false);
+			}
 		};
 
 		void boot();
 
 		const {
 			data: { subscription },
-		} = supabase.auth.onAuthStateChange((_event, nextSession) => {
+		} = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+			if (!mounted) return;
 			setSession(nextSession ?? null);
 			setUser(nextSession?.user ?? null);
-			setAuthLoading(false);
-			void hydrateProfile(nextSession?.user ?? null);
+			if (nextSession?.user) {
+				void hydrateProfile(nextSession.user);
+			}
 		});
 
 		return () => {
@@ -169,11 +192,16 @@ export function AuthProvider({ children }) {
 			return;
 		}
 
+		if (!profile?.user_id && !user.email) {
+			setNeedsPasswordChange(false);
+			return;
+		}
+
 		for (const column of FIRST_LOGIN_COLUMNS) {
 			const { error } = await supabase
 				.from("users")
 				.update({ [column]: false })
-				.eq("id", user.id);
+				.eq(profile?.user_id ? "user_id" : "domain_email", profile?.user_id || user.email);
 
 			if (!error) {
 				break;
@@ -181,7 +209,7 @@ export function AuthProvider({ children }) {
 		}
 
 		setNeedsPasswordChange(false);
-	}, [user]);
+	}, [profile?.user_id, user, user?.email]);
 
 	const value = useMemo(
 		() => ({
@@ -190,7 +218,7 @@ export function AuthProvider({ children }) {
 			role,
 			profile,
 			needsPasswordChange,
-			isLoading: authLoading || (Boolean(user) && profileLoading),
+			isLoading: authLoading,
 			refreshProfile,
 			signOut,
 			markFirstLoginComplete,

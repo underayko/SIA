@@ -3,8 +3,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "node ./functions/placeholder.js",
-		"start": "node ./functions/placeholder.js",
+		"dev": "node ./server.js",
+		"start": "node ./server.js",
 		"serve": "node ./server.js"
 	},
 	"dependencies": {
