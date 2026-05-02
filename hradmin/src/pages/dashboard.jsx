@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './dashboard.css';
@@ -30,15 +30,20 @@ function CycleCard({ cycle, onEdit, onCycleAction }) {
     if (!timestamp) return 'Not set';
     // Handle both Timestamp objects and date strings
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric'
+    if (Number.isNaN(date.getTime())) return 'Not set';
+    return date.toLocaleString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
     });
   };
 
   const getStatusBadge = () => {
     // Use the cycle's status field first, then fall back to date logic
-    if (cycle.status === 'closed') {
-      return { class: 'badge-closed', text: 'Closed' };
+    if (cycle.status === 'finished') {
+      return { class: 'badge-closed', text: 'Finished' };
+    }
+
+    if (cycle.status === 'submissions_closed') {
+      return { class: 'badge-warning', text: 'Submissions Closed' };
     }
 
     if (cycle.status === 'open') {
@@ -66,17 +71,50 @@ function CycleCard({ cycle, onEdit, onCycleAction }) {
 
   const getActionButtons = () => {
     const isOpen = cycle.status === 'open';
+    const isSubmissionsClosed = cycle.status === 'submissions_closed';
+    const isFinished = cycle.status === 'finished';
+    const profileLocked = cycle.profile_edit_open === false;
 
     if (isOpen) {
-      // Active cycle: Edit + Close Cycle
+      // Active cycle: Edit + Lock/Unlock Profile + Close Submissions + Finish Evaluation
       return (
         <>
           <button className="btn btn-edit" onClick={onEdit}>Edit</button>
-          <button className="btn btn-close" onClick={() => onCycleAction('close')}>Close Cycle</button>
+          <button
+            className={profileLocked ? 'btn btn-open' : 'btn btn-close'}
+            onClick={() => onCycleAction(profileLocked ? 'unlock-profile' : 'lock-profile')}
+          >
+            {profileLocked ? 'Unlock Profile' : 'Lock Profile'}
+          </button>
+          <button className="btn btn-open" onClick={() => onCycleAction('close')}>Close Submissions</button>
+          <button className="btn btn-close" onClick={() => onCycleAction('finish')}>Finish Evaluation</button>
+        </>
+      );
+    } else if (isSubmissionsClosed) {
+      // Submissions closed but evaluation ongoing: Edit + Lock/Unlock Profile + Re-open Submissions + Finish Evaluation
+      return (
+        <>
+          <button className="btn btn-edit" onClick={onEdit}>Edit</button>
+          <button
+            className={profileLocked ? 'btn btn-open' : 'btn btn-close'}
+            onClick={() => onCycleAction(profileLocked ? 'unlock-profile' : 'lock-profile')}
+          >
+            {profileLocked ? 'Unlock Profile' : 'Lock Profile'}
+          </button>
+          <button className="btn btn-open" onClick={() => onCycleAction('reopen')}>Re-open Submissions</button>
+          <button className="btn btn-close" onClick={() => onCycleAction('finish')}>Finish Evaluation</button>
+        </>
+      );
+    } else if (isFinished) {
+      // Evaluation finished: Edit + Open Cycle (restart from beginning)
+      return (
+        <>
+          <button className="btn btn-edit" onClick={onEdit}>Edit</button>
+          <button className="btn btn-open" onClick={() => onCycleAction('open')}>Open Cycle</button>
         </>
       );
     } else {
-      // Closed cycle: Edit + Open Cycle
+      // Unknown state: Edit + Open Cycle
       return (
         <>
           <button className="btn btn-edit" onClick={onEdit}>Edit</button>
@@ -87,6 +125,7 @@ function CycleCard({ cycle, onEdit, onCycleAction }) {
   };
 
   const status = getStatusBadge();
+  const profileEditingAllowed = cycle.profile_edit_open !== false;
 
   return (
     <div className="cycle-card">
@@ -96,7 +135,8 @@ function CycleCard({ cycle, onEdit, onCycleAction }) {
           <div className="cycle-title">{cycle.title}</div>
           <div className="cycle-meta">
             Started: {formatDate(cycle.start_date)}<br />
-            Deadline: {formatDate(cycle.deadline)}
+            Deadline: {formatDate(cycle.deadline)}<br />
+            Profile Access: {profileEditingAllowed ? 'Open' : 'Locked'}
           </div>
         </div>
         <span className={`badge ${status.class}`}>{status.text}</span>
@@ -153,18 +193,98 @@ function HistoryItem({ cycle }) {
   );
 }
 
+// ── Action Confirmation Modal ─────────────────────────────────
+function ActionConfirmModal({ open, title, message, confirmLabel, confirmTone = 'danger', onConfirm, onCancel }) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="action-modal-overlay"
+      onClick={(e) => e.target.classList.contains('action-modal-overlay') && onCancel()}
+    >
+      <div className="action-modal">
+        <div className="action-modal-header">
+          <div>
+            <div className="action-modal-kicker">Confirm Action</div>
+            <div className="action-modal-title">{title}</div>
+          </div>
+          <button className="action-modal-close" onClick={onCancel} aria-label="Close confirmation">✕</button>
+        </div>
+        <div className="action-modal-body">
+          <p>{message}</p>
+        </div>
+        <div className="action-modal-footer">
+          <button className="btn btn-edit" onClick={onCancel}>Cancel</button>
+          <button className={`btn ${confirmTone === 'primary' ? 'btn-open' : 'btn-close'}`} onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Timeline Modal ───────────────────────────────────────────
-function TimelineModal({ cycle, onClose, onSaved }) {
+function TimelineModal({ cycle, onClose, onSaved, focusDeadline = false }) {
+  const pad2 = (value) => String(value).padStart(2, '0');
+
+  const toDateObject = (timestamp) => {
+    if (!timestamp) return null;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+
+    const parsed = new Date(timestamp);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const toDateInputValue = (timestamp) => {
+    const date = toDateObject(timestamp);
+    if (!date) return '';
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  };
+
+  const toTimeInputValue = (timestamp, fallback = '23:59') => {
+    const date = toDateObject(timestamp);
+    if (!date) return fallback;
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  };
+
+  const getCurrentTimeInputValue = () => {
+    const now = new Date();
+    return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  };
+
+  const deadlineDateRef = useRef(null);
+
+  const mergeLocalDateAndTimeToIso = (dateValue, timeValue) => {
+    if (!dateValue) return null;
+    const time = timeValue || '00:00';
+    const composed = new Date(`${dateValue}T${time}:00`);
+    return Number.isNaN(composed.getTime()) ? null : composed.toISOString();
+  };
+
+  const existingStartTime = toTimeInputValue(cycle?.start_date, getCurrentTimeInputValue());
+
   const [form, setForm] = useState({
     title:       cycle?.title       || '',
     year:        cycle?.year        || new Date().getFullYear(),
     semester:    cycle?.semester    || 'First Semester',
-    start_date:  cycle?.start_date  ? (cycle.start_date.toDate ? cycle.start_date.toDate().toISOString().split('T')[0] : cycle.start_date) : '',
-    deadline:    cycle?.deadline    ? (cycle.deadline.toDate ? cycle.deadline.toDate().toISOString().split('T')[0] : cycle.deadline) : '',
-    deadline_time: '23:59',
+    start_date:  toDateInputValue(cycle?.start_date),
+    start_time:  cycle?.start_date ? toTimeInputValue(cycle.start_date, getCurrentTimeInputValue()) : getCurrentTimeInputValue(),
+    deadline:    toDateInputValue(cycle?.deadline),
+    deadline_time: cycle?.deadline ? toTimeInputValue(cycle.deadline, '23:59') : getCurrentTimeInputValue(),
     status:      cycle?.status      || 'open',
+    profile_edit_open: cycle?.profile_edit_open !== false,
   });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (focusDeadline && deadlineDateRef.current) {
+      deadlineDateRef.current.focus();
+      deadlineDateRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [focusDeadline]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
@@ -185,9 +305,16 @@ function TimelineModal({ cycle, onClose, onSaved }) {
 
   const handleSave = async () => {
     const title = form.title || generateTitle();
-    // Use ISO strings for Supabase
-    const startTimestamp = form.start_date ? new Date(form.start_date).toISOString() : new Date().toISOString();
-    const deadlineTimestamp = form.deadline ? new Date(form.deadline + 'T' + form.deadline_time).toISOString() : new Date().toISOString();
+    // Keep local date/time from the form for deterministic cycle/profile window behavior.
+    const startTimestamp = mergeLocalDateAndTimeToIso(form.start_date, form.start_time || existingStartTime) || new Date().toISOString();
+    const deadlineTimestamp = mergeLocalDateAndTimeToIso(form.deadline, form.deadline_time) || new Date().toISOString();
+    const startDateObj = new Date(startTimestamp);
+    const deadlineDateObj = new Date(deadlineTimestamp);
+
+    if (deadlineDateObj < startDateObj) {
+      alert('Deadline cannot be earlier than start date/time.');
+      return;
+    }
 
     // Get the current logged-in user
     const {
@@ -238,6 +365,10 @@ function TimelineModal({ cycle, onClose, onSaved }) {
       start_date: startTimestamp,
       deadline: deadlineTimestamp,
       status: form.status,
+      profile_edit_start: startTimestamp,
+      profile_edit_deadline: deadlineTimestamp,
+      // Admin-controlled lock switch. Faculty-side still checks cycle time window.
+      profile_edit_open: form.profile_edit_open,
       created_by: userId, // Use integer user_id
     };
 
@@ -295,84 +426,149 @@ function TimelineModal({ cycle, onClose, onSaved }) {
   return (
     <div className="modal-overlay open" onClick={(e) => e.target.classList.contains('modal-overlay') && onClose()}>
       <div className="modal">
-        <h3>{cycle?.cycle_id ? 'Edit Cycle' : 'Create New Cycle'}</h3>
-        <div className="modal-grid">
-          <div className="modal-field">
-            <label>Academic Year</label>
-            <input
-              type="number"
-              value={form.year}
-              onChange={e => set('year', Number(e.target.value))}
-            />
+        <div className="modal-header">
+          <div className="modal-title-wrap">
+            <div className="modal-kicker">Ranking Cycle Builder</div>
+            <h3>{cycle?.cycle_id ? 'Edit Cycle' : 'Create New Cycle'}</h3>
+            <div className="modal-subtitle">
+              Configure the semester cycle, lock/unlock faculty profile editing, and set the exact time window for submissions.
+            </div>
           </div>
-          <div className="modal-field">
-            <label>Semester</label>
-            <select value={form.semester} onChange={e => set('semester', e.target.value)}>
-              <option>First Semester</option>
-              <option>Second Semester</option>
-            </select>
-          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close modal">✕</button>
         </div>
-        <div className="modal-grid">
-          <div className="modal-field">
-            <label>Cycle Title</label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={e => set('title', e.target.value)}
-              placeholder={generateTitle()}
-            />
+
+        <div className="modal-body">
+          <div className="summary-banner" style={{ marginBottom: '16px' }}>
+            <strong>Tip:</strong> <b>Cycle Status</b> controls whether the cycle is active or closed. <b>Profile Access</b> controls whether faculty may edit their profile, and admin lock always wins.
           </div>
-          <div className="modal-field">
-            <label>Status</label>
-            <select value={form.status} onChange={e => set('status', e.target.value)}>
-              <option value="open">Open</option>
-              <option value="close">Closed</option>
-            </select>
-          </div>
-        </div>
-        <div className="modal-grid">
-          <div className="modal-field">
-            <label>Start Date</label>
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={e => set('start_date', e.target.value)}
-            />
-          </div>
-          <div className="modal-field">
-            <label>Deadline</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input 
-                type="date" 
-                value={form.deadline} 
-                onChange={e => set('deadline', e.target.value)}
-                style={{ flex: 1 }} 
-              />
-              <input 
-                type="time" 
-                value={form.deadline_time} 
-                onChange={e => set('deadline_time', e.target.value)}
-                style={{ width: '90px' }} 
-              />
+
+          <div className="modal-panel">
+            <div className="modal-panel-body">
+              <div className="modal-grid">
+                <div className="modal-field">
+                  <label>Academic Year</label>
+                  <input
+                    type="number"
+                    value={form.year}
+                    onChange={e => set('year', Number(e.target.value))}
+                  />
+                </div>
+                <div className="modal-field">
+                  <label>Semester</label>
+                  <select value={form.semester} onChange={e => set('semester', e.target.value)}>
+                    <option>First Semester</option>
+                    <option>Second Semester</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="modal-grid">
+                <div className="modal-field">
+                  <label>Cycle Title</label>
+                  <input
+                    type="text"
+                    value={form.title}
+                    onChange={e => set('title', e.target.value)}
+                    placeholder={generateTitle()}
+                  />
+                </div>
+                <div className="modal-field">
+                  <label>Cycle Status</label>
+                  <select value={form.status} onChange={e => set('status', e.target.value)}>
+                    <option value="open">Open</option>
+                    <option value="submissions_closed">Submissions Closed</option>
+                    <option value="finished">Finished</option>
+                  </select>
+                  <small>Use Submissions Closed to keep evaluation active, and Finished only when the semester is complete.</small>
+                </div>
+              </div>
+
+              <div className="modal-grid">
+                <div className="modal-field">
+                  <label>Start Date & Time</label>
+                  <div className="year-range">
+                    <input
+                      type="date"
+                      value={form.start_date}
+                      onChange={e => set('start_date', e.target.value)}
+                    />
+                    <input
+                      type="time"
+                      value={form.start_time}
+                      onChange={e => set('start_time', e.target.value)}
+                      style={{ width: '96px' }}
+                    />
+                  </div>
+                  <small>Faculty profile editing opens from this time if profile access is allowed.</small>
+                </div>
+                <div className="modal-field">
+                  <label>Deadline Date & Time</label>
+                  <div className={`year-range deadline-row ${focusDeadline ? 'deadline-highlight' : ''}`}>
+                    <input
+                      type="date"
+                      ref={deadlineDateRef}
+                      value={form.deadline}
+                      onChange={e => set('deadline', e.target.value)}
+                    />
+                    <input
+                      type="time"
+                      value={form.deadline_time}
+                      onChange={e => set('deadline_time', e.target.value)}
+                      style={{ width: '96px' }}
+                    />
+                  </div>
+                  <small>Adjust this when reopening submissions after the deadline.</small>
+                </div>
+              </div>
+
+              <div className="modal-grid">
+                <div className="modal-field">
+                  <label>Profile Access</label>
+                  <select
+                    value={form.profile_edit_open ? 'open' : 'locked'}
+                    onChange={e => set('profile_edit_open', e.target.value === 'open')}
+                  >
+                    <option value="open">Open for faculty editing</option>
+                    <option value="locked">Locked by admin</option>
+                  </select>
+                  <small>Locked overrides the current cycle, even while the cycle itself is open.</small>
+                </div>
+                <div className="modal-field">
+                  <label>Access Result</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={form.profile_edit_open
+                      ? 'Faculty may edit within the active time window.'
+                      : 'Faculty profile is locked by admin.'}
+                  />
+                </div>
+              </div>
+
+              <div className="summary-box" style={{ marginTop: '10px', marginBottom: 0 }}>
+                <div className="summary-row">
+                  <div>
+                    <label>Preview</label>
+                    <span style={{ display: 'block', marginTop: '4px' }}>{form.title || generateTitle()}</span>
+                    <span style={{ display: 'block', marginTop: '6px', color: 'var(--muted)', fontSize: '0.74rem' }}>
+                      {form.start_date || 'No start date'} {form.start_time ? `• ${form.start_time}` : ''} {' '}→{' '}
+                      {form.deadline || 'No deadline'} {form.deadline_time ? `• ${form.deadline_time}` : ''}
+                    </span>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span className={`summary-pill ${form.status}`}>
+                        {form.status === 'open' ? 'Open' : form.status === 'submissions_closed' ? 'Submissions Closed' : 'Finished'}
+                    </span>
+                    <span className={`summary-pill ${form.profile_edit_open ? 'open' : 'closed'}`} style={{ marginLeft: '8px' }}>
+                      {form.profile_edit_open ? 'Profile Open' : 'Profile Locked'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div className="modal-section-title">Preview</div>
-        <div className="summary-box">
-          <div className="summary-row">
-            <div>
-              <label>Cycle Title</label>
-              <span style={{ display: 'block', marginTop: '2px' }}>{form.title || generateTitle()}</span>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <label>Status</label>
-              <span className={form.status} style={{ display: 'block', marginTop: '2px' }}>
-                {form.status === 'open' ? 'Open' : 'Closed'}
-              </span>
-            </div>
-          </div>
-        </div>
+
         <div className="modal-footer">
           <button className="btn btn-save" onClick={handleSave} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -391,7 +587,11 @@ function TimelineModal({ cycle, onClose, onSaved }) {
 // ── Dashboard Page ───────────────────────────────────────────
 export default function Dashboard() {
   const [currentCycle, setCurrentCycle] = useState(null);
+  const [modalCycle, setModalCycle] = useState(null);
+  const [focusDeadlineFields, setFocusDeadlineFields] = useState(false);
   const [cycleHistory, setCycleHistory] = useState([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPageSize = 6;
   const [stats, setStats] = useState({
     totalFaculty: 0,
     pendingReviews: 0,
@@ -399,6 +599,14 @@ export default function Dashboard() {
     deadline: 'Not set'
   });
   const [modalOpen, setModalOpen] = useState(false);
+  const [actionModal, setActionModal] = useState({
+    open: false,
+    action: null,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    confirmTone: 'danger',
+  });
   const [loading, setLoading] = useState(true);
 
   const fetchData = async ({ showLoader = true } = {}) => {
@@ -415,8 +623,8 @@ export default function Dashboard() {
       if (cyclesError) throw cyclesError;
       console.log('All cycles found:', allCycles);
 
-      // Find the open cycle
-      const openCycle = allCycles.find(c => c.status === 'open');
+      // Find the active cycle (open or submissions_closed, but not finished)
+      const openCycle = allCycles.find(c => c.status === 'open' || c.status === 'submissions_closed');
       if (openCycle) {
         setCurrentCycle(openCycle);
       } else {
@@ -426,8 +634,7 @@ export default function Dashboard() {
       // History: closed cycles, sorted by created_at desc
       const history = allCycles
         .filter(c => c.status !== 'open')
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 10);
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setCycleHistory(history);
 
       // Faculty stats
@@ -519,27 +726,152 @@ export default function Dashboard() {
 
   const handleCycleSaved = () => {
     setModalOpen(false);
+    setModalCycle(null);
+    setFocusDeadlineFields(false);
+    setHistoryPage(1);
     // Always refresh dashboard after saving a cycle
     fetchData();
   };
 
+  const resetActionModal = () => {
+    setActionModal({
+      open: false,
+      action: null,
+      title: '',
+      message: '',
+      confirmLabel: 'Confirm',
+      confirmTone: 'danger',
+    });
+  };
+
+  const totalHistoryPages = Math.max(1, Math.ceil(cycleHistory.length / historyPageSize));
+  const safeHistoryPage = Math.min(historyPage, totalHistoryPages);
+  const historyStartIndex = (safeHistoryPage - 1) * historyPageSize;
+  const visibleHistory = cycleHistory.slice(historyStartIndex, historyStartIndex + historyPageSize);
+
+  useEffect(() => {
+    if (historyPage > totalHistoryPages) {
+      setHistoryPage(totalHistoryPages);
+    }
+  }, [historyPage, totalHistoryPages]);
+
   const handleCycleAction = async (action) => {
     if (!currentCycle) return;
     try {
-      // Only allow 'open' or 'close' (all lowercase)
-      const newStatus = action === 'open' ? 'open' : 'closed';
-      if (newStatus !== 'open' && newStatus !== 'closed') {
-        alert('Invalid status value. Allowed: open, close');
+      if (action === 'reopen') {
+        const deadlineValue = currentCycle.deadline?.toDate ? currentCycle.deadline.toDate() : new Date(currentCycle.deadline);
+        const hasDeadline = deadlineValue instanceof Date && !Number.isNaN(deadlineValue.getTime());
+        const isDeadlineReached = hasDeadline && new Date() >= deadlineValue;
+
+        setModalCycle({
+          ...currentCycle,
+          status: 'open',
+        });
+        setFocusDeadlineFields(isDeadlineReached);
+        setModalOpen(true);
         return;
       }
-      console.log(`🔄 Updating cycle ${currentCycle.cycle_id} status to: ${newStatus}`);
+
+      if (action === 'lock-profile' || action === 'unlock-profile') {
+        setActionModal({
+          open: true,
+          action,
+          title: action === 'unlock-profile' ? 'Unlock Faculty Profile Editing?' : 'Lock Faculty Profile Editing?',
+          message: action === 'unlock-profile'
+            ? 'Faculty will be able to edit their profile again, provided the current cycle window is still active.'
+            : 'Faculty profile editing will be disabled until you unlock it again.',
+          confirmLabel: action === 'unlock-profile' ? 'Unlock Profile' : 'Lock Profile',
+          confirmTone: action === 'unlock-profile' ? 'primary' : 'danger',
+        });
+        return;
+      }
+
+      if (action === 'close') {
+        setActionModal({
+          open: true,
+          action,
+          title: 'Close Submissions?',
+          message: 'This will stop faculty from submitting new files for the current cycle. It does not finish or publish the evaluation.',
+          confirmLabel: 'Close Submissions',
+          confirmTone: 'primary',
+        });
+        return;
+      }
+
+      if (action === 'finish') {
+        setActionModal({
+          open: true,
+          action,
+          title: 'Finish Evaluation?',
+          message: 'This will finalize the evaluation workflow and lock faculty profile editing. Use this only when the evaluation is truly complete.',
+          confirmLabel: 'Finish Evaluation',
+          confirmTone: 'danger',
+        });
+        return;
+      }
+
+      if (action !== 'open' && action !== 'reopen') {
+        alert('Invalid action. Allowed: open, close, lock-profile, unlock-profile, finish, reopen');
+        return;
+      }
+
+      // 'open' and 'reopen' both set status to 'open' and enable profile editing
+      console.log(`🔄 Updating cycle ${currentCycle.cycle_id} status to: open`);
       const { error } = await supabase
         .from('ranking_cycles')
-        .update({ status: newStatus })
+        .update({
+          status: 'open',
+          profile_edit_open: true,
+        })
         .eq('cycle_id', currentCycle.cycle_id);
       if (error) throw error;
-      console.log('✅ Cycle status updated successfully');
+      console.log('✅ Cycle reopened successfully');
       fetchData(); // Refresh data
+    } catch (err) {
+      console.error('❌ Error updating cycle status:', err);
+      alert('Failed to update cycle status: ' + err.message);
+    }
+  };
+
+  const confirmCycleAction = async () => {
+    if (!currentCycle || !actionModal.action) return;
+
+    try {
+      if (actionModal.action === 'lock-profile' || actionModal.action === 'unlock-profile') {
+        const nextProfileEditOpen = actionModal.action === 'unlock-profile';
+        const { error } = await supabase
+          .from('ranking_cycles')
+          .update({ profile_edit_open: nextProfileEditOpen })
+          .eq('cycle_id', currentCycle.cycle_id);
+        if (error) throw error;
+        console.log(`✅ Profile access ${nextProfileEditOpen ? 'unlocked' : 'locked'} successfully`);
+      }
+
+      if (actionModal.action === 'finish') {
+        const { error } = await supabase
+          .from('ranking_cycles')
+          .update({
+            status: 'finished',
+            profile_edit_open: false,
+          })
+          .eq('cycle_id', currentCycle.cycle_id);
+        if (error) throw error;
+        console.log('✅ Evaluation finalized successfully');
+      }
+
+      if (actionModal.action === 'close') {
+        const { error } = await supabase
+          .from('ranking_cycles')
+          .update({
+            status: 'submissions_closed',
+          })
+          .eq('cycle_id', currentCycle.cycle_id);
+        if (error) throw error;
+        console.log('✅ Submissions closed successfully');
+      }
+
+      resetActionModal();
+      fetchData();
     } catch (err) {
       console.error('❌ Error updating cycle status:', err);
       alert('Failed to update cycle status: ' + err.message);
@@ -588,7 +920,11 @@ export default function Dashboard() {
 
           <CycleCard 
             cycle={currentCycle} 
-            onEdit={() => setModalOpen(true)} 
+            onEdit={() => {
+              setModalCycle(currentCycle);
+              setFocusDeadlineFields(false);
+              setModalOpen(true);
+            }} 
             onCycleAction={handleCycleAction}
           />
 
@@ -610,19 +946,55 @@ export default function Dashboard() {
                   No previous cycles found.
                 </p>
               ) : (
-                cycleHistory.map((cycle) => <HistoryItem key={cycle.cycle_id} cycle={cycle} />)
+                visibleHistory.map((cycle) => <HistoryItem key={cycle.cycle_id} cycle={cycle} />)
               )}
             </div>
+            {cycleHistory.length > historyPageSize && (
+              <div className="history-pagination">
+                <button
+                  className="history-page-btn"
+                  onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                  disabled={safeHistoryPage === 1}
+                >
+                  Previous
+                </button>
+                <div className="history-page-info">
+                  Page {safeHistoryPage} of {totalHistoryPages}
+                </div>
+                <button
+                  className="history-page-btn"
+                  onClick={() => setHistoryPage((page) => Math.min(totalHistoryPages, page + 1))}
+                  disabled={safeHistoryPage === totalHistoryPages}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
       {modalOpen && (
         <TimelineModal 
-          cycle={currentCycle} 
-          onClose={() => setModalOpen(false)} 
+          cycle={modalCycle || currentCycle} 
+          onClose={() => {
+            setModalOpen(false);
+            setModalCycle(null);
+            setFocusDeadlineFields(false);
+          }} 
           onSaved={handleCycleSaved}
+          focusDeadline={focusDeadlineFields}
         />
       )}
+
+      <ActionConfirmModal
+        open={actionModal.open}
+        title={actionModal.title}
+        message={actionModal.message}
+        confirmLabel={actionModal.confirmLabel}
+        confirmTone={actionModal.confirmTone}
+        onCancel={resetActionModal}
+        onConfirm={confirmCycleAction}
+      />
     </div>
   );
 }
