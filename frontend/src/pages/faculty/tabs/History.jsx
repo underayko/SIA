@@ -512,8 +512,7 @@ function CycleCard({ cycle }) {
 // ─── Main Export ──────────────────────────────────────────────
 export default function History({ user, cycles, logs }) {
     const [cycleData, setCycleData] = useState(cycles || []);
-    const [logData, setLogData] = useState(logs || []);
-    const [isLoading, setIsLoading] = useState(!cycles && !logs);
+    const [isLoading, setIsLoading] = useState(!cycles);
 
     const [showAll, setShowAll] = useState(false);
     const visibleCycles = showAll ? cycleData : cycleData.slice(0, 3);
@@ -522,19 +521,17 @@ export default function History({ user, cycles, logs }) {
         let isActive = true;
 
         const hydrateHistory = async () => {
-            if (cycles && logs) {
+            if (cycles) {
                 if (!isActive) return;
                 setCycleData(cycles);
-                setLogData(logs);
                 setIsLoading(false);
                 return;
             }
 
-            const [cycleResult, applicationResult, logResult, profileResult] =
+            const [cycleResult, applicationResult, profileResult] =
                 await Promise.all([
                     queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40),
                     queryRowsByUser(APPLICATION_TABLE_CANDIDATES, user, 120),
-                    queryRowsByUser(APPLICATION_LOG_TABLE_CANDIDATES, user, 180),
                     querySingleByUser(USER_TABLE_CANDIDATES, user),
                 ]);
 
@@ -551,13 +548,8 @@ export default function History({ user, cycles, logs }) {
             const nextCycles = cycles
                 ? cycles
                 : toCycleCards(cycleResult.rows, applicationResult.rows, currentRank);
-            const fallbackBy = user?.displayName || user?.email || "System";
-            const nextLogs = logs
-                ? logs
-                : toLogRows(logResult.rows, cycleResult.rows, fallbackBy);
 
             setCycleData(nextCycles);
-            setLogData(nextLogs);
             setIsLoading(false);
         };
 
@@ -578,7 +570,7 @@ export default function History({ user, cycles, logs }) {
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <div>
                         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 600, color: "#1a1a1a" }}>
-                            Ranking Cycle History
+                            Ranking History
                         </div>
                         <div style={{ fontSize: 12.5, color: "#6b7c70", marginTop: 3 }}>
                             All cycles you have participated in or that are currently open
@@ -611,57 +603,6 @@ export default function History({ user, cycles, logs }) {
                         </button>
                     </div>
                 )}
-            </div>
-
-            {/* ── Submission & Review Log ── */}
-            <div className="hist-panel">
-                <div style={{ marginBottom: 4 }}>
-                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 600, color: "#1a1a1a" }}>
-                        Submission &amp; Review Log
-                    </div>
-                    <div style={{ fontSize: 12.5, color: "#6b7c70", marginTop: 3 }}>
-                        Full activity trail across all ranking cycles
-                    </div>
-                </div>
-
-                <div className="log-wrap">
-                    <table className="log-tbl">
-                        <thead>
-                            <tr>
-                                <th>Date &amp; Time</th>
-                                <th>Cycle</th>
-                                <th>Action</th>
-                                <th>Area / Description</th>
-                                <th>Changed By</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {logData.length > 0 ? (
-                                logData.map((row) => (
-                                    <tr key={row.id}>
-                                        <td style={{ color: "#6b7c70", fontSize: 12 }}>{row.datetime}</td>
-                                        <td style={{ fontSize: 12 }}>{row.cycle}</td>
-                                        <td>
-                                            <span className={`la ${row.actionClass}`}>
-                                                {ACTION_ICONS[row.action] || "•"} {row.action}
-                                            </span>
-                                        </td>
-                                        <td style={{ maxWidth: 320, whiteSpace: "normal" }}>{row.area}</td>
-                                        <td style={{ color: "#6b7c70" }}>{row.by}</td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={5} style={{ color: "#6b7c70", fontSize: 12.5, fontStyle: "italic", padding: "14px 12px" }}>
-                                        {isLoading
-                                            ? "Loading submission and review logs..."
-                                            : "No submission/review logs found for your account yet."}
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
             </div>
         </>
     );
