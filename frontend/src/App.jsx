@@ -1,8 +1,7 @@
 import Login from "./pages/auth/Login";
 import ChangePassword from "./pages/auth/ChangePassword";
 import Dashboard from "./pages/faculty/Dashboard";
-import HrDashboard from "./pages/hr/Dashboard";
-import VpaaDashboard from "./pages/vpaa/Dashboard";
+// HR and VPAA portal folders may be removed; avoid static imports that break the build.
 import { useAuth } from "./context/AuthContext";
 import { Navigate, Route, Routes } from "react-router-dom";
 
@@ -83,33 +82,11 @@ export default function App() {
             />
             <Route
                 path="/hr/*"
-                element={
-                    role === "HR" ? (
-                        <HrDashboard
-                            user={portalUser}
-                            onLogout={() => {
-                                void signOut();
-                            }}
-                        />
-                    ) : (
-                        <Navigate to={homePath} replace />
-                    )
-                }
+                element={role === "HR" ? <Navigate to="/faculty" replace /> : <Navigate to={homePath} replace />}
             />
             <Route
                 path="/vpaa/*"
-                element={
-                    role === "VPAA" ? (
-                        <VpaaDashboard
-                            user={portalUser}
-                            onLogout={() => {
-                                void signOut();
-                            }}
-                        />
-                    ) : (
-                        <Navigate to={homePath} replace />
-                    )
-                }
+                element={role === "VPAA" ? <Navigate to="/faculty" replace /> : <Navigate to={homePath} replace />}
             />
             <Route path="*" element={<Navigate to={homePath} replace />} />
         </Routes>

@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
+import { useAuth } from "../../../context/AuthContext";
 import {
     User,
     Building2,
@@ -510,26 +511,39 @@ const CHANGE_REQUEST_TABLE_CANDIDATES = (
     .filter(Boolean);
 const USER_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_USER_TABLE_CANDIDATES ||
-    "users,faculty_records,faculty_profiles"
+    "users"
 )
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 const CYCLE_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_CYCLE_TABLE_CANDIDATES ||
-    "rankingcycles,ranking_cycles,cycles"
+    "ranking_cycles,cycles"
 )
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 const AREA_SUBMISSION_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_AREA_SUBMISSION_TABLE_CANDIDATES ||
-    "areasubmissions,area_submissions"
+    "area_submissions"
 )
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 const TOAST_TTL_MS = 3200;
+const USER_TABLE = "users";
+
+function parseIntegerOrNull(value) {
+    const parsed = Number.parseInt(String(value).trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isNumericId(value) {
+    // Return true only when the value clearly represents a numeric id (no hyphens, digits only)
+    if (value === null || value === undefined) return false;
+    const s = String(value).trim();
+    return /^\d+$/.test(s);
+}
 
 function getFirstValue(source, keys, fallback = null) {
     if (!source) return fallback;
@@ -564,7 +578,7 @@ function toBoolean(value, fallback = false) {
     return fallback;
 }
 
-function formatShortDate(value, fallback = "Not available") {
+function formatShortDate(value, fallback = "") {
     if (!value) return fallback;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return fallback;
@@ -750,6 +764,131 @@ async function querySingleByCandidates(candidates, column, value) {
     return { table: null, row: null };
 }
 
+async function queryDepartmentName(departmentId) {
+    if (!departmentId) return "";
+
+    const result = await supabase
+        .from("departments")
+        .select("department_name")
+        .eq("department_id", departmentId)
+        .maybeSingle();
+
+    if (!result.error) {
+        return String(result.data?.department_name || "");
+    }
+
+    return "";
+}
+
+function buildUsersTableUpdate(field, value) {
+    const trimmed = String(value ?? "").trim();
+
+    if (field === "firstName") {
+        return { name_first: trimmed || null };
+    }
+    if (field === "lastName") {
+        return { name_last: trimmed || null };
+    }
+    if (field === "middleName") {
+        return { name_middle: trimmed || null };
+    }
+    if (field === "altEmail") {
+        return { personal_email: trimmed || null };
+    }
+    if (field === "teachingYears") {
+        return { teaching_experience_years: parseIntegerOrNull(trimmed) };
+    }
+    if (field === "industryYears") {
+        return { industry_experience_years: parseIntegerOrNull(trimmed) };
+    }
+
+    return null;
+}
+
+function normalizeEducationEntry(entry) {
+    if (typeof entry === "string") {
+        return {
+            level: "Credential",
+            levelClass: "edu-bachelor",
+            degree: entry,
+            school: "",
+            pending: false,
+        };
+    }
+
+    const level = String(getFirstValue(entry, ["level", "type"], "Credential"));
+    return {
+        level,
+        levelClass:
+            level.toLowerCase().includes("doctor")
+                ? "edu-doctorate"
+                : level.toLowerCase().includes("master")
+                  ? "edu-masters"
+                  : "edu-bachelor",
+        degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
+        school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
+        pending: false,
+    };
+}
+
+function normalizeEligibilityEntry(entry) {
+    return {
+        text:
+            typeof entry === "string"
+                ? entry
+                : String(getFirstValue(entry, ["text", "name", "title"], "Eligibility")),
+        pending: false,
+    };
+}
+
+function normalizeDoctorateEntry(entry) {
+    if (typeof entry === "string") {
+        return {
+            degree: entry,
+            school: "",
+            pending: false,
+        };
+    }
+
+    return {
+        degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
+        school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
+        pending: false,
+    };
+}
+
+function buildEducationPayload(educationList) {
+    return {
+        educational_attainment_json: educationList.map((entry) => ({
+            level: entry.level,
+            degree: entry.degree,
+            institution: entry.school,
+            pending: Boolean(entry.pending),
+        })),
+        educational_attainment: educationList[0]?.degree || null,
+    };
+}
+
+function buildEligibilityPayload(eligibilityList) {
+    return {
+        eligibility_exams_json: eligibilityList.map((entry) => ({
+            text: entry.text,
+            pending: Boolean(entry.pending),
+        })),
+        eligibility_exams: eligibilityList.map((entry) => entry.text).join("\n") || null,
+    };
+}
+
+function buildDoctoratePayload(doctoralList) {
+    return {
+        doctorate: doctoralList.map((entry) => ({
+            degree: entry.degree,
+            institution: entry.school,
+            pending: Boolean(entry.pending),
+        })),
+    };
+}
+
 function getStrength(pw) {
     if (!pw) return { label: "", color: "", pct: "0%" };
     let s = 0;
@@ -767,6 +906,7 @@ function getStrength(pw) {
 function EditableField({ label, value, onSave, pending, disabled }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
+    const inputType = "text";
 
     const handleSave = () => {
         if (draft.trim() && draft !== value) onSave(draft.trim());
@@ -783,6 +923,7 @@ function EditableField({ label, value, onSave, pending, disabled }) {
             {editing ? (
                 <div className="pf-edit-row">
                     <input
+                        type={inputType}
                         className="pf-edit-input"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
@@ -832,13 +973,91 @@ function EditableField({ label, value, onSave, pending, disabled }) {
     );
 }
 
+function NumberField({ label, value, onSave, pending, disabled, min = 0 }) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+
+    const handleSave = () => {
+        const normalized = draft.trim() === "" ? "" : String(Math.max(min, Number.parseInt(draft, 10) || 0));
+        onSave(normalized);
+        setEditing(false);
+    };
+
+    const handleCancel = () => {
+        setDraft(value === null || value === undefined ? "" : String(value));
+        setEditing(false);
+    };
+
+    return (
+        <div className="pf-editable-field">
+            <div className="pf-label">{label}</div>
+            {editing ? (
+                <div className="pf-edit-row">
+                    <input
+                        type="number"
+                        min={min}
+                        className="pf-edit-input"
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSave();
+                            if (e.key === "Escape") handleCancel();
+                        }}
+                        autoFocus
+                    />
+                    <button className="pf-edit-btn pf-edit-btn-save" onClick={handleSave}>
+                        <CheckCircle size={13} />
+                    </button>
+                    <button className="pf-edit-btn pf-edit-btn-cancel" onClick={handleCancel}>
+                        <X size={13} />
+                    </button>
+                </div>
+            ) : (
+                <div className="pf-edit-row">
+                    <div className="pf-value" style={{ flex: 1 }}>
+                        {value ?? ""}
+                    </div>
+                    {!pending && !disabled && (
+                        <button
+                            className="pf-edit-btn pf-edit-btn-pencil"
+                            onClick={() => setEditing(true)}
+                        >
+                            <Pencil size={13} />
+                        </button>
+                    )}
+                </div>
+            )}
+            {pending && (
+                <div className="pf-pending-badge">
+                    <Clock size={10} /> Pending HR verification
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Education Modal Component ──
-function EducationModal({ isOpen, onClose, onSubmit, isLoading }) {
+function EducationModal({ isOpen, onClose, onSubmit, isLoading, initialData = null }) {
     const [level, setLevel] = useState("Bachelor's");
     const [degree, setDegree] = useState("");
     const [institution, setInstitution] = useState("");
     const [yearGraduated, setYearGraduated] = useState("");
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (initialData) {
+            setLevel(initialData.level || "Bachelor's");
+            setDegree(initialData.degree || "");
+            setInstitution(initialData.institution || initialData.school || "");
+            setYearGraduated((initialData.yearGraduated || "").slice(0,4));
+        } else {
+            setLevel("Bachelor's");
+            setDegree("");
+            setInstitution("");
+            setYearGraduated("");
+        }
+    }, [isOpen, initialData]);
 
     const handleSubmit = () => {
         setError("");
@@ -878,7 +1097,7 @@ function EducationModal({ isOpen, onClose, onSubmit, isLoading }) {
                     <div className="pf-modal-icon">
                         <GraduationCap size={18} />
                     </div>
-                    <div className="pf-modal-title">Add Educational Attainment</div>
+                    <div className="pf-modal-title">{initialData ? 'Edit Educational Attainment' : 'Add Educational Attainment'}</div>
                     <button
                         className="pf-modal-close"
                         onClick={onClose}
@@ -965,7 +1184,7 @@ function EducationModal({ isOpen, onClose, onSubmit, isLoading }) {
                         onClick={handleSubmit}
                         disabled={isLoading}
                     >
-                        {isLoading ? "Adding..." : "Add Education"}
+                        {isLoading ? (initialData ? 'Saving...' : 'Adding...') : (initialData ? 'Save changes' : 'Add Education')}
                     </button>
                 </div>
             </div>
@@ -974,12 +1193,21 @@ function EducationModal({ isOpen, onClose, onSubmit, isLoading }) {
 }
 
 // ── Eligibility Modal Component ──
-function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
+function EligibilityModal({ isOpen, onClose, onSubmit, isLoading, initialData = null }) {
     const [examName, setExamName] = useState("");
     const [datePassed, setDatePassed] = useState("");
-    const [rating, setRating] = useState("");
-    const [licenseNumber, setLicenseNumber] = useState("");
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (initialData) {
+            setExamName(initialData.examName || initialData.text || "");
+            setDatePassed(initialData.datePassed || "");
+        } else {
+            setExamName("");
+            setDatePassed("");
+        }
+    }, [isOpen, initialData]);
 
     const handleSubmit = () => {
         setError("");
@@ -1001,26 +1229,16 @@ function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
             });
             textEntry += ` — Passed ${formattedDate}`;
         }
-        if (rating) {
-            textEntry += ` (${rating.trim()})`;
-        }
-        if (licenseNumber) {
-            textEntry += ` [License #: ${licenseNumber.trim()}]`;
-        }
 
         onSubmit({
             text: textEntry,
             examName: examName.trim(),
             datePassed: datePassed.trim(),
-            rating: rating.trim(),
-            licenseNumber: licenseNumber.trim(),
         });
 
         // Reset form
         setExamName("");
         setDatePassed("");
-        setRating("");
-        setLicenseNumber("");
     };
 
     if (!isOpen) return null;
@@ -1032,7 +1250,7 @@ function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
                     <div className="pf-modal-icon">
                         <ClipboardList size={18} />
                     </div>
-                    <div className="pf-modal-title">Add Eligibility or License</div>
+                    <div className="pf-modal-title">{initialData ? 'Edit Eligibility or License' : 'Add Eligibility or License'}</div>
                     <button
                         className="pf-modal-close"
                         onClick={onClose}
@@ -1069,34 +1287,6 @@ function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
                             onChange={(e) => setDatePassed(e.target.value)}
                         />
                     </div>
-
-                    <div className="pf-modal-grid-2">
-                        <div className="pf-modal-field">
-                            <label className="pf-modal-label">
-                                Rating / Score
-                            </label>
-                            <input
-                                type="text"
-                                className="pf-modal-input"
-                                placeholder="e.g., 85%"
-                                value={rating}
-                                onChange={(e) => setRating(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="pf-modal-field">
-                            <label className="pf-modal-label">
-                                License Number
-                            </label>
-                            <input
-                                type="text"
-                                className="pf-modal-input"
-                                placeholder="Optional"
-                                value={licenseNumber}
-                                onChange={(e) => setLicenseNumber(e.target.value)}
-                            />
-                        </div>
-                    </div>
                 </div>
                 <div className="pf-modal-footer">
                     <button
@@ -1111,7 +1301,7 @@ function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
                         onClick={handleSubmit}
                         disabled={isLoading}
                     >
-                        {isLoading ? "Adding..." : "Add Eligibility"}
+                        {isLoading ? (initialData ? 'Saving...' : 'Adding...') : (initialData ? 'Save changes' : 'Add Eligibility')}
                     </button>
                 </div>
             </div>
@@ -1119,59 +1309,212 @@ function EligibilityModal({ isOpen, onClose, onSubmit, isLoading }) {
     );
 }
 
+function DoctoralModal({ isOpen, onClose, onSubmit, isLoading, initialData = null }) {
+                        const [degree, setDegree] = useState("");
+                        const [institution, setInstitution] = useState("");
+                        const [yearGraduated, setYearGraduated] = useState("");
+                        const [error, setError] = useState("");
+
+                        useEffect(() => {
+                            if (!isOpen) return;
+                            if (initialData) {
+                                setDegree(initialData.degree || "");
+                                setInstitution(initialData.institution || initialData.school || initialData.school || "");
+                                setYearGraduated((initialData.yearGraduated || "").slice(0,4));
+                            } else {
+                                setDegree("");
+                                setInstitution("");
+                                setYearGraduated("");
+                            }
+                        }, [isOpen, initialData]);
+
+                        const handleSubmit = () => {
+                            setError("");
+                            if (!degree.trim()) {
+                                setError("Degree title is required.");
+                                return;
+                            }
+                            if (!institution.trim()) {
+                                setError("Institution is required.");
+                                return;
+                            }
+                            if (yearGraduated && !/^\d{4}$/.test(yearGraduated)) {
+                                setError("Year must be in YYYY format.");
+                                return;
+                            }
+
+                            onSubmit({
+                                degree: degree.trim(),
+                                institution: institution.trim(),
+                                yearGraduated: yearGraduated.trim(),
+                            });
+
+                            // Reset form
+                            setDegree("");
+                            setInstitution("");
+                            setYearGraduated("");
+                        };
+
+                        if (!isOpen) return null;
+
+                        return (
+                            <div className="pf-modal-overlay" onClick={onClose}>
+                                <div className="pf-modal" onClick={(e) => e.stopPropagation()}>
+                                    <div className="pf-modal-header">
+                                        <div className="pf-modal-icon">
+                                            <GraduationCap size={18} />
+                                        </div>
+                                        <div className="pf-modal-title">{initialData ? 'Edit Doctorate Degree' : 'Add Doctorate Degree'}</div>
+                                        <button
+                                            className="pf-modal-close"
+                                            onClick={onClose}
+                                            aria-label="Close"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                    <div className="pf-modal-body">
+                                        {error && <div className="pf-modal-error">{error}</div>}
+
+                                        <div className="pf-modal-field">
+                                            <label className="pf-modal-label">
+                                                Degree / Title
+                                                <span className="pf-modal-label-required">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="pf-modal-input"
+                                                placeholder="e.g., Doctor of Philosophy in Computer Science"
+                                                value={degree}
+                                                onChange={(e) => setDegree(e.target.value)}
+                                            />
+                                        </div>
+
+                                        <div className="pf-modal-field">
+                                            <label className="pf-modal-label">
+                                                Institution / University
+                                                <span className="pf-modal-label-required">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="pf-modal-input"
+                                                placeholder="e.g., University of the Philippines"
+                                                value={institution}
+                                                onChange={(e) => setInstitution(e.target.value)}
+                                            />
+                                        </div>
+
+                                        <div className="pf-modal-field">
+                                            <label className="pf-modal-label">
+                                                Year Graduated
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="pf-modal-input"
+                                                placeholder="YYYY (e.g., 2020)"
+                                                value={yearGraduated}
+                                                onChange={(e) =>
+                                                    setYearGraduated(e.target.value.slice(0, 4))
+                                                }
+                                                maxLength="4"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="pf-modal-footer">
+                                        <button
+                                            className="pf-modal-btn pf-modal-btn-cancel"
+                                            onClick={onClose}
+                                            disabled={isLoading}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            className="pf-modal-btn pf-modal-btn-save"
+                                            onClick={handleSubmit}
+                                            disabled={isLoading}
+                                        >
+                                            {isLoading ? (initialData ? 'Saving...' : 'Adding...') : (initialData ? 'Save changes' : 'Add Doctorate')}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+
 export default function Profile({ user }) {
-    const userId = user?.id || null;
-    const userEmail = user?.email || null;
+    const { refreshProfile } = useAuth();
+    const userId = user?.user_id ?? user?.id ?? null;
+    const userEmail = user?.domain_email ?? user?.email ?? null;
+    
+    // Initialize state from user prop if available
     const [profileEditOpen, setProfileEditOpen] = useState(DEFAULT_PROFILE_EDIT_OPEN);
     const [profileEditWindowLabel, setProfileEditWindowLabel] = useState("");
     const [activeCycleRow, setActiveCycleRow] = useState(null);
-    const [profilePicture, setProfilePicture] = useState("");
-    const [memberSince, setMemberSince] = useState("Not available");
-    const [lastName, setLastName] = useState("Candido");
-    const [firstName, setFirstName] = useState("David Bryan");
-    const [middleName, setMiddleName] = useState("B.");
-    const [altEmail, setAltEmail] = useState("");
-    const [department, setDepartment] = useState("Computer Studies");
-    const [currentRank, setCurrentRank] = useState("Instructor I");
-    const [natureOfAppointment, setNatureOfAppointment] = useState("Full-time Permanent");
-    const [lastPromotionDate, setLastPromotionDate] = useState("Not available");
-    const [teachingYears, setTeachingYears] = useState("6 years");
-    const [industryYears, setIndustryYears] = useState("3 years");
-    const [performanceChip, setPerformanceChip] = useState("4.52 · Outstanding");
+    const [profilePicture, setProfilePicture] = useState(user?.profile_picture || user?.avatar_url || "");
+    const [memberSince, setMemberSince] = useState(formatShortDate(user?.created_at, ""));
+    const [lastName, setLastName] = useState(user?.name_last || user?.last_name || "");
+    const [firstName, setFirstName] = useState(user?.name_first || user?.first_name || "");
+    const [middleName, setMiddleName] = useState(user?.middle_name || "");
+    const [altEmail, setAltEmail] = useState(user?.personal_email || user?.alternate_email || user?.alt_email || "");
+    const [department, setDepartment] = useState(user?.department_name || "");
+    const [currentRank, setCurrentRank] = useState(user?.current_rank || user?.rank || "");
+    const [natureOfAppointment, setNatureOfAppointment] = useState(user?.nature_of_appointment || user?.appointment_type || "");
+    const [lastPromotionDate, setLastPromotionDate] = useState(formatShortDate(user?.date_of_last_promotion || user?.last_promotion_date, ""));
+    const [teachingYears, setTeachingYears] = useState(String(user?.teaching_experience_years ?? user?.teaching_years ?? user?.years_teaching ?? ""));
+    const [industryYears, setIndustryYears] = useState(String(user?.industry_experience_years ?? user?.industry_years ?? user?.years_industry ?? ""));
+    const [performanceChip, setPerformanceChip] = useState(user?.current_rank || "");
     const [avatarPending, setAvatarPending] = useState(false);
     const [changeRequestTable, setChangeRequestTable] = useState(null);
 
     const [pendingFields, setPendingFields] = useState({});
 
-    const [eduList, setEduList] = useState([
-        {
-            level: "Bachelor's",
-            levelClass: "edu-bachelor",
-            degree: "Bachelor of Science in Computer Science",
-            school: "Gordon College · 2014",
-            pending: false,
-        },
-        {
-            level: "Master's",
-            levelClass: "edu-masters",
-            degree: "Master of Science in Information Technology",
-            school: "Pamantasan ng Lungsod ng Maynila · 2019",
-            pending: false,
-        },
-    ]);
+    // Parse education from user prop
+    const parseUserEducation = () => {
+        const education = parseArrayOrLines(
+            getFirstValue(
+                user,
+                ["educational_attainment_json", "educational_attainment", "education", "education_history"],
+                [],
+            )
+        );
+        if (education.length > 0) {
+            return education.map(normalizeEducationEntry).filter(Boolean);
+        }
+        return [];
+    };
 
-    const [eligList, setEligList] = useState([
-        {
-            text: "Civil Service Professional (CSC) — Passed 2014",
-            pending: false,
-        },
-        {
-            text: "Electronics Engineer (ECE Board) — Passed 2015",
-            pending: false,
-        },
-    ]);
+    // Parse eligibility from user prop
+    const parseUserEligibility = () => {
+        const eligibility = parseArrayOrLines(
+            getFirstValue(
+                user,
+                ["eligibility_exams_json", "eligibility_exams", "eligibilities", "licenses"],
+                [],
+            )
+        );
+        if (eligibility.length > 0) {
+            return eligibility.map(normalizeEligibilityEntry);
+        }
+        return [];
+    };
+
+    const [eduList, setEduList] = useState(parseUserEducation());
+    const [eligList, setEligList] = useState(parseUserEligibility());
 
     // Change password states
+        // Parse doctorate from user prop
+        const parseUserDoctorate = () => {
+            const doctorate = parseArrayOrLines(
+                getFirstValue(user, ["doctorate", "doctoral_degree", "phd_records"], [])
+            );
+            if (doctorate.length > 0) {
+                return doctorate.map(normalizeDoctorateEntry).filter(Boolean);
+            }
+            return [];
+        };
+
+        const [doctoralList, setDoctoralList] = useState(parseUserDoctorate());
     const [cpCurrent, setCpCurrent] = useState("");
     const [cpNew, setCpNew] = useState("");
     const [cpConfirm, setCpConfirm] = useState("");
@@ -1187,6 +1530,11 @@ export default function Profile({ user }) {
     const [eligModalOpen, setEligModalOpen] = useState(false);
     const [isSubmittingEdu, setIsSubmittingEdu] = useState(false);
     const [isSubmittingElig, setIsSubmittingElig] = useState(false);
+    const [doctoralModalOpen, setDoctoralModalOpen] = useState(false);
+    const [isSubmittingDoctoral, setIsSubmittingDoctoral] = useState(false);
+    const [editEduIndex, setEditEduIndex] = useState(null);
+    const [editEligIndex, setEditEligIndex] = useState(null);
+    const [editDoctoralIndex, setEditDoctoralIndex] = useState(null);
 
     const strength = getStrength(cpNew);
     const passwordsMatch = cpNew.length > 0 && cpNew === cpConfirm;
@@ -1199,7 +1547,58 @@ export default function Profile({ user }) {
         }, TOAST_TTL_MS);
     };
 
+    useEffect(() => {
+        if (!user) return;
+
+        const applyText = (nextValue, setState) => {
+            if (nextValue !== undefined && nextValue !== null && String(nextValue).trim() !== "") {
+                setState(String(nextValue));
+            }
+        };
+
+        applyText(user?.name_last ?? user?.last_name, setLastName);
+        applyText(user?.name_first ?? user?.first_name, setFirstName);
+        applyText(user?.middle_name, setMiddleName);
+        applyText(user?.personal_email ?? user?.alternate_email ?? user?.alt_email, setAltEmail);
+        applyText(user?.current_rank ?? user?.rank, setCurrentRank);
+        applyText(user?.nature_of_appointment ?? user?.appointment_type, setNatureOfAppointment);
+        applyText(user?.teaching_experience_years ?? user?.teaching_years ?? user?.years_teaching, setTeachingYears);
+        applyText(user?.industry_experience_years ?? user?.industry_years ?? user?.years_industry, setIndustryYears);
+        applyText(user?.profile_picture ?? user?.avatar_url, setProfilePicture);
+
+        if (user?.date_of_last_promotion || user?.last_promotion_date) {
+            setLastPromotionDate(
+                formatShortDate(user?.date_of_last_promotion ?? user?.last_promotion_date, ""),
+            );
+        }
+
+        if (user?.created_at) {
+            setMemberSince(formatShortDate(user.created_at, ""));
+        }
+
+        void queryDepartmentName(user?.department_id ?? null).then((label) => {
+            if (label) setDepartment(label);
+        });
+
+        const userEducation = parseUserEducation();
+        if (userEducation.length > 0) {
+            setEduList(userEducation);
+        }
+
+        const userEligibility = parseUserEligibility();
+        if (userEligibility.length > 0) {
+            setEligList(userEligibility);
+        }
+
+        const userDoctorate = parseUserDoctorate();
+        if (userDoctorate.length > 0) {
+            setDoctoralList(userDoctorate);
+        }
+    }, [user]);
+
     const applyProfileFieldLocally = (field, value) => {
+        if (field === "firstName") setFirstName(value);
+        if (field === "lastName") setLastName(value);
         if (field === "middleName") setMiddleName(value);
         if (field === "altEmail") setAltEmail(value);
         if (field === "teachingYears") setTeachingYears(value);
@@ -1207,6 +1606,8 @@ export default function Profile({ user }) {
     };
 
     const getCurrentFieldValue = (field) => {
+        if (field === "firstName") return firstName;
+        if (field === "lastName") return lastName;
         if (field === "middleName") return middleName;
         if (field === "altEmail") return altEmail;
         if (field === "teachingYears") return teachingYears;
@@ -1247,12 +1648,25 @@ export default function Profile({ user }) {
         let isActive = true;
 
         const hydrateProfile = async () => {
-            const cycleResult = await queryRowsWithTableFromCandidates(
-                CYCLE_TABLE_CANDIDATES,
-                50,
-            );
-            if (isActive) {
-                const activeCycle = cycleResult.rows.find((row) => {
+            // Parallelize expensive probes: cycles + user row
+            const cyclePromise = queryRowsWithTableFromCandidates(CYCLE_TABLE_CANDIDATES, 50);
+
+            const userFetchPromise = (async () => {
+                if (userId && isNumericId(userId)) {
+                    const r = await supabase.from(USER_TABLE).select("*").eq("user_id", parseIntegerOrNull(userId)).maybeSingle();
+                    return r.error ? null : r.data;
+                }
+                if (userEmail) {
+                    const r = await supabase.from(USER_TABLE).select("*").eq("domain_email", userEmail).maybeSingle();
+                    return r.error ? null : r.data;
+                }
+                return null;
+            })();
+
+            const [cycleResult, userRow] = await Promise.all([cyclePromise, userFetchPromise]);
+
+            if (isActive && cycleResult) {
+                const activeCycle = (cycleResult.rows || []).find((row) => {
                     const status = normalizeStatus(getFirstValue(row, ["status", "cycle_status"], ""));
                     return ["open", "active", "in_progress", "in progress"].includes(status);
                 });
@@ -1269,106 +1683,90 @@ export default function Profile({ user }) {
                 }
             }
 
-            let userRow = null;
-            if (userId) {
-                const byId = await querySingleByCandidates(USER_TABLE_CANDIDATES, "id", userId);
-                userRow = byId.row;
-            }
-            if (!userRow && userEmail) {
-                const byEmail = await querySingleByCandidates(USER_TABLE_CANDIDATES, "email", userEmail);
-                userRow = byEmail.row;
-            }
-
+            // Apply userRow if found
             if (isActive && userRow) {
-                setLastName(String(getFirstValue(userRow, ["last_name", "lastname", "surname"], "Candido")));
-                setFirstName(String(getFirstValue(userRow, ["first_name", "firstname", "given_name"], "David Bryan")));
-                setMiddleName(String(getFirstValue(userRow, ["middle_name", "middlename"], "B.")));
+                setLastName(String(getFirstValue(userRow, ["last_name", "lastname", "surname"], "")));
+                setFirstName(String(getFirstValue(userRow, ["first_name", "firstname", "given_name"], "")));
+                setMiddleName(String(getFirstValue(userRow, ["middle_name", "middlename"], "")));
                 setAltEmail(String(getFirstValue(userRow, ["personal_email", "alternate_email", "alt_email"], "")));
-                setDepartment(String(getFirstValue(userRow, ["department", "department_name", "dept"], "Computer Studies")));
-                setCurrentRank(String(getFirstValue(userRow, ["current_rank", "rank", "faculty_rank"], "Instructor I")));
-                setNatureOfAppointment(String(getFirstValue(userRow, ["nature_of_appointment", "appointment_type"], "Full-time Permanent")));
+                setDepartment(String(getFirstValue(userRow, ["department_name", "department", "dept"], "")));
+                setCurrentRank(String(getFirstValue(userRow, ["current_rank", "rank", "faculty_rank"], "")));
+                setNatureOfAppointment(String(getFirstValue(userRow, ["nature_of_appointment", "appointment_type"], "")));
                 setLastPromotionDate(
                     formatShortDate(
                         getFirstValue(userRow, ["date_of_last_promotion", "last_promotion_date"]),
-                        "Not available",
+                        "",
                     ),
                 );
-                setTeachingYears(String(getFirstValue(userRow, ["teaching_years", "years_teaching"], "6 years")));
-                setIndustryYears(String(getFirstValue(userRow, ["industry_years", "years_industry"], "3 years")));
+                setTeachingYears(String(getFirstValue(userRow, ["teaching_experience_years", "teaching_years", "years_teaching"], "")));
+                setIndustryYears(String(getFirstValue(userRow, ["industry_experience_years", "industry_years", "years_industry"], "")));
                 setProfilePicture(String(getFirstValue(userRow, ["profile_picture", "avatar_url", "photo_url"], "")));
                 setMemberSince(
                     formatShortDate(
                         getFirstValue(userRow, ["created_at", "member_since", "date_created"]),
-                        "Not available",
+                        "",
                     ),
                 );
 
-                const education = parseArrayOrLines(
-                    getFirstValue(userRow, ["educational_attainment", "education", "education_history"], []),
-                );
-                if (education.length > 0) {
-                    const mappedEducation = education
-                        .map((entry) => {
-                            if (typeof entry === "string") {
-                                return {
-                                    level: "Credential",
-                                    levelClass: "edu-bachelor",
-                                    degree: entry,
-                                    school: "",
-                                    pending: false,
-                                };
-                            }
+                const fallbackDepartment = await queryDepartmentName(getFirstValue(userRow, ["department_id"], null));
+                if (fallbackDepartment) setDepartment(fallbackDepartment);
 
-                            const level = String(getFirstValue(entry, ["level", "type"], "Credential"));
-                            return {
-                                level,
-                                levelClass:
-                                    level.toLowerCase().includes("doctor")
-                                        ? "edu-doctorate"
-                                        : level.toLowerCase().includes("master")
-                                          ? "edu-masters"
-                                          : "edu-bachelor",
-                                degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
-                                school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
-                                pending: false,
-                            };
-                        })
-                        .filter(Boolean);
-                    setEduList(mappedEducation);
-                }
+                const education = parseArrayOrLines(getFirstValue(userRow, ["educational_attainment_json", "educational_attainment", "education", "education_history"], []));
+                if (education.length > 0) setEduList(education.map(normalizeEducationEntry).filter(Boolean));
 
-                const eligibility = parseArrayOrLines(
-                    getFirstValue(userRow, ["eligibility_exams", "eligibilities", "licenses"], []),
-                );
-                if (eligibility.length > 0) {
-                    setEligList(
-                        eligibility.map((entry) => ({
-                            text:
-                                typeof entry === "string"
-                                    ? entry
-                                    : String(getFirstValue(entry, ["text", "name", "title"], "Eligibility")),
-                            pending: false,
-                        })),
-                    );
-                }
+                const eligibility = parseArrayOrLines(getFirstValue(userRow, ["eligibility_exams_json", "eligibility_exams", "eligibilities", "licenses"], []));
+                if (eligibility.length > 0) setEligList(eligibility.map(normalizeEligibilityEntry));
+
+                const doctorate = parseArrayOrLines(getFirstValue(userRow, ["doctorate", "doctoral_degree", "phd_records"], []));
+                if (doctorate.length > 0) setDoctoralList(doctorate.map(normalizeDoctorateEntry));
             }
 
-            const requestResult = await queryRowsWithTableFromCandidates(
-                CHANGE_REQUEST_TABLE_CANDIDATES,
-                200,
-            );
-            const requestRows = requestResult.rows.filter((row) => {
+            // Fetch change requests and area submissions in parallel using targeted queries
+            const useNumeric = isNumericId(userId);
+
+            const changeRequestsPromise = (async () => {
+                // if we already resolved a change request table, query it directly first
+                const candidateTable = changeRequestTable || (CHANGE_REQUEST_TABLE_CANDIDATES[0] || null);
+                if (candidateTable) {
+                    const q = supabase.from(candidateTable).select("*").limit(200);
+                    const r = await q;
+                    if (!r.error && Array.isArray(r.data)) return { table: candidateTable, rows: r.data };
+                }
+                // fallback to probing known candidates (this may probe multiple tables)
+                return await queryRowsWithTableFromCandidates(CHANGE_REQUEST_TABLE_CANDIDATES, 200);
+            })();
+
+            const areaSubmissionsPromise = (async () => {
+                const subsTable = AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions";
+                // prefer targeted filters to avoid scanning tables
+                if (useNumeric) {
+                    const r = await supabase.from(subsTable).select("*").eq("user_id", parseIntegerOrNull(userId)).order("created_at", { ascending: false }).limit(100);
+                    if (!r.error && Array.isArray(r.data)) return { table: subsTable, rows: r.data };
+                }
+                if (userEmail) {
+                    // try matching email/domain_email
+                    const encoded = userEmail;
+                    const r = await supabase.from(subsTable).select("*").or(`email.eq.${encoded},domain_email.eq.${encoded}`).order("created_at", { ascending: false }).limit(100);
+                    if (!r.error && Array.isArray(r.data)) return { table: subsTable, rows: r.data };
+                }
+                // last fallback: probe table candidates
+                return await queryRowsWithTableFromCandidates(AREA_SUBMISSION_TABLE_CANDIDATES, 100);
+            })();
+
+            const [requestResult, areaResult] = await Promise.all([changeRequestsPromise, areaSubmissionsPromise]);
+
+            // process change requests
+            const requestRows = (requestResult?.rows || []).filter((row) => {
                 const status = normalizeStatus(getFirstValue(row, ["status", "request_status"], "pending"));
                 if (status !== "pending") return false;
 
                 const rowUserId = String(getFirstValue(row, ["user_id", "uid", "faculty_id"], ""));
                 const rowEmail = String(getFirstValue(row, ["email", "user_email"], ""));
-                return (userId && rowUserId && rowUserId === String(userId)) ||
-                    (userEmail && rowEmail && rowEmail === String(userEmail));
+                return (useNumeric && rowUserId && rowUserId === String(userId)) || (!useNumeric && userEmail && rowEmail === String(userEmail));
             });
 
             if (isActive) {
-                setChangeRequestTable(requestResult.table || null);
+                setChangeRequestTable(requestResult?.table || null);
 
                 const nextPending = {};
                 const pendingEdu = [];
@@ -1414,26 +1812,17 @@ export default function Profile({ user }) {
 
                 setPendingFields(nextPending);
                 setAvatarPending(hasAvatarPending);
-                if (pendingEdu.length > 0) {
-                    setEduList((prev) => [...prev, ...pendingEdu]);
-                }
-                if (pendingElig.length > 0) {
-                    setEligList((prev) => [...prev, ...pendingElig]);
-                }
+                if (pendingEdu.length > 0) setEduList((prev) => [...prev, ...pendingEdu]);
+                if (pendingElig.length > 0) setEligList((prev) => [...prev, ...pendingElig]);
             }
 
-            const areaResult = await queryRowsWithTableFromCandidates(
-                AREA_SUBMISSION_TABLE_CANDIDATES,
-                300,
-            );
-            if (isActive && areaResult.rows.length > 0) {
+            // process area submissions
+            if (isActive && areaResult && Array.isArray(areaResult.rows) && areaResult.rows.length > 0) {
                 const areaRows = areaResult.rows.filter((row) => {
                     const rowUserId = String(getFirstValue(row, ["user_id", "faculty_id", "uid"], ""));
                     const rowEmail = String(getFirstValue(row, ["email", "user_email"], ""));
                     const areaId = String(getFirstValue(row, ["area_id", "area"], ""));
-                    const forUser =
-                        (userId && rowUserId && rowUserId === String(userId)) ||
-                        (userEmail && rowEmail && rowEmail === String(userEmail));
+                    const forUser = useNumeric ? (rowUserId && rowUserId === String(userId)) : (userEmail && rowEmail === String(userEmail));
                     return forUser && (areaId === "IV" || areaId === "Area IV" || areaId === "IV-auto");
                 });
 
@@ -1441,9 +1830,7 @@ export default function Profile({ user }) {
                     const row = areaRows[0];
                     const score = getFirstValue(row, ["csv_total_average_rate", "rating", "score"], null);
                     const label = getFirstValue(row, ["rating_label", "rating_text", "performance_level"], "Outstanding");
-                    if (score) {
-                        setPerformanceChip(`${score} · ${label}`);
-                    }
+                    if (score) setPerformanceChip(`${score} · ${label}`);
                 }
             }
         };
@@ -1475,19 +1862,29 @@ export default function Profile({ user }) {
     // ── Handlers ──
 
     const handleFieldSave = async (field, value) => {
-        const saved = await writeChangeRequest({
-            field,
-            oldValue: getCurrentFieldValue(field),
-            newValue: value,
-        });
-        if (!saved) {
-            pushToast("error", "Unable to submit this profile change right now.");
+        const updatePayload = buildUsersTableUpdate(field, value);
+        if (!updatePayload) {
+            pushToast("error", "This field cannot be saved yet.");
+            return;
+        }
+
+        const useNumeric = isNumericId(userId);
+        const userFilterColumn = useNumeric ? "user_id" : "domain_email";
+        const userFilterValue = useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId);
+        const { error } = await supabase
+            .from(USER_TABLE)
+            .update(updatePayload)
+            .eq(userFilterColumn, userFilterValue);
+
+        if (error) {
+            pushToast("error", error.message || "Unable to save profile change.");
             return;
         }
 
         applyProfileFieldLocally(field, value);
         setPendingFields((prev) => ({ ...prev, [field]: value }));
-        pushToast("success", "Change request submitted for HR verification.");
+        await refreshProfile();
+        pushToast("success", "Profile updated successfully.");
     };
 
     const handleAvatarChange = () => {
@@ -1514,19 +1911,23 @@ export default function Profile({ user }) {
                 .createSignedUrl(storagePath, 3600);
             const imageUrl = signed.data?.signedUrl || null;
 
-            const saved = await writeChangeRequest({
-                field: "profile_picture",
-                oldValue: profilePicture,
-                newValue: imageUrl,
-                meta: stripUndefined({ storagePath }),
-            });
-            if (!saved) {
-                pushToast("error", "Unable to submit profile photo change.");
+            const useNumeric = isNumericId(userId);
+            const userFilterColumn = useNumeric ? "user_id" : "domain_email";
+            const userFilterValue = useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update({ profile_picture: imageUrl })
+                .eq(userFilterColumn, userFilterValue);
+
+            if (error) {
+                pushToast("error", error.message || "Unable to save profile photo.");
                 return;
             }
 
+            setProfilePicture(imageUrl || "");
+            await refreshProfile();
             setAvatarPending(true);
-            pushToast("success", "Profile photo change submitted for approval.");
+            pushToast("success", "Profile photo updated successfully.");
         };
         document.body.appendChild(input);
         input.click();
@@ -1548,26 +1949,80 @@ export default function Profile({ user }) {
                 school: eduData.yearGraduated
                     ? `${eduData.institution} · ${eduData.yearGraduated}`
                     : eduData.institution,
-                pending: true,
+                pending: false,
             };
 
-            const saved = await writeChangeRequest({
-                field: "educational_attainment",
-                oldValue: "",
-                newValue: JSON.stringify(newEntry),
-            });
+            const nextList = [...eduList, newEntry];
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildEducationPayload(nextList))
+                .eq(useNumeric ? "user_id" : "domain_email", useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
 
-            if (!saved) {
-                pushToast("error", "Unable to add degree right now.");
+            if (error) {
+                pushToast("error", error.message || "Unable to save education entry.");
                 return;
             }
 
-            setEduList((prev) => [...prev, newEntry]);
-            pushToast("success", "Degree entry submitted for HR verification.");
+            setEduList(nextList);
+            await refreshProfile();
+            pushToast("success", "Degree entry added successfully.");
             setEduModalOpen(false);
+            setEditEduIndex(null);
         } finally {
             setIsSubmittingEdu(false);
         }
+    };
+
+    const handleUpdateEdu = async (index, eduData) => {
+        setIsSubmittingEdu(true);
+        try {
+            const updated = eduList.map((e, i) => (i === index ? {
+                level: eduData.level,
+                levelClass: eduData.level.toLowerCase().includes('doctor') ? 'edu-doctorate' : (eduData.level.toLowerCase().includes('master') ? 'edu-masters' : 'edu-bachelor'),
+                degree: eduData.degree,
+                school: eduData.yearGraduated ? `${eduData.institution} · ${eduData.yearGraduated}` : eduData.institution,
+                pending: false,
+            } : e));
+
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildEducationPayload(updated))
+                .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+            if (error) {
+                pushToast('error', error.message || 'Unable to update education entry.');
+                return;
+            }
+
+            setEduList(updated);
+            await refreshProfile();
+            pushToast('success', 'Degree updated successfully.');
+            setEduModalOpen(false);
+            setEditEduIndex(null);
+        } finally {
+            setIsSubmittingEdu(false);
+        }
+    };
+
+    const handleDeleteEdu = async (index) => {
+        if (!window.confirm('Delete this degree entry?')) return;
+        const nextList = eduList.filter((_, i) => i !== index);
+        const useNumeric = isNumericId(userId);
+        const { error } = await supabase
+            .from(USER_TABLE)
+            .update(buildEducationPayload(nextList))
+            .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+        if (error) {
+            pushToast('error', error.message || 'Unable to delete degree entry.');
+            return;
+        }
+
+        setEduList(nextList);
+        await refreshProfile();
+        pushToast('success', 'Degree removed.');
     };
 
     const handleAddElig = async (eligData) => {
@@ -1575,27 +2030,152 @@ export default function Profile({ user }) {
         try {
             const newEntry = {
                 text: eligData.text,
-                pending: true,
+                pending: false,
             };
 
-            const saved = await writeChangeRequest({
-                field: "eligibility_exams",
-                oldValue: "",
-                newValue: eligData.text,
-            });
+            const nextList = [...eligList, newEntry];
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildEligibilityPayload(nextList))
+                .eq(useNumeric ? "user_id" : "domain_email", useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
 
-            if (!saved) {
-                pushToast("error", "Unable to add eligibility right now.");
+            if (error) {
+                pushToast("error", error.message || "Unable to save eligibility entry.");
                 return;
             }
 
-            setEligList((prev) => [...prev, newEntry]);
-            pushToast("success", "Eligibility entry submitted for HR verification.");
+            setEligList(nextList);
+            await refreshProfile();
+            pushToast("success", "Eligibility entry added successfully.");
             setEligModalOpen(false);
+            setEditEligIndex(null);
         } finally {
             setIsSubmittingElig(false);
         }
     };
+
+    const handleUpdateElig = async (index, eligData) => {
+        setIsSubmittingElig(true);
+        try {
+            const updated = eligList.map((e, i) => (i === index ? { text: eligData.text, pending: false } : e));
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildEligibilityPayload(updated))
+                .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+            if (error) {
+                pushToast('error', error.message || 'Unable to update eligibility entry.');
+                return;
+            }
+
+            setEligList(updated);
+            await refreshProfile();
+            pushToast('success', 'Eligibility updated successfully.');
+            setEligModalOpen(false);
+            setEditEligIndex(null);
+        } finally {
+            setIsSubmittingElig(false);
+        }
+    };
+
+    const handleDeleteElig = async (index) => {
+        if (!window.confirm('Delete this eligibility entry?')) return;
+        const nextList = eligList.filter((_, i) => i !== index);
+        const useNumeric = isNumericId(userId);
+        const { error } = await supabase
+            .from(USER_TABLE)
+            .update(buildEligibilityPayload(nextList))
+            .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+        if (error) {
+            pushToast('error', error.message || 'Unable to delete eligibility entry.');
+            return;
+        }
+
+        setEligList(nextList);
+        await refreshProfile();
+        pushToast('success', 'Eligibility removed.');
+    };
+
+    const handleAddDoctoral = async (doctoralData) => {
+        setIsSubmittingDoctoral(true);
+        try {
+            const newEntry = {
+                degree: doctoralData.degree,
+                school: doctoralData.yearGraduated
+                    ? `${doctoralData.institution} · ${doctoralData.yearGraduated}`
+                    : doctoralData.institution,
+                pending: false,
+            };
+
+            const nextList = [...doctoralList, newEntry];
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildDoctoratePayload(nextList))
+                .eq(useNumeric ? "user_id" : "domain_email", useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+            if (error) {
+                pushToast("error", error.message || "Unable to save doctorate entry.");
+                return;
+            }
+
+            setDoctoralList(nextList);
+            await refreshProfile();
+            pushToast("success", "Doctorate degree added successfully.");
+            setDoctoralModalOpen(false);
+            setEditDoctoralIndex(null);
+        } finally {
+            setIsSubmittingDoctoral(false);
+        }
+    };
+
+    const handleUpdateDoctoral = async (index, doctoralData) => {
+        setIsSubmittingDoctoral(true);
+        try {
+            const updated = doctoralList.map((d, i) => (i === index ? { degree: doctoralData.degree, school: doctoralData.yearGraduated ? `${doctoralData.institution} · ${doctoralData.yearGraduated}` : doctoralData.institution, pending: false } : d));
+            const useNumeric = isNumericId(userId);
+            const { error } = await supabase
+                .from(USER_TABLE)
+                .update(buildDoctoratePayload(updated))
+                .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+            if (error) {
+                pushToast('error', error.message || 'Unable to update doctorate entry.');
+                return;
+            }
+
+            setDoctoralList(updated);
+            await refreshProfile();
+            pushToast('success', 'Doctorate updated successfully.');
+            setDoctoralModalOpen(false);
+            setEditDoctoralIndex(null);
+        } finally {
+            setIsSubmittingDoctoral(false);
+        }
+    };
+
+    const handleDeleteDoctoral = async (index) => {
+        if (!window.confirm('Delete this doctorate entry?')) return;
+        const nextList = doctoralList.filter((_, i) => i !== index);
+        const useNumeric = isNumericId(userId);
+        const { error } = await supabase
+            .from(USER_TABLE)
+            .update(buildDoctoratePayload(nextList))
+            .eq(useNumeric ? 'user_id' : 'domain_email', useNumeric ? parseIntegerOrNull(userId) : (userEmail || userId));
+
+        if (error) {
+            pushToast('error', error.message || 'Unable to delete doctorate entry.');
+            return;
+        }
+
+        setDoctoralList(nextList);
+        await refreshProfile();
+        pushToast('success', 'Doctorate removed.');
+    };
+    
 
     const handleCpSubmit = async () => {
         setCpError("");
@@ -1678,7 +2258,6 @@ export default function Profile({ user }) {
                     </div>
                     <div className="pf-avatar-overlay">
                         <Camera size={16} />
-                        <span className="pf-avatar-label">Change</span>
                     </div>
                     {avatarPending && (
                         <div className="pf-avatar-pending">
@@ -1692,7 +2271,7 @@ export default function Profile({ user }) {
                         Faculty Profile · Some fields require HR verification
                     </div>
                     <div className="pf-hero-name">
-                        {user?.displayName || "David Bryan B. Candido"}
+                        {`${firstName} ${lastName}`.trim() || user?.displayName || ""}
                     </div>
                     <div className="pf-hero-chips">
                         <span className="pf-chip">
@@ -1703,7 +2282,7 @@ export default function Profile({ user }) {
                         </span>
                         <span className="pf-chip">
                             <Mail size={12} />{" "}
-                            {user?.email || "202011090@gordoncollege.edu.ph"}
+                            {user?.email || userEmail || ""}
                         </span>
                         <span className="pf-chip gold">
                             <Star size={12} /> {performanceChip}
@@ -1773,18 +2352,22 @@ export default function Profile({ user }) {
                         </span>
                     </div>
                     <div className="pf-fields">
-                        {/* Read-only */}
                         <div className="pf-row">
-                            <div className="pf-item">
-                                <div className="pf-label">Last Name</div>
-                                <div className="pf-value">{lastName}</div>
-                            </div>
-                            <div className="pf-item">
-                                <div className="pf-label">First Name</div>
-                                <div className="pf-value">{firstName}</div>
-                            </div>
+                            <EditableField
+                                label="Last Name"
+                                value={pendingFields.lastName || lastName}
+                                pending={!!pendingFields.lastName}
+                                onSave={(v) => handleFieldSave("lastName", v)}
+                                disabled={!profileEditOpen}
+                            />
+                            <EditableField
+                                label="First Name"
+                                value={pendingFields.firstName || firstName}
+                                pending={!!pendingFields.firstName}
+                                onSave={(v) => handleFieldSave("firstName", v)}
+                                disabled={!profileEditOpen}
+                            />
                         </div>
-                        {/* Editable */}
                         <EditableField
                             label="Middle Name"
                             value={pendingFields.middleName || middleName}
@@ -1798,8 +2381,7 @@ export default function Profile({ user }) {
                                     <Mail size={11} /> Domain Email
                                 </div>
                                 <div className="pf-value">
-                                    {user?.email ||
-                                        "202011090@gordoncollege.edu.ph"}
+                                    {user?.email || userEmail || ""}
                                 </div>
                             </div>
                             <div className="pf-item">
@@ -1809,16 +2391,6 @@ export default function Profile({ user }) {
                                 <div className="pf-value">{department}</div>
                             </div>
                         </div>
-                        {/* Editable alternate email */}
-                        <EditableField
-                            label="Personal / Alternate Email"
-                            value={
-                                pendingFields.altEmail || altEmail || "Not set"
-                            }
-                            pending={!!pendingFields.altEmail}
-                            onSave={(v) => handleFieldSave("altEmail", v)}
-                            disabled={!profileEditOpen}
-                        />
                     </div>
                 </div>
 
@@ -1834,7 +2406,7 @@ export default function Profile({ user }) {
                         </span>
                     </div>
                     <div className="pf-fields">
-                        <EditableField
+                        <NumberField
                             label={
                                 <>
                                     Teaching Experience{" "}
@@ -1848,7 +2420,7 @@ export default function Profile({ user }) {
                             onSave={(v) => handleFieldSave("teachingYears", v)}
                             disabled={!profileEditOpen}
                         />
-                        <EditableField
+                        <NumberField
                             label="Industry Experience"
                             value={pendingFields.industryYears || industryYears}
                             pending={!!pendingFields.industryYears}
@@ -1914,36 +2486,36 @@ export default function Profile({ user }) {
                     </div>
                     <div className="pf-edu-list">
                         {eduList.map((edu, i) => (
-                            <div className="pf-edu-item" key={i}>
-                                <span
-                                    className={`pf-edu-level ${edu.levelClass}`}
-                                >
+                            <div className="pf-edu-item" key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                                <span className={`pf-edu-level ${edu.levelClass}`}>
                                     {edu.level}
                                 </span>
                                 <div style={{ flex: 1 }}>
-                                    <div className="pf-edu-degree">
-                                        {edu.degree}
-                                    </div>
-                                    <div className="pf-edu-school">
-                                        <Building2 size={11} /> {edu.school}
-                                    </div>
+                                    <div className="pf-edu-degree">{edu.degree}</div>
+                                    <div className="pf-edu-school"><Building2 size={11} /> {edu.school}</div>
                                     {edu.pending && (
-                                        <div
-                                            className="pf-pending-badge"
-                                            style={{ marginTop: 6 }}
-                                        >
-                                            <Clock size={10} /> Pending HR
-                                            verification
+                                        <div className="pf-pending-badge" style={{ marginTop: 6 }}>
+                                            <Clock size={10} /> Pending HR verification
                                         </div>
                                     )}
                                 </div>
+                                {profileEditOpen && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        <button className="pf-edit-btn pf-edit-btn-pencil" onClick={() => { setEditEduIndex(i); setEduModalOpen(true); }} title="Edit degree">
+                                            <Pencil size={14} />
+                                        </button>
+                                        <button className="pf-edit-btn pf-edit-btn-cancel" onClick={() => handleDeleteEdu(i)} title="Delete degree">
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ))}
                         {/* Add button hidden when profile edit window is closed */}
                         {profileEditOpen && (
                             <button
                                 className="pf-edu-add"
-                                onClick={() => setEduModalOpen(true)}
+                                onClick={() => { setEditEduIndex(null); setEduModalOpen(true); }}
                             >
                                 <Plus size={14} /> Add degree or credential
                             </button>
@@ -1968,15 +2540,22 @@ export default function Profile({ user }) {
                     </div>
                     <div className="pf-elig-list">
                         {eligList.map((e, i) => (
-                            <div className="pf-elig-item" key={i}>
+                            <div className="pf-elig-item" key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <span className="pf-elig-dot" />
-                                <span className="pf-elig-text">{e.text}</span>
+                                <span className="pf-elig-text" style={{ flex: 1 }}>{e.text}</span>
                                 {e.pending && (
-                                    <div
-                                        className="pf-pending-badge"
-                                        style={{ flexShrink: 0 }}
-                                    >
+                                    <div className="pf-pending-badge" style={{ flexShrink: 0 }}>
                                         <Clock size={10} /> Pending
+                                    </div>
+                                )}
+                                {profileEditOpen && (
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button className="pf-edit-btn pf-edit-btn-pencil" onClick={() => { setEditEligIndex(i); setEligModalOpen(true); }} title="Edit eligibility">
+                                            <Pencil size={14} />
+                                        </button>
+                                        <button className="pf-edit-btn pf-edit-btn-cancel" onClick={() => handleDeleteElig(i)} title="Delete eligibility">
+                                            <X size={14} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -1985,12 +2564,56 @@ export default function Profile({ user }) {
                         {profileEditOpen && (
                             <button
                                 className="pf-elig-add"
-                                onClick={() => setEligModalOpen(true)}
+                                onClick={() => { setEditEligIndex(null); setEligModalOpen(true); }}
                             >
                                 <Plus size={14} /> Add eligibility or board exam
                             </button>
                         )}
                     </div>
+                </div>
+            </div>
+
+            {/* Doctorate Degrees (same card style as Education) */}
+            <div className="pf-card" style={{ marginBottom: 0 }}>
+                <div className="pf-card-header">
+                    <div className="pf-card-icon">
+                        <GraduationCap size={16} />
+                    </div>
+                    <div className="pf-card-title">Doctorate Degrees</div>
+                    <span className="pf-card-editable-badge">
+                        <Plus size={10} /> Can add
+                    </span>
+                </div>
+                <div className="pf-edu-list">
+                    {doctoralList.map((d, i) => (
+                        <div className="pf-edu-item" key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <span className="pf-edu-level edu-doctorate">Doctorate</span>
+                            <div style={{ flex: 1 }}>
+                                <div className="pf-edu-degree">{d.degree}</div>
+                                <div className="pf-edu-school"><Building2 size={12} /> {d.school || ""}</div>
+                                {d.pending && (
+                                    <div className="pf-pending-badge">
+                                        <Clock size={10} /> Pending
+                                    </div>
+                                )}
+                            </div>
+                            {profileEditOpen && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <button className="pf-edit-btn pf-edit-btn-pencil" onClick={() => { setEditDoctoralIndex(i); setDoctoralModalOpen(true); }} title="Edit doctorate">
+                                        <Pencil size={14} />
+                                    </button>
+                                    <button className="pf-edit-btn pf-edit-btn-cancel" onClick={() => handleDeleteDoctoral(i)} title="Delete doctorate">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {profileEditOpen && (
+                        <button className="pf-edu-add" onClick={() => { setEditDoctoralIndex(null); setDoctoralModalOpen(true); }}>
+                            <Plus size={14} /> Add doctorate degree
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -2271,17 +2894,28 @@ export default function Profile({ user }) {
             {/* Education Modal */}
             <EducationModal
                 isOpen={eduModalOpen}
-                onClose={() => setEduModalOpen(false)}
-                onSubmit={handleAddEdu}
+                initialData={editEduIndex !== null ? eduList[editEduIndex] : null}
+                onClose={() => { setEduModalOpen(false); setEditEduIndex(null); }}
+                onSubmit={(data) => { if (editEduIndex !== null) return handleUpdateEdu(editEduIndex, data); return handleAddEdu(data); }}
                 isLoading={isSubmittingEdu}
             />
 
             {/* Eligibility Modal */}
             <EligibilityModal
                 isOpen={eligModalOpen}
-                onClose={() => setEligModalOpen(false)}
-                onSubmit={handleAddElig}
+                initialData={editEligIndex !== null ? eligList[editEligIndex] : null}
+                onClose={() => { setEligModalOpen(false); setEditEligIndex(null); }}
+                onSubmit={(data) => { if (editEligIndex !== null) return handleUpdateElig(editEligIndex, data); return handleAddElig(data); }}
                 isLoading={isSubmittingElig}
+            />
+
+            {/* Doctoral Modal */}
+            <DoctoralModal
+                isOpen={doctoralModalOpen}
+                initialData={editDoctoralIndex !== null ? doctoralList[editDoctoralIndex] : null}
+                onClose={() => { setDoctoralModalOpen(false); setEditDoctoralIndex(null); }}
+                onSubmit={(data) => { if (editDoctoralIndex !== null) return handleUpdateDoctoral(editDoctoralIndex, data); return handleAddDoctoral(data); }}
+                isLoading={isSubmittingDoctoral}
             />
         </>
     );

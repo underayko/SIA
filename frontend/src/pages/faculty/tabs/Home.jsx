@@ -1747,7 +1747,17 @@ function pickUserFilterCandidates(user) {
 }
 
 async function querySingleByCandidates(table, selectClause, candidates) {
+    function isNumericIdLocal(val) {
+        if (val === null || val === undefined) return false;
+        return /^\d+$/.test(String(val).trim());
+    }
+
     for (const [column, value] of candidates) {
+        // Skip numeric id probes when value is non-numeric (avoid UUID->int mismatches)
+        if (['user_id', 'faculty_id', 'uid'].includes(column) && !isNumericIdLocal(value)) {
+            continue;
+        }
+
         const result = await supabase
             .from(table)
             .select(selectClause)
@@ -1766,6 +1776,13 @@ async function queryRowsByCandidates(table, selectClause, candidates) {
             // Debug probe
             // eslint-disable-next-line no-console
             console.debug(`queryRowsByCandidates: probing table=${table} column=${column} value=${value}`);
+
+            // Skip numeric id probes when value is non-numeric to avoid 400s
+            if (['user_id', 'faculty_id', 'uid'].includes(column) && !/^\d+$/.test(String(value || '').trim())) {
+                // eslint-disable-next-line no-console
+                console.debug(`queryRowsByCandidates: skipping column=${column} value=${value} (non-numeric)`);
+                continue;
+            }
 
             const result = await supabase
                 .from(table)
