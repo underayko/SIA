@@ -1,6 +1,7 @@
 // 📄 SIA/frontend/src/pages/faculty/Dashboard.jsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import gcLogo from "../../assets/gclogo.png";
 import Sidebar from "../../components/Sidebar";
 import Topbar from "../../components/Topbar";
@@ -184,7 +185,9 @@ const PAGE_TITLES = {
 };
 
 export default function Dashboard({ user, onLogout, _devInitialTab }) {
-    const [activeTab, setActiveTab] = useState(_devInitialTab || "home");
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initialTab = searchParams.get("tab") || _devInitialTab || "home";
+    const [activeTab, setActiveTab] = useState(initialTab);
     const [showLogout, setShowLogout] = useState(false);
     const [notificationTable, setNotificationTable] = useState(null);
     const [notifications, setNotifications] = useState([]);
@@ -192,6 +195,13 @@ export default function Dashboard({ user, onLogout, _devInitialTab }) {
 
     const navigate = (key) => {
         setActiveTab(key);
+        try {
+            const next = new URLSearchParams(searchParams.toString());
+            next.set("tab", key);
+            setSearchParams(next, { replace: false });
+        } catch (e) {
+            // ignore
+        }
     };
 
     useEffect(() => {

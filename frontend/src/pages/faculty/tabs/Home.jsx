@@ -46,6 +46,7 @@ import {
     Lock,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
+import { useSearchParams } from "react-router-dom";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AREAS DATA
@@ -1155,6 +1156,54 @@ function resolvePartAreaId(part) {
     return part?.areaId || inferAreaIdFromPartId(part?.id);
 }
 
+/**
+ * Look up the actual database area_id from the frontend area identifier.
+ * The frontend uses Roman numerals (I, II, III, etc.) or numeric codes (1, 2, 3, etc.),
+ * but the database may store different IDs. This function matches the frontend identifier
+ * (e.g., "I") to the real database area_id by checking the loaded areasData.
+ * 
+ * @param {string} frontendAreaId - The frontend area identifier (e.g., "I", "II", "1", etc.)
+ * @param {Array} areasData - The loaded areas data from the database
+ * @returns {number|null} The actual database area_id, or null if not found
+ */
+function lookupDatabaseAreaId(frontendAreaId, areasData) {
+    if (!frontendAreaId || !Array.isArray(areasData) || areasData.length === 0) {
+        return null;
+    }
+
+    const frontendNum = normalizeDbAreaId(frontendAreaId); // Convert "I" to 1, "II" to 2, etc.
+    if (!frontendNum) {
+        console.warn('[lookupDatabaseAreaId] unable to normalize frontend area id:', frontendAreaId);
+        return null;
+    }
+
+
+
+    // Try to match using the area name field (could be area_name or name depending on DB schema)
+    for (const area of areasData) {
+        const areaName = String(area.area_name || area.name || '');
+        const dbAreaId = area.area_id || area.id;
+        
+        // Build the pattern to search for, e.g., "AREA I:" (with colon to avoid matching "AREA II")
+        const romanPatternWithColon = `AREA ${frontendAreaId}:`;
+        const numPatternWithColon = `AREA ${frontendNum}:`;
+        
+        if (areaName.includes(romanPatternWithColon) || areaName.includes(numPatternWithColon)) {
+            return dbAreaId;
+        }
+    }
+
+    console.warn('[lookupDatabaseAreaId] ✗ no match found. looking for patterns:', {
+        roman: `AREA ${frontendAreaId}:`,
+        numeric: `AREA ${frontendNum}:`
+    });
+    console.warn('[lookupDatabaseAreaId] available areas:', areasData.map(a => ({ 
+        area_id: a.area_id || a.id, 
+        name: (a.area_name || a.name || '').slice(0, 50) 
+    })));
+    return null;
+}
+
 function normalizeDbAreaId(areaId) {
     const raw = String(areaId || '').trim();
     if (!raw) return null;
@@ -1506,7 +1555,24 @@ function buildToast(id, kind, message) {
 function mergePartWithSubmission(part, submissionRow) {
     if (!submissionRow) return part;
 
-    const status = normalizeSubmissionStatus(submissionRow);
+    // If we have a submission row in area_submissions table, it means the file was
+    // successfully uploaded and registered. Default to "submitted" status.
+    let status = "submitted";
+    
+    // Check if there's an explicit status field in the submission row
+    const statusRaw = String(
+        getFirstValue(submissionRow, ["status", "submission_status", "state"], ""),
+    )
+        .trim()
+        .toLowerCase();
+    
+    // Override with explicit status if present
+    if (statusRaw.includes("draft")) {
+        status = "draft";
+    } else if (statusRaw.includes("pending")) {
+        status = "draft"; // Treat pending as draft
+    }
+    
     const file =
         getFirstValue(submissionRow, [
             "file_name",
@@ -1538,7 +1604,7 @@ function mergePartWithSubmission(part, submissionRow) {
 
     return {
         ...part,
-        status: status === "empty" ? part.status : status,
+        status, // "submitted" by default for rows in area_submissions
         file,
         date: dateText,
         fileUrl: fileUrl || part.fileUrl || null,
@@ -1547,11 +1613,59 @@ function mergePartWithSubmission(part, submissionRow) {
     };
 }
 
-function mergeAreasWithSubmissions(areas, submissionRows) {
+/**
+ * Create a mapping from database area_id to frontend area identifier.
+ * Example: { 4: "I", 5: "II", 6: "III", ... }
+ */
+function buildAreaIdMapping(databaseAreas) {
+    const mapping = {};
+    
+    for (const area of (databaseAreas || [])) {
+        const dbAreaId = area.area_id || area.id;
+        const areaName = String(area.area_name || area.name || '');
+        
+        // Extract "I" from "AREA I: Educational Qualifications"
+        // Try multiple regex patterns to be more flexible
+        let romanNumeral = null;
+        
+        // Pattern 1: "AREA I:" (with colon)
+        let match = areaName.match(/AREA\s+([IVX]+):/i);
+        if (match) {
+            romanNumeral = match[1].toUpperCase();
+        }
+        
+        // Pattern 2: "AREA I " (with space, no colon)
+        if (!romanNumeral) {
+            match = areaName.match(/AREA\s+([IVX]+)\s/i);
+            if (match) {
+                romanNumeral = match[1].toUpperCase();
+            }
+        }
+        
+        // Pattern 3: "AREA I" (at end or before non-letter)
+        if (!romanNumeral) {
+            match = areaName.match(/AREA\s+([IVX]+)(?:\s|$)/i);
+            if (match) {
+                romanNumeral = match[1].toUpperCase();
+            }
+        }
+        
+        if (romanNumeral) {
+            const numericId = romanToNumber(romanNumeral);
+            if (numericId) {
+                mapping[dbAreaId] = romanNumeral;
+            }
+        }
+    }
+    
+    return mapping;
+}
+
+function mergeAreasWithSubmissions(areas, submissionRows, areaIdMapping) {
     const latestByPartId = new Map();
 
     for (const row of submissionRows) {
-        const partId = getFirstValue(row, [
+        let partId = getFirstValue(row, [
             "part_id",
             "partId",
             "subpart_id",
@@ -1559,6 +1673,39 @@ function mergeAreasWithSubmissions(areas, submissionRows) {
             "criterion_id",
             "criterionId",
         ]);
+
+        // If the submission row doesn't include a specific part/subpart id,
+        // try to associate it with the area's first leaf part using `area_id`.
+        if (!partId) {
+            let areaIdVal = getFirstValue(row, ["area_id", "areaId", "area"]);
+            
+            // If we have an area_id mapping (database ID → frontend ID), use it
+            if (areaIdMapping && areaIdVal) {
+                const frontendAreaId = areaIdMapping[areaIdVal];
+                if (frontendAreaId) {
+                    areaIdVal = frontendAreaId;
+                }
+            }
+            
+            if (areaIdVal) {
+                const matchedArea = areas.find((a) => {
+                    // Try both raw comparison and normalized comparison
+                    try {
+                        return String(a.id) === String(areaIdVal) || String(normalizeDbAreaId(a.id || a.area_id)) === String(areaIdVal);
+                    } catch (e) {
+                        return String(a.area_id) === String(areaIdVal);
+                    }
+                });
+
+                if (matchedArea) {
+                    const leafParts = getLeafParts(matchedArea);
+                    if (leafParts && leafParts.length > 0) {
+                        partId = leafParts[0].id;
+                    }
+                }
+            }
+        }
+
         if (!partId) continue;
 
         const key = String(partId);
@@ -1615,13 +1762,33 @@ async function querySingleByCandidates(table, selectClause, candidates) {
 
 async function queryRowsByCandidates(table, selectClause, candidates) {
     for (const [column, value] of candidates) {
-        const result = await supabase
-            .from(table)
-            .select(selectClause)
-            .eq(column, value);
+        try {
+            // Debug probe
+            // eslint-disable-next-line no-console
+            console.debug(`queryRowsByCandidates: probing table=${table} column=${column} value=${value}`);
 
-        if (!result.error && Array.isArray(result.data)) return result.data;
-        if (!isColumnOrTableError(result.error)) continue;
+            const result = await supabase
+                .from(table)
+                .select(selectClause)
+                .eq(column, value);
+
+            if (!result.error && Array.isArray(result.data)) {
+                // eslint-disable-next-line no-console
+                console.debug(`queryRowsByCandidates: matched table=${table} column=${column} rows=${(result.data||[]).length}`);
+                return result.data;
+            }
+
+            if (result.error) {
+                // eslint-disable-next-line no-console
+                console.debug(`queryRowsByCandidates: table=${table} column=${column} error=`, result.error?.message || result.error);
+            }
+
+            if (!isColumnOrTableError(result.error)) continue;
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.debug(`queryRowsByCandidates: exception for table=${table} column=${column}`, e?.message || e);
+            // continue to next candidate
+        }
     }
     return [];
 }
@@ -2318,10 +2485,28 @@ export default function Home({ user }) {
     const userEmail = user?.email || null;
     const [facultyRecordId, setFacultyRecordId] = useState(null);
 
+    const [searchParams, setSearchParams] = useSearchParams();
+
     const [view, setView] = useState("list");
     const [openAreaId, setOpenAreaId] = useState(null);
 
+    useEffect(() => {
+        try {
+            const areaParam = searchParams.get("area");
+            if (areaParam) {
+                setOpenAreaId(areaParam);
+                setView("detail");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            }
+        } catch (e) {
+            // ignore
+        }
+        // run only once on mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const [areasData, setAreasData] = useState(DEFAULT_AREAS_DATA);
+    const [databaseAreas, setDatabaseAreas] = useState([]); // Store actual areas table from database
     const [submissionOpen, setSubmissionOpen] = useState(false);
     const [cycleInfo, setCycleInfo] = useState({
         id: null,
@@ -2441,7 +2626,22 @@ export default function Home({ user }) {
 
     const writeSubmissionRow = async ({ part, storagePath, appId }) => {
         const nowIso = new Date().toISOString();
-        const areaId = normalizeDbAreaId(resolvePartAreaId(part));
+        
+        // Get the frontend area identifier (e.g., "I" from part ID "I-A")
+        const frontendAreaId = resolvePartAreaId(part);
+        
+        // Look up the actual database area_id using the database areas
+        let areaId = lookupDatabaseAreaId(frontendAreaId, databaseAreas);
+        
+        if (!areaId) {
+            // Fallback: use old conversion (Roman to number) for backward compatibility
+            areaId = normalizeDbAreaId(frontendAreaId);
+        }
+
+        if (!areaId) {
+            console.warn('writeSubmissionRow: unable to resolve numeric area_id for part', part.id, 'candidate:', resolvePartAreaId(part));
+            return null;
+        }
         // Adjust payloads to match detected `area_submissions` schema.
         // Detected keys include: submission_id, application_id, area_id, file_path, uploaded_at
         const submitterId = facultyRecordId || null;
@@ -2486,18 +2686,105 @@ export default function Home({ user }) {
             }
         }
 
+        // Before inserting, try to find an existing submission row and update it
         if (!saved) {
-            for (const payload of payloadVariants) {
-                const result = await supabase
-                    .from(resolvedTables.areaSubmissions)
-                    .insert([payload])
-                    .select("*")
-                    .maybeSingle();
-                if (!result.error) {
-                    saved = result.data;
-                    break;
-                } else {
-                    console.warn('writeSubmissionRow: insert variant failed:', result.error?.message || result.error);
+            let existing = null;
+
+            // 1) Try to find by exact file path (common when reloading)
+            const fileCols = ["file_path", "storage_path", "path", "object_path"];
+            for (const col of fileCols) {
+                try {
+                    const probe = await supabase
+                        .from(resolvedTables.areaSubmissions)
+                        .select("*")
+                        .eq(col, storagePath)
+                        .maybeSingle();
+                    if (!probe.error && probe.data) {
+                        existing = probe.data;
+                        break;
+                    }
+                    if (probe.error && !isColumnOrTableError(probe.error)) break;
+                } catch (e) {
+                    // ignore and continue
+                }
+            }
+
+            // 2) If not found by file_path, try to find by application+area+user (idempotent per-user per-area)
+            if (!existing && appId && submitterId) {
+                const appCols = ["application_id", "applicationId", "app_id", "application"];
+                const areaCols = ["area_id", "areaId", "area"];
+                const userCols = ["user_id", "faculty_id", "uid", "user"];
+                outer: for (const aCol of appCols) {
+                    for (const arCol of areaCols) {
+                        for (const uCol of userCols) {
+                            try {
+                                const probe = await supabase
+                                    .from(resolvedTables.areaSubmissions)
+                                    .select("*")
+                                    .eq(aCol, appId)
+                                    .eq(arCol, areaId)
+                                    .eq(uCol, submitterId)
+                                    .maybeSingle();
+                                if (!probe.error && probe.data) {
+                                    existing = probe.data;
+                                    break outer;
+                                }
+                                if (probe.error && !isColumnOrTableError(probe.error)) break outer;
+                            } catch (e) {
+                                // ignore and continue
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If we found an existing row, update it instead of inserting a duplicate
+            if (existing) {
+                try { console.debug('writeSubmissionRow: existing row detected', existing); } catch (e) {}
+                const idVal = getFirstValue(existing, ["submission_id", "id"]);
+                for (const payload of payloadVariants) {
+                    try {
+                        const upd = await supabase
+                            .from(resolvedTables.areaSubmissions)
+                            .update(payload)
+                            .eq("submission_id", idVal)
+                            .select("*")
+                            .maybeSingle();
+                        if (!upd.error) {
+                            saved = upd.data;
+                            break;
+                        }
+                        const updAlt = await supabase
+                            .from(resolvedTables.areaSubmissions)
+                            .update(payload)
+                            .eq("id", idVal)
+                            .select("*")
+                            .maybeSingle();
+                        if (!updAlt.error) {
+                            saved = updAlt.data;
+                            break;
+                        }
+                    } catch (e) {
+                        // ignore and try next payload variant
+                    }
+                }
+            }
+
+            // If still not saved, fallback to inserting
+            if (!saved) {
+                try { console.debug('writeSubmissionRow: no existing row found — will attempt insert for', storagePath); } catch (e) {}
+                for (const payload of payloadVariants) {
+                    const result = await supabase
+                        .from(resolvedTables.areaSubmissions)
+                        .insert([payload])
+                        .select("*")
+                        .maybeSingle();
+                    if (!result.error) {
+                        saved = result.data;
+                        break;
+                    } else {
+                        console.warn('writeSubmissionRow: insert variant failed:', result.error?.message || result.error);
+                    }
                 }
             }
         }
@@ -2662,7 +2949,18 @@ export default function Home({ user }) {
     };
 
     const persistSubmissionRow = async (part, storagePath) => {
-        const areaId = normalizeDbAreaId(resolvePartAreaId(part));
+        
+        // Get the frontend area identifier (e.g., "I" from part ID "I-A")
+        const frontendAreaId = resolvePartAreaId(part);
+
+        // Look up the actual database area_id using the database areas
+        let areaId = lookupDatabaseAreaId(frontendAreaId, databaseAreas);
+
+        if (!areaId) {
+            // Fallback: use old conversion (Roman to number) for backward compatibility
+            areaId = normalizeDbAreaId(frontendAreaId);
+            console.warn('◆ persistSubmissionRow: database lookup failed, falling back to Roman conversion:', areaId);
+        }
         
         // Auto-create application if it doesn't exist
         let appId = applicationInfo.id;
@@ -2695,6 +2993,8 @@ export default function Home({ user }) {
             const headers = { 'Content-Type': 'application/json' };
             if (backendKey) headers['x-upload-key'] = backendKey;
 
+
+
             const resp = await fetch(uploadEndpoint, {
                 method: 'POST',
                 headers,
@@ -2711,14 +3011,16 @@ export default function Home({ user }) {
                 } catch (e) {
                     bodyText = String(e?.message || e);
                 }
-                console.warn('persistSubmissionRow: ✗ backend error', resp.status, bodyText);
+                // eslint-disable-next-line no-console
+                console.warn('◆ persistSubmissionRow: backend error', resp.status, bodyText);
                 pushToast('error', `Upload registration failed (${resp.status}). Trying fallback...`);
                 if (resp.status === 403) {
                     console.warn('Upload rejected: backend expects an upload key. Set VITE_BACKEND_UPLOAD_KEY to match BACKEND_UPLOAD_KEY on the backend.');
                 }
             }
         } catch (e) {
-            console.warn('persistSubmissionRow: ✗ fetch failed:', e?.message || e);
+            // eslint-disable-next-line no-console
+            console.warn('◆ persistSubmissionRow: fetch threw error:', e?.message || e);
             pushToast('error', `Upload registration network error: ${e?.message || e}`);
         }
 
@@ -2729,8 +3031,11 @@ export default function Home({ user }) {
                     storagePath,
                     appId,
                 });
+                if (saved) {
+                }
             } catch (e) {
-                console.warn('persistSubmissionRow: ✗ direct DB write failed:', e?.message || e);
+                // eslint-disable-next-line no-console
+                console.warn('◆ persistSubmissionRow: direct DB write failed:', e?.message || e);
                 pushToast('error', `Failed to register submission in database: ${e?.message || e}`);
             }
         }
@@ -3038,6 +3343,24 @@ export default function Home({ user }) {
         let isActive = true;
 
         const hydrateHome = async () => {
+            // Load the actual database areas table (for area_id lookup during uploads)
+            let loadedDatabaseAreas = []; // Capture locally to use immediately
+            try {
+                const { data: dbAreasData, error: dbAreasError } = await supabase
+                    .from('areas')
+                    .select('*');
+                if (!dbAreasError && Array.isArray(dbAreasData) && dbAreasData.length > 0) {
+                    loadedDatabaseAreas = dbAreasData; // Capture for use in hydration
+                    if (isActive) {
+                        setDatabaseAreas(dbAreasData); // Also update state for future uploads
+                    }
+                } else {
+                    console.warn('[hydrateHome] failed to load areas from database:', dbAreasError);
+                }
+            } catch (e) {
+                console.warn('[hydrateHome] exception loading areas:', e.message);
+            }
+
             const backendAreas = await fetchAreaDefinitions();
             const baseAreas =
                 Array.isArray(backendAreas) && backendAreas.length > 0
@@ -3116,86 +3439,105 @@ export default function Home({ user }) {
             setSubmissionOpen(nextSubmissionOpen);
             setCycleInfo(nextCycleInfo);
 
-            const profileResult = await querySingleFromTableCandidates(
-                PROFILE_TABLE_CANDIDATES,
-                "*",
-                candidates,
-            );
-            const profileRow = profileResult.row;
-            let resolvedFacultyId = null;
+            let profileRow = null;
             let numericFacultyId = null;
-            if (profileRow && isActive) {
-                setProfileInfo({
-                    currentRank: String(
-                        getFirstValue(
-                            profileRow,
-                            [
-                                "current_rank",
-                                "rank",
-                                "position_rank",
-                                "faculty_rank",
-                            ],
-                            "Not set",
-                        ),
-                    ),
-                    department: String(
-                        getFirstValue(
-                            profileRow,
-                            [
-                                "department",
-                                "department_name",
-                                "dept",
-                                "college_department",
-                            ],
-                            "Not set",
-                        ),
-                    ),
-                });
-
-                resolvedFacultyId = getFirstValue(profileRow, ["user_id", "id"], null);
-                numericFacultyId = resolvedFacultyId === null || resolvedFacultyId === undefined
-                    ? null
-                    : Number(resolvedFacultyId);
-                setFacultyRecordId(Number.isFinite(numericFacultyId) ? numericFacultyId : null);
-            }
-
-            const applicationCandidates = Number.isFinite(numericFacultyId)
-                ? [["faculty_id", numericFacultyId]]
-                : [];
-            let applicationResult = await querySingleFromTableCandidates(
-                APPLICATION_TABLE_CANDIDATES,
-                "*",
-                applicationCandidates,
-            );
-            let applicationRow = applicationResult.row;
-
-            const nextResolvedTables = {
-                applications:
-                    applicationResult.table ||
-                    APPLICATION_TABLE_CANDIDATES[0] ||
-                    "applications",
-                areaSubmissions:
-                    AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions",
-                applicationLogs:
-                    APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
+            let applicationRow = null;
+            let nextResolvedTables = {
+                applications: APPLICATION_TABLE_CANDIDATES[0] || "applications",
+                areaSubmissions: AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions",
+                applicationLogs: APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
             };
-
             let positionRow = null;
-            const positionId = getFirstValue(applicationRow, [
-                "position_id",
-                "target_position_id",
-                "rank_position_id",
-            ]);
 
-            if (positionId) {
-                const positionResult = await querySingleByColumnCandidates(
-                    POSITION_TABLE_CANDIDATES,
+            try {
+                const profileResult = await querySingleFromTableCandidates(
+                    PROFILE_TABLE_CANDIDATES,
                     "*",
-                    ["id", "position_id"],
-                    positionId,
+                    candidates,
                 );
+                profileRow = profileResult.row;
 
-                positionRow = positionResult.row;
+                if (profileRow && isActive) {
+                    setProfileInfo({
+                        currentRank: String(
+                            getFirstValue(
+                                profileRow,
+                                [
+                                    "current_rank",
+                                    "rank",
+                                    "position_rank",
+                                    "faculty_rank",
+                                ],
+                                "Not set",
+                            ),
+                        ),
+                        department: String(
+                            getFirstValue(
+                                profileRow,
+                                [
+                                    "department",
+                                    "department_name",
+                                    "dept",
+                                    "college_department",
+                                ],
+                                "Not set",
+                            ),
+                        ),
+                    });
+
+                    const resolvedFacultyId = getFirstValue(profileRow, ["user_id", "id"], null);
+                    numericFacultyId = resolvedFacultyId === null || resolvedFacultyId === undefined
+                        ? null
+                        : Number(resolvedFacultyId);
+                    setFacultyRecordId(Number.isFinite(numericFacultyId) ? numericFacultyId : null);
+                }
+
+                const applicationCandidates = Number.isFinite(numericFacultyId)
+                    ? [["faculty_id", numericFacultyId]]
+                    : [];
+                const applicationResult = await querySingleFromTableCandidates(
+                    APPLICATION_TABLE_CANDIDATES,
+                    "*",
+                    applicationCandidates,
+                );
+                applicationRow = applicationResult.row;
+
+                nextResolvedTables = {
+                    applications:
+                        applicationResult.table ||
+                        APPLICATION_TABLE_CANDIDATES[0] ||
+                        "applications",
+                    areaSubmissions:
+                        AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions",
+                    applicationLogs:
+                        APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
+                };
+
+                const positionId = getFirstValue(applicationRow, [
+                    "position_id",
+                    "target_position_id",
+                    "rank_position_id",
+                ]);
+
+                if (positionId) {
+                    try {
+                        const positionResult = await querySingleByColumnCandidates(
+                            POSITION_TABLE_CANDIDATES,
+                            "*",
+                            ["id", "position_id"],
+                            positionId,
+                        );
+
+                        positionRow = positionResult.row;
+                    } catch (pe) {
+                        // eslint-disable-next-line no-console
+                        console.debug('hydrate: position query failed', pe?.message || pe);
+                    }
+                }
+            } catch (e) {
+                // Ensure hydrate proceeds even if profile/application/position queries fail
+                // eslint-disable-next-line no-console
+                console.debug('hydrate: profile/application/position resolution failed, continuing:', e?.message || e);
             }
 
             if (applicationRow && isActive) {
@@ -3267,21 +3609,119 @@ export default function Home({ user }) {
                 });
             }
 
-            const submissionResult = await queryRowsFromTableCandidates(
-                AREA_SUBMISSION_TABLE_CANDIDATES,
-                "*",
-                Number.isFinite(numericFacultyId)
-                    ? [["user_id", numericFacultyId], ["faculty_id", numericFacultyId], ["uid", numericFacultyId]]
-                    : [],
-            );
-            const submissionRows = submissionResult.rows;
+            const submissionCandidates = pickUserFilterCandidates({ user_id: numericFacultyId, email: userEmail });
+            let submissionRows = [];
+            let submissionResult = { table: null, rows: [] };
+            try {
+                submissionResult = await queryRowsFromTableCandidates(
+                    AREA_SUBMISSION_TABLE_CANDIDATES,
+                    "*",
+                    submissionCandidates,
+                );
+                submissionRows = submissionResult.rows || [];
+                // eslint-disable-next-line no-console
+                console.debug('hydrate: fetched submissionResult.table=', submissionResult.table, 'count=', submissionRows.length);
+            } catch (se) {
+                // eslint-disable-next-line no-console
+                console.debug('hydrate: submission rows fetch failed', se?.message || se);
+                submissionRows = [];
+                submissionResult = { table: null, rows: [] };
+            }
+
+            // Fallback: if no submissions found, try application+user/email multi-eq queries
+            if ((submissionRows || []).length === 0) {
+                try {
+                    const subsTable = submissionResult.table || nextResolvedTables.areaSubmissions || AREA_SUBMISSION_TABLE_CANDIDATES[0] || 'area_submissions';
+                    const appIdCandidate = applicationInfo.id || getFirstValue(applicationRow, ['application_id', 'id'], null);
+                    const userCandidate = Number.isFinite(numericFacultyId) ? numericFacultyId : null;
+
+                    // Debug: expose to window so user can query from console
+                    try {
+                        window.__debugHydrate = {
+                            supabase,
+                            subsTable,
+                            appIdCandidate,
+                            userCandidate,
+                            submissionCandidates,
+                            numericFacultyId,
+                            userEmail,
+                        };
+                        // eslint-disable-next-line no-console
+                        console.debug('hydrate: window.__debugHydrate available for console queries');
+                    } catch (e) {
+                        // ignore if window not available
+                    }
+
+                    // Try by application_id + user_id
+                    if (appIdCandidate && userCandidate) {
+                        // eslint-disable-next-line no-console
+                        console.debug('hydrate: fallback probing by application_id + user_id', subsTable, appIdCandidate, userCandidate);
+                        const probe = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('user_id', userCandidate);
+                        if (!probe.error && Array.isArray(probe.data) && probe.data.length > 0) {
+                            submissionRows = probe.data;
+                            submissionResult.table = subsTable;
+                            // eslint-disable-next-line no-console
+                            console.debug('hydrate: fallback match application+user rows=', submissionRows.length);
+                        }
+                    }
+
+                    // Try by application_id + email (if still empty)
+                    if ((submissionRows || []).length === 0 && appIdCandidate && userEmail) {
+                        // eslint-disable-next-line no-console
+                        console.debug('hydrate: fallback probing by application_id + email', subsTable, appIdCandidate, userEmail);
+                        const probe2 = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('email', userEmail);
+                        if (!probe2.error && Array.isArray(probe2.data) && probe2.data.length > 0) {
+                            submissionRows = probe2.data;
+                            submissionResult.table = subsTable;
+                            // eslint-disable-next-line no-console
+                            console.debug('hydrate: fallback match application+email rows=', submissionRows.length);
+                        }
+                    }
+                    
+                    // Additional fallback: probe by application + area + email across known area ids
+                    if ((submissionRows || []).length === 0 && appIdCandidate && userEmail && Array.isArray(baseAreas) && baseAreas.length > 0) {
+                        try {
+                            const areaCols = ['area_id', 'area', 'areaId'];
+                            for (const areaRow of baseAreas) {
+                                const candidateAreaId = getFirstValue(areaRow, ['id', 'area_id', 'areaId']);
+                                if (!candidateAreaId) continue;
+
+                                for (const areaCol of areaCols) {
+                                    // eslint-disable-next-line no-console
+                                    console.debug('hydrate: fallback probing by application+area+email', subsTable, appIdCandidate, areaCol, candidateAreaId, userEmail);
+                                    const probeArea = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail).limit(1);
+                                    if (!probeArea.error && Array.isArray(probeArea.data) && probeArea.data.length > 0) {
+                                        submissionRows = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail);
+                                        submissionResult.table = subsTable;
+                                        // eslint-disable-next-line no-console
+                                        console.debug('hydrate: fallback match application+area+email rows=', (submissionRows?.length||0), 'areaCol=', areaCol, 'areaId=', candidateAreaId);
+                                        break;
+                                    }
+                                }
+                                if ((submissionRows || []).length > 0) break;
+                            }
+                        } catch (ae) {
+                            // eslint-disable-next-line no-console
+                            console.debug('hydrate: area-scoped fallback failed', ae?.message || ae);
+                        }
+                    }
+                } catch (fe) {
+                    // eslint-disable-next-line no-console
+                    console.debug('hydrate: fallback submission probe failed', fe?.message || fe);
+                }
+            }
+            // Debug: log fetched submission rows to help diagnose duplicates
+            try {
+                // eslint-disable-next-line no-console
+                console.debug('hydrate: submission table=', submissionResult.table, 'rows=', (submissionRows||[]).length, submissionRows?.slice?.(0,3));
+            } catch (e) {
+                // ignore
+            }
 
             const logResult = await queryRowsFromTableCandidates(
                 APPLICATION_LOG_TABLE_CANDIDATES,
                 "*",
-                Number.isFinite(numericFacultyId)
-                    ? [["user_id", numericFacultyId], ["faculty_id", numericFacultyId], ["uid", numericFacultyId]]
-                    : [],
+                pickUserFilterCandidates({ user_id: numericFacultyId, email: userEmail }),
             );
 
             if (!isActive) return;
@@ -3305,8 +3745,11 @@ export default function Home({ user }) {
                   })
                 : submissionRows;
 
+            // Build mapping from database area_id to frontend area identifier
+            const areaIdMapping = buildAreaIdMapping(loadedDatabaseAreas);
+
             if (scopedRows.length > 0) {
-                setAreasData(mergeAreasWithSubmissions(baseAreas, scopedRows));
+                setAreasData(mergeAreasWithSubmissions(baseAreas, scopedRows, areaIdMapping));
             } else {
                 setAreasData(baseAreas);
             }
@@ -3337,11 +3780,25 @@ export default function Home({ user }) {
     const openArea = (id) => {
         setOpenAreaId(id);
         setView("detail");
+        try {
+            const next = new URLSearchParams(searchParams.toString());
+            next.set("area", String(id));
+            setSearchParams(next, { replace: false });
+        } catch (e) {
+            // ignore
+        }
         window.scrollTo({ top: 0, behavior: "smooth" });
     };
     const backToList = () => {
         setView("list");
         setOpenAreaId(null);
+        try {
+            const next = new URLSearchParams(searchParams.toString());
+            next.delete("area");
+            setSearchParams(next, { replace: false });
+        } catch (e) {
+            // ignore
+        }
     };
 
     const currentArea = areasData.find((a) => a.id === openAreaId);
