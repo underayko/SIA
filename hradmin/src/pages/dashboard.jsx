@@ -413,6 +413,17 @@ function TimelineModal({ cycle, onClose, onSaved, focusDeadline = false }) {
           .insert([cleanedData]);
         if (error) throw error;
         console.log('✅ New cycle created:', data);
+
+        // Reset all 'ranking' users to 'inactive' for the new cycle
+        const { error: resetError } = await supabase
+          .from('users')
+          .update({ status: 'inactive' })
+          .eq('status', 'ranking');
+        if (resetError) {
+          console.warn('⚠️ Warning: Could not reset users for new cycle:', resetError.message);
+        } else {
+          console.log('✅ All ranking users reset to inactive for new cycle');
+        }
       }
       onSaved();
     } catch (err) {

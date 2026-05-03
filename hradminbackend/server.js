@@ -8,6 +8,100 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+async function resolveCurrentCycleId() {
+  const openCycle = await supabase
+    .from("ranking_cycles")
+    .select("cycle_id, created_at")
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!openCycle.error && openCycle.data?.cycle_id) {
+    return openCycle.data.cycle_id;
+  }
+
+  const latestCycle = await supabase
+    .from("ranking_cycles")
+    .select("cycle_id, created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latestCycle.error && latestCycle.data?.cycle_id) {
+    return latestCycle.data.cycle_id;
+  }
+
+  return null;
+}
+
+async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail = null, status = "invited", invitedBy = null }) {
+  if (!cycleId) return { data: null, error: new Error("cycleId is required") };
+  if (!facultyId && !inviteEmail) {
+    return { data: null, error: new Error("facultyId or inviteEmail is required") };
+  }
+
+  if (facultyId) {
+    const existing = await supabase
+      .from("cycle_participants")
+      .select("participant_id")
+      .eq("cycle_id", cycleId)
+      .eq("faculty_id", facultyId)
+      .maybeSingle();
+
+    if (!existing.error && existing.data?.participant_id) {
+      return await supabase
+        .from("cycle_participants")
+        .update({
+          status,
+          invite_email: inviteEmail,
+          invited_by: invitedBy,
+          invited_at: new Date().toISOString(),
+        })
+        .eq("participant_id", existing.data.participant_id)
+        .select("*")
+        .maybeSingle();
+    }
+  }
+
+  if (!facultyId && inviteEmail) {
+    const existingInvite = await supabase
+      .from("cycle_participants")
+      .select("participant_id")
+      .eq("cycle_id", cycleId)
+      .is("faculty_id", null)
+      .ilike("invite_email", inviteEmail)
+      .maybeSingle();
+
+    if (!existingInvite.error && existingInvite.data?.participant_id) {
+      return await supabase
+        .from("cycle_participants")
+        .update({
+          status,
+          invited_by: invitedBy,
+          invited_at: new Date().toISOString(),
+        })
+        .eq("participant_id", existingInvite.data.participant_id)
+        .select("*")
+        .maybeSingle();
+    }
+  }
+
+  return await supabase
+    .from("cycle_participants")
+    .insert([
+      {
+        cycle_id: cycleId,
+        faculty_id: facultyId,
+        invite_email: inviteEmail,
+        status,
+        invited_by: invitedBy,
+      },
+    ])
+    .select("*")
+    .maybeSingle();
+}
+
 // Login endpoint
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -79,6 +173,130 @@ app.get("/departments", async (req, res) => {
   }
 });
 
+app.get("/cycles", async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("ranking_cycles")
+      .select("cycle_id, title, semester, year, status, start_date, deadline, created_at")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error("Error getting cycles:", err);
+    res.status(500).json({ error: "Error getting cycles" });
+  }
+});
+
+app.get("/cycles/current", async (_req, res) => {
+  try {
+    const cycleId = await resolveCurrentCycleId();
+    if (!cycleId) return res.status(404).json({ error: "No cycle found" });
+
+    const { data, error } = await supabase
+      .from("ranking_cycles")
+      .select("cycle_id, title, semester, year, status, start_date, deadline, created_at")
+      .eq("cycle_id", cycleId)
+      .maybeSingle();
+    if (error) throw error;
+    res.json(data || null);
+  } catch (err) {
+    console.error("Error getting current cycle:", err);
+    res.status(500).json({ error: "Error getting current cycle" });
+  }
+});
+
+app.get("/cycles/:cycleId/participants", async (req, res) => {
+  const { cycleId } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from("cycle_participants")
+      .select("participant_id, cycle_id, faculty_id, invite_email, status, invited_by, invited_at, responded_at, created_at, updated_at")
+      .eq("cycle_id", cycleId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error("Error getting cycle participants:", err);
+    res.status(500).json({ error: "Error getting cycle participants" });
+  }
+});
+
+app.post("/cycles/:cycleId/participants", async (req, res) => {
+  const { cycleId } = req.params;
+  const { faculty_id, invite_email, status, invited_by } = req.body || {};
+
+  if (!faculty_id && !invite_email) {
+    return res.status(400).json({ error: "faculty_id or invite_email is required" });
+  }
+
+  try {
+    const result = await upsertCycleParticipant({
+      cycleId,
+      facultyId: faculty_id || null,
+      inviteEmail: invite_email || null,
+      status: status || "invited",
+      invitedBy: invited_by || null,
+    });
+
+    if (result.error) {
+      console.error("Error upserting participant:", result.error);
+      return res.status(500).json({ error: result.error.message || "Failed to save participant" });
+    }
+
+    return res.status(200).json({ participant: result.data });
+  } catch (err) {
+    console.error("Error creating participant:", err);
+    return res.status(500).json({ error: "Failed to create participant" });
+  }
+});
+
+app.patch("/cycles/:cycleId/participants/:facultyId", async (req, res) => {
+  const { cycleId, facultyId } = req.params;
+  const { status } = req.body || {};
+
+  if (!status) {
+    return res.status(400).json({ error: "status is required" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("cycle_participants")
+      .update({
+        status,
+        responded_at: status === "accepted" || status === "declined" ? new Date().toISOString() : null,
+      })
+      .eq("cycle_id", cycleId)
+      .eq("faculty_id", facultyId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({ participant: data || null });
+  } catch (err) {
+    console.error("Error updating participant:", err);
+    res.status(500).json({ error: "Failed to update participant" });
+  }
+});
+
+app.delete("/cycles/:cycleId/participants/:facultyId", async (req, res) => {
+  const { cycleId, facultyId } = req.params;
+
+  try {
+    const { error } = await supabase
+      .from("cycle_participants")
+      .delete()
+      .eq("cycle_id", cycleId)
+      .eq("faculty_id", facultyId);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Error removing participant:", err);
+    res.status(500).json({ error: "Failed to remove participant" });
+  }
+});
+
 app.post("/add-faculty", async (req, res) => {
   try {
     const newFaculty = req.body;
@@ -96,7 +314,7 @@ app.post("/add-faculty", async (req, res) => {
 
 // Invite a faculty member: send Supabase Auth email invite and create SQL user row
 app.post("/invite-faculty", async (req, res) => {
-  const { email, name_first, name_last } = req.body;
+  const { email, name_first, name_last, cycle_id, invited_by } = req.body;
 
   if (!email || !name_first || !name_last) {
     return res.status(400).json({ error: "email, name_first and name_last are required" });
@@ -119,6 +337,10 @@ app.post("/invite-faculty", async (req, res) => {
 
     // 2) Create matching row in users table (SQL) for HR system
     const now = new Date().toISOString();
+    // If a cycle is provided (or there is a current cycle), mark the new user as 'ranking'
+    const resolvedCycleId = cycle_id || (await resolveCurrentCycleId());
+    const defaultStatus = resolvedCycleId ? 'ranking' : 'active';
+
     const { data: dbUsers, error: insertError } = await supabase
       .from("users")
       .insert([
@@ -128,7 +350,7 @@ app.post("/invite-faculty", async (req, res) => {
           domain_email: email,
           password_hash: "supabase-auth",
           role: "Faculty",
-          status: "active",
+          status: defaultStatus,
           is_first_login: true,
           created_at: now,
         },
@@ -147,10 +369,28 @@ app.post("/invite-faculty", async (req, res) => {
 
     const faculty = Array.isArray(dbUsers) && dbUsers.length > 0 ? dbUsers[0] : null;
 
+    let participant = null;
+    if (resolvedCycleId) {
+      const participantResult = await upsertCycleParticipant({
+        cycleId: resolvedCycleId,
+        facultyId: faculty?.user_id || null,
+        inviteEmail: email,
+        status: "accepted",
+        invitedBy: invited_by || null,
+      });
+
+      if (participantResult.error) {
+        console.warn("Invite succeeded but participant row failed:", participantResult.error?.message || participantResult.error);
+      } else {
+        participant = participantResult.data;
+      }
+    }
+
     return res.status(200).json({
       message: "Invitation email sent and faculty record created.",
       inviteUser: inviteData?.user ?? null,
       dbUser: faculty,
+      participant,
     });
   } catch (err) {
     console.error("Unhandled error in /invite-faculty:", err);
@@ -645,4 +885,30 @@ app.get("/debug/area-submissions/:applicationId", async (req, res) => {
 const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+// Sync participants from existing users who are marked 'For Ranking'
+// Body: { action: 'invite' | 'accept' } — determines whether synced rows are invited or accepted
+// Update a user's status (e.g., set 'ranking' or 'inactive')
+app.patch('/users/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body || {};
+
+  if (!id) return res.status(400).json({ error: 'user id is required' });
+  if (!status) return res.status(400).json({ error: 'status is required' });
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ status })
+      .eq('user_id', id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({ user: data || null });
+  } catch (err) {
+    console.error('Error updating user status:', err);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
 });

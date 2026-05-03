@@ -3,94 +3,283 @@ import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './userManagement.css';
 import { supabase } from '../supabase';
+import EducationModal from './usermanagement/EducationModal';
+import EligibilityModal from './usermanagement/EligibilityModal';
+import DoctoralModal from './usermanagement/DoctoralModal';
+import ConfirmDeleteModal from './usermanagement/ConfirmDeleteModal';
+import InviteFacultyModal from './usermanagement/InviteFacultyModal';
+import FacultyRow from './usermanagement/FacultyRow';
+import ViewPanel from './usermanagement/ViewPanel';
+import ApplyForInput from './usermanagement/ApplyForInput';
 
-// ── Confirm Delete Modal ─────────────────────────────────────
-function ConfirmDeleteModal({ name, onConfirm, onCancel }) {
-  return (
-    <div className="confirm-overlay" onClick={(e) => e.target.classList.contains('confirm-overlay') && onCancel()}>
-      <div className="confirm-modal">
-        <div className="confirm-modal-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14H6L5 6"/>
-            <path d="M10 11v6M14 11v6"/>
-            <path d="M9 6V4h6v2"/>
-          </svg>
-        </div>
-        <h3 className="confirm-modal-title">Delete Faculty</h3>
-        <p className="confirm-modal-msg">
-          Are you sure you want to remove <strong>{name}</strong> from the system? This action cannot be undone.
-        </p>
-        <div className="confirm-modal-actions">
-          <button className="btn btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="btn btn-confirm-delete" onClick={onConfirm}>Yes, Delete</button>
-        </div>
-      </div>
-    </div>
-  );
+// ── Helper Functions ────────────────────────────────────────
+function parseIntegerOrNull(value) {
+  const parsed = Number.parseInt(String(value).trim(), 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
+
+function isNumericId(value) {
+  if (value === null || value === undefined) return false;
+  const s = String(value).trim();
+  return /^\d+$/.test(s);
+}
+
+function getFirstValue(source, keys, fallback = null) {
+  if (!source) return fallback;
+  for (const key of keys) {
+    const val = source[key];
+    if (val != null) return val;
+  }
+  return fallback;
+}
+
+function normalizeEducationEntry(entry) {
+        if (typeof entry === 'string') return { level: 'Credential', degree: entry, institution: '', yearGraduated: '', pending: false };
+        return {
+            level: String(getFirstValue(entry, ['level', 'type'], 'Credential')),
+            degree: String(getFirstValue(entry, ['degree', 'title', 'name'], 'Untitled degree')),
+            institution: String(getFirstValue(entry, ['institution', 'school', 'meta'], '')),
+            yearGraduated: String(getFirstValue(entry, ['yearGraduated', 'year'], '')),
+            pending: Boolean(getFirstValue(entry, ['pending'], false)),
+        };
+    }
+
+    function normalizeEligibilityEntry(entry) {
+        if (typeof entry === 'string') return { text: entry, examName: entry, datePassed: '', pending: false };
+        return {
+            text: String(getFirstValue(entry, ['text', 'name', 'title'], 'Eligibility')),
+            examName: String(getFirstValue(entry, ['examName', 'name', 'text'], '')),
+            datePassed: String(getFirstValue(entry, ['datePassed', 'date'], '')),
+            pending: Boolean(getFirstValue(entry, ['pending'], false)),
+        };
+    }
+
+    function normalizeDoctorateEntry(entry) {
+        if (typeof entry === 'string') return { degree: entry, institution: '', yearGraduated: '', pending: false };
+        return {
+            degree: String(getFirstValue(entry, ['degree', 'title', 'name'], 'Untitled degree')),
+            institution: String(getFirstValue(entry, ['institution', 'school', 'meta'], '')),
+            yearGraduated: String(getFirstValue(entry, ['yearGraduated', 'year'], '')),
+            pending: Boolean(getFirstValue(entry, ['pending'], false)),
+        };
+    }
+
+    function buildEducationPayload(educationList) {
+        return {
+            educational_attainment_json: (educationList || []).map((entry) => ({
+                level: entry.level,
+                degree: entry.degree,
+                institution: entry.institution || entry.school || null,
+                yearGraduated: entry.yearGraduated || entry.year || null,
+                pending: Boolean(entry.pending),
+            })),
+            educational_attainment: educationList?.[0]?.degree || null,
+        };
+    }
+
+    function buildEligibilityPayload(eligibilityList) {
+        return {
+            eligibility_exams_json: (eligibilityList || []).map((entry) => ({
+                text: entry.text,
+                examName: entry.examName || entry.text || null,
+                datePassed: entry.datePassed || null,
+                pending: Boolean(entry.pending),
+            })),
+            eligibility_exams: (eligibilityList || []).map((entry) => entry.text).join('\n') || null,
+        };
+    }
+
+    function buildDoctoratePayload(doctoralList) {
+        return {
+            doctorate: (doctoralList || []).map((entry) => ({
+                degree: entry.degree,
+                institution: entry.institution || entry.school || null,
+                yearGraduated: entry.yearGraduated || entry.year || null,
+                pending: Boolean(entry.pending),
+            })),
+        };
+    }
+
+    // Modal and row components are extracted to separate files in ./usermanagement/
+    
 
 // ── Edit Panel ───────────────────────────────────────────────
 function EditPanel({ faculty, onClose, onSaved }) {
-  const DEPARTMENTS = ['CCS', 'CEAS', 'CBA', 'BSA'];
-  const RANKS       = ['Instructor I', 'Instructor II', 'Instructor III', 'Assistant Professor I', 'Assistant Professor II'];
-  const NATURES     = ['Permanent', 'Temporary', 'Casual'];
+  const DEPARTMENTS = ['CAHS', 'CBA', 'CCS', 'CEAS', 'CHTM'];
+  const RANKS = [
+    'Instructor I','Instructor II','Instructor III',
+    'Assistant Professor I','Assistant Professor II','Assistant Professor III','Assistant Professor IV',
+    'Associate Professor I','Associate Professor II','Associate Professor III','Associate Professor IV','Associate Professor V',
+    'Professor I','Professor II','Professor III','Professor IV','Professor V'
+  ];
+  const NATURES = ['Permanent', 'Full-Time', 'Part-Time'];
 
   const [form, setForm] = useState({
-    name:                    faculty?.name                    ?? '',
-    email:                   faculty?.email                   ?? '',
-    role:                    faculty?.role                    ?? 'faculty',
-    department:              faculty?.department              ?? 'CCS',
-    presentRank:             faculty?.presentRank             ?? 'Instructor I',
-    natureOfAppointment:     faculty?.natureOfAppointment     ?? 'Permanent',
-    currentSalary:           faculty?.currentSalary           ?? '',
-    teachingExperienceYears: faculty?.teachingExperienceYears ?? '',
-    industryExperienceYears: faculty?.industryExperienceYears ?? '',
-    applyingFor:             faculty?.applyingFor             ?? 'Instructor I',
-    lastPromotionDate:       faculty?.lastPromotionDate       ?? '',
-    eligibility:             faculty?.eligibility             ?? '',
-    educationalAttainment:   faculty?.educationalAttainment   ?? [],
-    cycle_id:                faculty?.cycle_id                ?? '',
-    status:                  faculty?.status                  ?? 'ranking',
+    nameLast: faculty?.name ? faculty.name.split(',')[0]?.trim() : '',
+    nameFirst: faculty?.name ? faculty.name.split(',')[1]?.trim() : '',
+    nameMiddle: '',
+    email: faculty?.email ?? '',
+    department: faculty?.department ?? 'CCS',
+    presentRank: faculty?.presentRank ?? 'Instructor I',
+    natureOfAppointment: faculty?.natureOfAppointment ?? 'Permanent',
+    teachingYears: faculty?.teachingYears ?? '',
+    industryYears: faculty?.industryYears ?? '',
+    applyingFor: (function(){
+      const v = faculty?.applyingFor ?? '';
+      if (!v) return [];
+      if (Array.isArray(v)) return v;
+      return String(v).split(/\s*,\s*/).filter(Boolean);
+    })(),
+    lastPromotionDate: faculty?.lastPromotionDate ?? '',
+    status: faculty?.status ?? 'ranking',
   });
-  const [newEdu, setNewEdu] = useState({ degree: '', school: '' });
+
+  const [educationList, setEducationList] = useState(faculty?.educationList || []);
+  const [eligibilityList, setEligibilityList] = useState(faculty?.eligibilityList || []);
+  const [doctoralList, setDoctoralList] = useState(faculty?.doctoralList || []);
+  
+  const [editEduIndex, setEditEduIndex] = useState(null);
+  const [editEligIndex, setEditEligIndex] = useState(null);
+  const [editDoctoralIndex, setEditDoctoralIndex] = useState(null);
+  
+  const [eduModalOpen, setEduModalOpen] = useState(false);
+  const [eligModalOpen, setEligModalOpen] = useState(false);
+  const [doctoralModalOpen, setDoctoralModalOpen] = useState(false);
+  
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [error, setError] = useState('');
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-  const addEdu = () => {
-    if (!newEdu.degree.trim()) return;
-    set('educationalAttainment', [...form.educationalAttainment, { degree: newEdu.degree, school: newEdu.school }]);
-    setNewEdu({ degree: '', school: '' });
+  const handleAddEdu = (eduData) => {
+    setEducationList([...educationList, eduData]);
   };
-  const delEdu = (i) => set('educationalAttainment', form.educationalAttainment.filter((_, idx) => idx !== i));
+
+  const handleUpdateEdu = (index, eduData) => {
+    const updated = [...educationList];
+    updated[index] = eduData;
+    setEducationList(updated);
+  };
+
+  const handleDeleteEdu = (index) => {
+    setEducationList(educationList.filter((_, i) => i !== index));
+  };
+
+  const handleAddElig = (eligData) => {
+    setEligibilityList([...eligibilityList, eligData]);
+  };
+
+  const handleUpdateElig = (index, eligData) => {
+    const updated = [...eligibilityList];
+    updated[index] = eligData;
+    setEligibilityList(updated);
+  };
+
+  const handleDeleteElig = (index) => {
+    setEligibilityList(eligibilityList.filter((_, i) => i !== index));
+  };
+
+  const handleAddDoctoral = (docData) => {
+    setDoctoralList([...doctoralList, docData]);
+  };
+
+  const handleUpdateDoctoral = (index, docData) => {
+    const updated = [...doctoralList];
+    updated[index] = docData;
+    setDoctoralList(updated);
+  };
+
+  const handleDeleteDoctoral = (index) => {
+    setDoctoralList(doctoralList.filter((_, i) => i !== index));
+  };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setError('Name and Email are required.');
-      return;
-    }
     setSaving(true);
     setError('');
     try {
-      if (faculty?.id) {
-        await updateDoc(doc(db, 'users', faculty.id), form);
-      } else {
-        await addDoc(collection(db, 'users'), form);
+      if (!faculty?.id) {
+        setError('Faculty ID is required');
+        return;
       }
+
+      const updateData = {
+        name_last: form.nameLast.trim(),
+        name_first: form.nameFirst.trim(),
+        name_middle: form.nameMiddle?.trim() || null,
+        department_id: form.department || null,
+        current_rank: form.presentRank || null,
+        nature_of_appointment: form.natureOfAppointment || null,
+        teaching_experience_years: form.teachingYears ? parseIntegerOrNull(form.teachingYears) : null,
+        industry_experience_years: form.industryYears ? parseIntegerOrNull(form.industryYears) : null,
+        // store both a human-readable string (legacy) and a structured json array
+        applying_for: Array.isArray(form.applyingFor) ? (form.applyingFor.join(', ') || null) : (form.applyingFor || null),
+        applying_for_json: Array.isArray(form.applyingFor)
+          ? form.applyingFor
+          : (form.applyingFor ? String(form.applyingFor).split(/\s*,\s*/).filter(Boolean) : null),
+        last_promotion_date: form.lastPromotionDate || null,
+        status: form.status || 'ranking',
+        ...buildEducationPayload(educationList),
+        ...buildEligibilityPayload(eligibilityList),
+        ...buildDoctoratePayload(doctoralList),
+      };
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('domain_email', form.email);
+
+      if (updateError) throw updateError;
       onSaved();
     } catch (err) {
-      setError('Failed to save: ' + err.message);
+      setError('Failed to save: ' + (err.message || err));
     } finally {
       setSaving(false);
     }
   };
 
+
   const handleDelete = async () => {
     if (!faculty?.id) return;
-    await deleteDoc(doc(db, 'users', faculty.id));
-    onSaved();
+    try {
+      const { error: deleteError } = await supabase
+        .from('users')
+        .delete()
+        .eq('domain_email', form.email);
+      if (deleteError) throw deleteError;
+      onSaved();
+    } catch (err) {
+      setError('Failed to delete: ' + err.message);
+    }
+  };
+
+  const handleToggleRankingStatus = async () => {
+    if (!form.email) {
+      setError('No email available to identify the user');
+      return;
+    }
+
+    const nextStatus = form.status === 'ranking' ? 'inactive' : 'ranking';
+
+    try {
+      setSaving(true);
+      setError('');
+
+      // Persist toggled status
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ status: nextStatus })
+        .eq('domain_email', form.email);
+
+      if (updateError) throw updateError;
+
+      // Update local form state and refresh list
+      set('status', nextStatus);
+      onSaved();
+    } catch (err) {
+      setError('Failed to update status: ' + (err.message || err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -107,127 +296,84 @@ function EditPanel({ faculty, onClose, onSaved }) {
 
         <div className="panel-body">
 
-          {/* Personal Details + Educational Attainment */}
-          <div className="panel-two-col">
-            <div>
-              <div className="panel-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                Personal Details
-              </div>
-              <div className="field-group">
-                <label>Name</label>
-                <input className="field-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Last, First M." />
-              </div>
-              <div className="field-group">
-                <label>Email</label>
-                <input className="field-input" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="faculty@gordoncollege.edu.ph" />
-              </div>
-              <div className="field-group">
-                <label>Department</label>
-                <div className="select-field">
-                  <select value={form.department} onChange={e => set('department', e.target.value)}>
-                    {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Status</label>
-                <div className="select-field">
-                  <select value={form.status} onChange={e => set('status', e.target.value)}>
-                    <option value="ranking">For Ranking</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <div className="panel-section-title panel-section-title--row">
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-                  Educational Attainment
-                </span>
-              </div>
-              {form.educationalAttainment.map((e, i) => (
-                <div key={i} className="edu-item">
-                  <div><strong>{e.degree}</strong><small>{e.school}</small></div>
-                  <button className="icon-del-btn" onClick={() => delEdu(i)}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  </button>
-                </div>
-              ))}
-              <div className="edu-add-row">
-                <input className="field-input" placeholder="Degree" value={newEdu.degree} onChange={e => setNewEdu(n => ({ ...n, degree: e.target.value }))} />
-                <input className="field-input" placeholder="School" value={newEdu.school} onChange={e => setNewEdu(n => ({ ...n, school: e.target.value }))} />
-                <button className="icon-add-btn" onClick={addEdu}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Employment Status + Eligibility */}
-          <div className="panel-two-col">
-            <div>
-              <div className="panel-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-                Employment Status
-              </div>
-              <div className="field-group">
-                <label>Present Rank</label>
-                <div className="select-field">
-                  <select value={form.presentRank} onChange={e => set('presentRank', e.target.value)}>
-                    {RANKS.map(r => <option key={r}>{r}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Nature of Appointment</label>
-                <div className="select-field">
-                  <select value={form.natureOfAppointment} onChange={e => set('natureOfAppointment', e.target.value)}>
-                    {NATURES.map(n => <option key={n}>{n}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Current Salary</label>
-                <input className="field-input" placeholder="₱0.00" value={form.currentSalary} onChange={e => set('currentSalary', e.target.value)} />
-              </div>
-            </div>
-
-            <div>
-              <div className="panel-section-title panel-section-title--row">
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  Eligibility
-                </span>
-              </div>
-              <div className="field-group">
-                <label>Civil Service Eligibility</label>
-                <input className="field-input" value={form.eligibility} onChange={e => set('eligibility', e.target.value)} placeholder="e.g. PD 907" />
-              </div>
-            </div>
-          </div>
-
-          {/* Experience & Promotion */}
+          {/* Personal Details */}
           <div className="panel-section-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Experience &amp; Promotion
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Personal Details
           </div>
-          <div className="panel-four-col" style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
             <div className="field-group">
-              <label>Teaching Exp. (yrs)</label>
-              <input className="field-input" value={form.teachingExperienceYears} onChange={e => set('teachingExperienceYears', e.target.value)} placeholder="0" />
+              <label>Last Name *</label>
+              <input className="field-input" value={form.nameLast} onChange={e => set('nameLast', e.target.value)} placeholder="Sancon" />
             </div>
             <div className="field-group">
-              <label>Industry Exp. (yrs)</label>
-              <input className="field-input" value={form.industryExperienceYears} onChange={e => set('industryExperienceYears', e.target.value)} placeholder="0" />
+              <label>First Name *</label>
+              <input className="field-input" value={form.nameFirst} onChange={e => set('nameFirst', e.target.value)} placeholder="John" />
             </div>
             <div className="field-group">
-              <label>Applying For</label>
+              <label>Middle Name</label>
+              <input
+                className="field-input"
+                value={form.nameMiddle}
+                onChange={e => set('nameMiddle', e.target.value)}
+                onBlur={(e) => {
+                  const v = (e.target.value || '').trim();
+                  if (!v) { set('nameMiddle', ''); return; }
+                  // convert to initial with dot: 'Carlos' -> 'C.'
+                  const initial = v.charAt(0).toUpperCase() + '.';
+                  set('nameMiddle', initial);
+                }}
+                placeholder="C."
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div className="field-group">
+              <label>Email</label>
+              <input className="field-input" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="faculty@gordoncollege.edu.ph" disabled style={{ backgroundColor: '#f3f4f6', cursor: 'not-allowed' }} />
+            </div>
+            <div className="field-group">
+              <label>Department</label>
               <div className="select-field">
-                <select value={form.applyingFor} onChange={e => set('applyingFor', e.target.value)}>
+                <select value={form.department} onChange={e => set('department', e.target.value)}>
+                  {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div className="field-group">
+              <label>Status</label>
+              <div className="select-field">
+                <select value={form.status} onChange={e => set('status', e.target.value)}>
+                  <option value="ranking">For Ranking</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Employment Status */}
+          <div className="panel-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+            Employment Status
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div className="field-group">
+              <label>Present Rank</label>
+              <div className="select-field">
+                <select value={form.presentRank} onChange={e => set('presentRank', e.target.value)}>
                   {RANKS.map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="field-group">
+              <label>Nature of Appointment</label>
+              <div className="select-field">
+                <select value={form.natureOfAppointment} onChange={e => set('natureOfAppointment', e.target.value)}>
+                  {NATURES.map(n => <option key={n}>{n}</option>)}
                 </select>
               </div>
             </div>
@@ -237,292 +383,183 @@ function EditPanel({ faculty, onClose, onSaved }) {
             </div>
           </div>
 
-          {error && <p className="panel-error">{error}</p>}
-
-        </div>
-
-        <div className="panel-footer">
-          {faculty?.id && (
-            <button className="btn btn-danger" onClick={handleDelete}>Delete</button>
-          )}
-          <button className="btn btn-save" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+          {/* Educational Attainment */}
+          <div className="panel-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            Educational Attainment
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+            {educationList.map((e, i) => (
+              <div key={i} className="edu-item" style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{e.degree}</div>
+                  <small style={{ color: '#666' }}>{e.school}</small>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                  <button className="icon-del-btn" onClick={() => { setEditEduIndex(i); setEduModalOpen(true); }} title="Edit">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button className="icon-del-btn" onClick={() => handleDeleteEdu(i)} title="Delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button className="icon-add-btn" onClick={() => { setEditEduIndex(null); setEduModalOpen(true); }} style={{ marginBottom: '24px', display: 'block' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px', display: 'inline', marginRight: '4px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Education
           </button>
-          <button className="btn btn-apply">Apply for Ranking</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ── View Panel (Read-only) ──────────────────────────────────
-function ViewPanel({ faculty, onClose }) {
-  const DEPARTMENTS = ['CCS', 'CEAS', 'CBA', 'BSA'];
-  const RANKS       = ['Instructor I', 'Instructor II', 'Instructor III', 'Assistant Professor I', 'Assistant Professor II'];
-  const NATURES     = ['Permanent', 'Temporary', 'Casual'];
-
-  const safe = (value, fallback = '') => (value == null ? fallback : value);
-  const eduList = faculty?.educationalAttainment || [];
-
-  return (
-    <div className="panel-overlay open" onClick={(e) => e.target.classList.contains('panel-overlay') && onClose()}>
-      <div className="panel">
-
-        <div className="panel-header">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          <h3>Faculty Details</h3>
-        </div>
-
-        <div className="panel-body">
-
-          {/* Personal Details + Educational Attainment */}
-          <div className="panel-two-col">
-            <div>
-              <div className="panel-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                Personal Details
-              </div>
-              <div className="field-group">
-                <label>Name</label>
-                <input className="field-input" value={safe(faculty?.name)} readOnly disabled />
-              </div>
-              <div className="field-group">
-                <label>Email</label>
-                <input className="field-input" type="email" value={safe(faculty?.email)} readOnly disabled />
-              </div>
-              <div className="field-group">
-                <label>Department</label>
-                <div className="select-field">
-                  <select value={safe(faculty?.department, 'CCS')} disabled>
-                    {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Status</label>
-                <div className="select-field">
-                  <select value={safe(faculty?.status === 'inactive' ? 'inactive' : 'ranking', 'ranking')} disabled>
-                    <option value="ranking">For Ranking</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <div className="panel-section-title panel-section-title--row">
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-                  Educational Attainment
-                </span>
-              </div>
-              {eduList.length === 0 && (
-                <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>No educational records provided.</p>
-              )}
-              {eduList.map((e, i) => (
-                <div key={i} className="edu-item">
-                  <div><strong>{e.degree}</strong><small>{e.school}</small></div>
-                </div>
-              ))}
-            </div>
+          {/* Eligibility */}
+          <div className="panel-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Eligibility
           </div>
-
-          {/* Employment Status + Eligibility */}
-          <div className="panel-two-col">
-            <div>
-              <div className="panel-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-                Employment Status
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+            {eligibilityList.map((e, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px', backgroundColor: '#f3f4f6', borderRadius: '6px' }}>
+                <span style={{ flex: 1, fontWeight: '500' }}>{e.text}</span>
+                <button className="icon-del-btn" onClick={() => { setEditEligIndex(i); setEligModalOpen(true); }} title="Edit" style={{ padding: '4px 8px' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '14px', height: '14px', display: 'inline' }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button className="icon-del-btn" onClick={() => handleDeleteElig(i)} title="Delete" style={{ padding: '4px 8px' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '14px', height: '14px', display: 'inline' }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
               </div>
-              <div className="field-group">
-                <label>Present Rank</label>
-                <div className="select-field">
-                  <select value={safe(faculty?.presentRank, 'Instructor I')} disabled>
-                    {RANKS.map(r => <option key={r}>{r}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Nature of Appointment</label>
-                <div className="select-field">
-                  <select value={safe(faculty?.natureOfAppointment, 'Permanent')} disabled>
-                    {NATURES.map(n => <option key={n}>{n}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="field-group">
-                <label>Current Salary</label>
-                <input className="field-input" value={safe(faculty?.currentSalary)} readOnly disabled />
-              </div>
-            </div>
-
-            <div>
-              <div className="panel-section-title panel-section-title--row">
-                <span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  Eligibility
-                </span>
-              </div>
-              <div className="field-group">
-                <label>Civil Service Eligibility</label>
-                <input className="field-input" value={safe(faculty?.eligibility)} readOnly disabled placeholder="e.g. PD 907" />
-              </div>
-            </div>
+            ))}
           </div>
+          <button className="icon-add-btn" onClick={() => { setEditEligIndex(null); setEligModalOpen(true); }} style={{ marginBottom: '24px', display: 'block' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px', display: 'inline', marginRight: '4px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Eligibility
+          </button>
+
+          {/* Doctorate */}
+          <div className="panel-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            Doctorate
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+            {doctoralList.map((d, i) => (
+              <div key={i} style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{d.degree}</div>
+                  <small style={{ color: '#666' }}>{d.school}</small>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                  <button className="icon-del-btn" onClick={() => { setEditDoctoralIndex(i); setDoctoralModalOpen(true); }} title="Edit">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button className="icon-del-btn" onClick={() => handleDeleteDoctoral(i)} title="Delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button className="icon-add-btn" onClick={() => { setEditDoctoralIndex(null); setDoctoralModalOpen(true); }} style={{ marginBottom: '24px', display: 'block' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px', display: 'inline', marginRight: '4px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Doctorate
+          </button>
 
           {/* Experience & Promotion */}
           <div className="panel-section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Experience &amp; Promotion
+            Experience & Promotion
           </div>
-          <div className="panel-four-col" style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
             <div className="field-group">
-              <label>Teaching Exp. (yrs)</label>
-              <input className="field-input" value={safe(faculty?.teachingExperienceYears)} readOnly disabled placeholder="0" />
+              <label>Teaching Experience (years)</label>
+              <input className="field-input" value={form.teachingYears} onChange={e => set('teachingYears', e.target.value)} placeholder="0" type="number" />
             </div>
             <div className="field-group">
-              <label>Industry Exp. (yrs)</label>
-              <input className="field-input" value={safe(faculty?.industryExperienceYears)} readOnly disabled placeholder="0" />
+              <label>Industry Experience (years)</label>
+              <input className="field-input" value={form.industryYears} onChange={e => set('industryYears', e.target.value)} placeholder="0" type="number" />
             </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: '16px', marginBottom: '24px' }}>
             <div className="field-group">
               <label>Applying For</label>
-              <div className="select-field">
-                <select value={safe(faculty?.applyingFor, 'Instructor I')} disabled>
-                  {RANKS.map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="field-group">
-              <label>Last Promotion Date</label>
-              <input className="field-input" type="date" value={safe(faculty?.lastPromotionDate)} readOnly disabled />
+              <ApplyForInput options={RANKS} value={form.applyingFor || []} onChange={(v) => set('applyingFor', v)} />
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 6 }}>Click "Add Rank" to select multiple ranks you're applying for.</div>
             </div>
           </div>
 
+          {error && <p className="panel-error" style={{ marginBottom: '16px' }}>{error}</p>}
+
         </div>
 
-        <div className="panel-footer">
-          <button className="btn btn-cancel" onClick={onClose}>Close</button>
+        <div className="panel-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          {faculty?.id && (
+            <button className="btn btn-danger" onClick={handleDelete}>Delete</button>
+          )}
+          <button className="btn btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="btn btn-save" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            className="btn btn-apply"
+            onClick={handleToggleRankingStatus}
+            disabled={saving}
+            style={{ background: form.status === 'ranking' ? '#ef4444' : undefined }}
+          >
+            {form.status === 'ranking' ? 'Set Inactive' : 'Apply for Ranking'}
+          </button>
         </div>
+
+        <EducationModal
+          isOpen={eduModalOpen}
+          initialData={editEduIndex !== null ? educationList[editEduIndex] : null}
+          onClose={() => { setEduModalOpen(false); setEditEduIndex(null); }}
+          onSubmit={(data) => {
+            if (editEduIndex !== null) {
+              handleUpdateEdu(editEduIndex, data);
+            } else {
+              handleAddEdu(data);
+            }
+          }}
+          isLoading={false}
+        />
+        <EligibilityModal
+          isOpen={eligModalOpen}
+          initialData={editEligIndex !== null ? eligibilityList[editEligIndex] : null}
+          onClose={() => { setEligModalOpen(false); setEditEligIndex(null); }}
+          onSubmit={(data) => {
+            if (editEligIndex !== null) {
+              handleUpdateElig(editEligIndex, data);
+            } else {
+              handleAddElig(data);
+            }
+          }}
+          isLoading={false}
+        />
+        <DoctoralModal
+          isOpen={doctoralModalOpen}
+          initialData={editDoctoralIndex !== null ? doctoralList[editDoctoralIndex] : null}
+          onClose={() => { setDoctoralModalOpen(false); setEditDoctoralIndex(null); }}
+          onSubmit={(data) => {
+            if (editDoctoralIndex !== null) {
+              handleUpdateDoctoral(editDoctoralIndex, data);
+            } else {
+              handleAddDoctoral(data);
+            }
+          }}
+          isLoading={false}
+        />
       </div>
     </div>
   );
 }
+
+// ── Confirm Delete Modal ─────────────────────────────────────
+// ConfirmDeleteModal extracted to ./usermanagement/ConfirmDeleteModal.jsx
+
+// ── View Panel (Read-only) ──────────────────────────────────
+// ViewPanel extracted to ./usermanagement/ViewPanel.jsx
 
 // ── Faculty Row ──────────────────────────────────────────────
-function FacultyRow({ faculty, departments, onView, onEdit, onDelete }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-
-  const departmentMatch = (departments || []).find((d) => {
-    if (!d) return false;
-    const depId = d.department_id;
-    return String(depId) === String(faculty.department);
-  });
-  const departmentLabel = departmentMatch?.department_name || faculty.department || '';
-
-  return (
-    <>
-      <tr>
-        <td className="faculty-name">{faculty.name}</td>
-        <td className="faculty-email">{faculty.email}</td>
-        <td>{departmentLabel}</td>
-        <td>{faculty.presentRank}</td>
-        <td>
-          <span className={`badge ${faculty.status === 'ranking' ? 'badge-ranking' : 'badge-inactive'}`}>
-            {faculty.status === 'ranking' ? 'For Ranking' : 'Inactive'}
-          </span>
-        </td>
-        <td>{faculty.createdAt}</td>
-        <td>
-          <div className="row-actions">
-            <button className="action-btn" onClick={() => onView(faculty)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            </button>
-            <button className="action-btn action-btn--delete" onClick={() => setShowConfirm(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14H6L5 6"/>
-                <path d="M10 11v6M14 11v6"/>
-                <path d="M9 6V4h6v2"/>
-              </svg>
-            </button>
-          </div>
-        </td>
-      </tr>
-      {showConfirm && (
-        <ConfirmDeleteModal
-          name={faculty.name}
-          onConfirm={() => { setShowConfirm(false); onDelete(); }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
-    </>
-  );
-}
+// FacultyRow extracted to ./usermanagement/FacultyRow.jsx
 
 // ── Invite Faculty Modal ────────────────────────────────────
-function InviteFacultyModal({ form, status, loading, onChange, onSubmit, onClose }) {
-  return (
-    <div className="confirm-overlay" onClick={(e) => e.target.classList.contains('confirm-overlay') && onClose()}>
-      <div className="confirm-modal" style={{ alignItems: 'stretch' }}>
-        <h3 className="confirm-modal-title" style={{ textAlign: 'left' }}>Invite Faculty</h3>
-        <p className="confirm-modal-msg" style={{ textAlign: 'left', marginBottom: '12px' }}>
-          This will send an email invitation via Supabase Auth and create a matching record in the <code>public.users</code> table.
-          The faculty member will set their own password using the link in the email.
-        </p>
-        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div className="field-group">
-            <label>First Name</label>
-            <input
-              className="field-input"
-              type="text"
-              value={form.firstName}
-              onChange={(e) => onChange('firstName', e.target.value)}
-              placeholder="Juan"
-            />
-          </div>
-          <div className="field-group">
-            <label>Last Name</label>
-            <input
-              className="field-input"
-              type="text"
-              value={form.lastName}
-              onChange={(e) => onChange('lastName', e.target.value)}
-              placeholder="Dela Cruz"
-            />
-          </div>
-          <div className="field-group">
-            <label>Faculty Email (domain_email)</label>
-            <input
-              className="field-input"
-              type="email"
-              value={form.email}
-              onChange={(e) => onChange('email', e.target.value)}
-              placeholder="faculty@gordoncollege.edu.ph"
-            />
-          </div>
-          {status && (
-            <p className="panel-error" style={{ marginTop: '4px' }}>{status}</p>
-          )}
-          <div className="confirm-modal-actions" style={{ marginTop: '12px' }}>
-            <button type="button" className="btn btn-cancel" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-apply" disabled={loading}>
-              {loading ? 'Sending…' : 'Send Invitation'}
-            </button>
-          </div>
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '4px' }}>
-            The invite email contains a secure link where the faculty member can set their own password.
-          </p>
-        </form>
-      </div>
-    </div>
-  );
-}
+// InviteFacultyModal extracted to ./usermanagement/InviteFacultyModal.jsx
 
 // ── User Management Page ─────────────────────────────────────
 export default function UserManagement() {
@@ -533,44 +570,64 @@ export default function UserManagement() {
   const [deptFilter, setDeptFilter]     = useState('All Departments');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showInvite, setShowInvite]     = useState(false);
+  // sync flow removed; using `users.status` ('ranking' / 'inactive') as source of participation
   const [inviteForm, setInviteForm]     = useState({ firstName: '', lastName: '', email: '' });
   const [inviteStatus, setInviteStatus] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
   const [loading, setLoading]           = useState(true);
   const [loadError, setLoadError]       = useState('');
   const [departments, setDepartments]   = useState([]);
-  const [facultyList, setFacultyList]   = useState([
-    { id: 'f1', name: 'faculty_name_1', email: 'faculty_email_1', department: 'faculty_dept_1', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f2', name: 'faculty_name_2', email: 'faculty_email_2', department: 'faculty_dept_2', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f3', name: 'faculty_name_3', email: 'faculty_email_3', department: 'faculty_dept_3', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f4', name: 'faculty_name_4', email: 'faculty_email_4', department: 'faculty_dept_4', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f5', name: 'faculty_name_5', email: 'faculty_email_5', department: 'faculty_dept_5', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f6', name: 'faculty_name_6', email: 'faculty_email_6', department: 'faculty_dept_6', presentRank: 'Instructor I', status: 'ranking' },
-    { id: 'f7', name: 'faculty_name_7', email: 'faculty_email_7', department: 'faculty_dept_7', presentRank: 'Instructor I', status: 'inactive' },
-    { id: 'f8', name: 'faculty_name_8', email: 'faculty_email_8', department: 'faculty_dept_8', presentRank: 'Instructor I', status: 'ranking' },
-  ]);
+  const [cycles, setCycles]             = useState([]);
+  const [selectedCycleId, setSelectedCycleId] = useState('');
+  const [facultyList, setFacultyList]   = useState([]);
 
   const fetchFaculty = async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const response = await fetch('http://localhost:5000/users');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load faculty users');
-      }
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .neq('domain_email', 'admin@gordoncollege.edu.ph')
+        .order('created_at', { ascending: false });
 
-      const mapped = (data || [])
-        .filter((u) => u.domain_email !== 'admin@gordoncollege.edu.ph')
-        .map((u) => ({
-        id: u.user_id,
-        name: `${u.name_last}, ${u.name_first}`,
-        email: u.domain_email,
-        department: u.department_id ?? '',
-        presentRank: u.current_rank ?? '',
-        status: u.status === 'inactive' ? 'inactive' : 'ranking',
-        createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString() : '',
-      }));
+      if (error) throw error;
+
+      const mapped = (data || []).map((u) => {
+        const eduList = Array.isArray(u.educational_attainment_json) ? u.educational_attainment_json.map(normalizeEducationEntry) : [];
+        const eligList = Array.isArray(u.eligibility_exams_json) ? u.eligibility_exams_json.map(normalizeEligibilityEntry) : [];
+        const docList = Array.isArray(u.doctorate) ? u.doctorate.map(normalizeDoctorateEntry) : [];
+
+        return {
+          id: u.user_id,
+          name: `${u.name_last}, ${u.name_first}`,
+          email: u.domain_email,
+          department: u.department_id ?? '',
+          presentRank: u.current_rank ?? '',
+          // normalize status values to canonical tokens used in UI: 'ranking' | 'inactive'
+          status: (function(){
+            const s = (u.status || '').toString().toLowerCase();
+            if (s.includes('inactive')) return 'inactive';
+            if (s.includes('rank') || s === 'ranking' || s === 'for ranking') return 'ranking';
+            return 'ranking';
+          })(),
+          createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString() : '',
+          // Education, Eligibility, Doctorate data
+          educationList: eduList,
+          eligibilityList: eligList,
+          doctoralList: docList,
+          // Experience fields
+          teachingYears: u.teaching_experience_years ?? null,
+          industryYears: u.industry_experience_years ?? null,
+          // Other fields
+          natureOfAppointment: u.nature_of_appointment ?? 'Permanent',
+          currentSalary: u.current_salary ?? '',
+          applyingFor: Array.isArray(u.applying_for_json)
+            ? u.applying_for_json
+            : (u.applying_for ? String(u.applying_for).split(/\s*,\s*/).filter(Boolean) : []),
+          lastPromotionDate: u.last_promotion_date ?? '',
+        };
+      });
 
       setFacultyList(mapped);
     } catch (err) {
@@ -601,6 +658,32 @@ export default function UserManagement() {
     fetchDepartments();
   }, []);
 
+  const fetchCycles = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/cycles');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load cycles');
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      setCycles(rows);
+
+      if (!selectedCycleId && rows.length > 0) {
+        const open = rows.find((c) => c.status === 'open');
+        const fallback = open || rows[0];
+        setSelectedCycleId(String(fallback.cycle_id));
+      }
+    } catch (err) {
+      console.error('Failed to load cycles', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCycles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleAddFaculty = () => {
     const newId = `f${facultyList.length + 1}`;
     setFacultyList([
@@ -620,6 +703,7 @@ export default function UserManagement() {
   const handleSaved = () => {
     setSelected(null);
     setAddingNew(false);
+    fetchFaculty();
   };
 
   const handleInviteChange = (field, value) => {
@@ -644,6 +728,7 @@ export default function UserManagement() {
           email: inviteForm.email.trim(),
           name_first: inviteForm.firstName.trim(),
           name_last: inviteForm.lastName.trim(),
+          cycle_id: selectedCycleId || null,
         }),
       });
 
@@ -654,13 +739,34 @@ export default function UserManagement() {
 
       setInviteStatus(data.message || 'Invitation email sent successfully.');
       setInviteForm({ firstName: '', lastName: '', email: '' });
-      // keep modal open so admin can read the status
       fetchFaculty();
     } catch (err) {
       setInviteStatus(err.message || 'Error sending invite');
     } finally {
       setInviteLoading(false);
     }
+  };
+
+  // Status is now managed via EditPanel; admin changes status to include/exclude from ranking
+
+  // Confirmation flow removed — inclusion confirms immediately by setting users.status and participant row
+
+  const filteredFaculty = facultyList.filter((faculty) => {
+    const term = search.trim().toLowerCase();
+    const matchesSearch = !term || `${faculty.name} ${faculty.email}`.toLowerCase().includes(term);
+    const matchesDepartment = deptFilter === 'All Departments' || String(faculty.department) === String(deptFilter);
+    const matchesStatus =
+      statusFilter === 'All Status' ||
+      (statusFilter === 'For Ranking' && faculty.status === 'ranking') ||
+      (statusFilter === 'Inactive' && faculty.status === 'inactive');
+    return matchesSearch && matchesDepartment && matchesStatus;
+  });
+
+  const cycleLabel = (cycle) => {
+    if (!cycle) return '';
+    const title = cycle.title || `${cycle.semester || ''} ${cycle.year || ''}`.trim();
+    const status = cycle.status ? ` (${cycle.status})` : '';
+    return `${title}${status}`;
   };
 
   return (
@@ -702,11 +808,22 @@ export default function UserManagement() {
                   <option>Inactive</option>
                 </select>
               </div>
+              <div className="filter-wrap">
+                <select value={selectedCycleId} onChange={e => setSelectedCycleId(e.target.value)}>
+                  <option value="">Select Cycle</option>
+                  {cycles.map((cycle) => (
+                    <option key={cycle.cycle_id} value={String(cycle.cycle_id)}>
+                      {cycleLabel(cycle)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <button className="btn btn-add" onClick={() => setShowInvite(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Invite Faculty
             </button>
+              {/* Sync removed — participation is driven by the user's Status (For Ranking) */}
           </div>
 
           {loadError && (
@@ -725,12 +842,13 @@ export default function UserManagement() {
                   <th>Department</th>
                   <th>Current Rank</th>
                   <th>Status</th>
+                  {/* Participation column removed; use 'For Ranking' status instead */}
                   <th>Created At</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {facultyList.map((faculty) => (
+                {filteredFaculty.map((faculty) => (
                   <FacultyRow
                     key={faculty.id}
                     faculty={faculty}
@@ -770,6 +888,10 @@ export default function UserManagement() {
           onClose={() => { setShowInvite(false); setInviteStatus(''); }}
         />
       )}
+      {/* sync UI removed */}
     </div>
   );
 }
+
+// ── Sync From For-Ranking Modal ─────────────────────────────
+// Sync preview removed — participants are derived from `users.status`.
