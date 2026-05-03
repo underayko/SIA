@@ -2624,8 +2624,42 @@ export default function Home({ user }) {
         input.click();
     };
 
+    const resolveActiveCycleId = async () => {
+        if (cycleInfo.id) return cycleInfo.id;
+
+        const statusColumns = ["status", "state", "cycle_status"];
+        for (const table of CYCLE_TABLE_CANDIDATES) {
+            for (const statusColumn of statusColumns) {
+                try {
+                    const openCycle = await supabase
+                        .from(table)
+                        .select("*")
+                        .eq(statusColumn, "open")
+                        .order("created_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (!openCycle.error && openCycle.data) {
+                        return getFirstValue(openCycle.data, ["cycle_id", "id"], null);
+                    }
+
+                    if (openCycle.error && !isColumnOrTableError(openCycle.error)) {
+                        break;
+                    }
+                } catch (e) {
+                    // ignore and continue
+                }
+            }
+        }
+
+        const fallbackCycle = await queryLatestCycleFromCandidates(CYCLE_TABLE_CANDIDATES);
+        if (!fallbackCycle.row) return null;
+        return getFirstValue(fallbackCycle.row, ["cycle_id", "id"], null);
+    };
+
     const writeSubmissionRow = async ({ part, storagePath, appId }) => {
         const nowIso = new Date().toISOString();
+        const activeCycleId = await resolveActiveCycleId();
         
         // Get the frontend area identifier (e.g., "I" from part ID "I-A")
         const frontendAreaId = resolvePartAreaId(part);
@@ -2648,6 +2682,7 @@ export default function Home({ user }) {
 
         const base = {
             area_id: areaId,
+            cycle_id: activeCycleId || null,
             file_path: storagePath,
             uploaded_at: nowIso,
             user_id: submitterId,
@@ -2714,24 +2749,33 @@ export default function Home({ user }) {
                 const appCols = ["application_id", "applicationId", "app_id", "application"];
                 const areaCols = ["area_id", "areaId", "area"];
                 const userCols = ["user_id", "faculty_id", "uid", "user"];
+                const cycleCols = activeCycleId
+                    ? ["cycle_id", "ranking_cycle_id", "cycleId"]
+                    : [null];
                 outer: for (const aCol of appCols) {
                     for (const arCol of areaCols) {
                         for (const uCol of userCols) {
-                            try {
-                                const probe = await supabase
-                                    .from(resolvedTables.areaSubmissions)
-                                    .select("*")
-                                    .eq(aCol, appId)
-                                    .eq(arCol, areaId)
-                                    .eq(uCol, submitterId)
-                                    .maybeSingle();
-                                if (!probe.error && probe.data) {
-                                    existing = probe.data;
-                                    break outer;
+                            for (const cCol of cycleCols) {
+                                try {
+                                    let probeQuery = supabase
+                                        .from(resolvedTables.areaSubmissions)
+                                        .select("*")
+                                        .eq(aCol, appId)
+                                        .eq(arCol, areaId)
+                                        .eq(uCol, submitterId);
+                                    if (cCol) {
+                                        probeQuery = probeQuery.eq(cCol, activeCycleId);
+                                    }
+
+                                    const probe = await probeQuery.maybeSingle();
+                                    if (!probe.error && probe.data) {
+                                        existing = probe.data;
+                                        break outer;
+                                    }
+                                    if (probe.error && !isColumnOrTableError(probe.error)) break outer;
+                                } catch (e) {
+                                    // ignore and continue
                                 }
-                                if (probe.error && !isColumnOrTableError(probe.error)) break outer;
-                            } catch (e) {
-                                // ignore and continue
                             }
                         }
                     }
@@ -2852,11 +2896,13 @@ export default function Home({ user }) {
     };
 
     const ensureApplicationExists = async () => {
+        const activeCycleId = await resolveActiveCycleId();
+
         // If application already exists, return it
         if (applicationInfo.id) return applicationInfo.id;
 
         // If no cycle or faculty record, can't create application
-        if (!cycleInfo.id || !facultyRecordId) {
+        if (!activeCycleId || !facultyRecordId) {
             console.warn('ensureApplicationExists: cannot create - missing cycle or facultyRecordId');
             return null;
         }
@@ -2913,7 +2959,7 @@ export default function Home({ user }) {
             const payload = {
                 application_number: appNumber,
                 faculty_id: facultyRecordId,
-                cycle_id: cycleInfo.id,
+                cycle_id: activeCycleId,
                 status: 'Draft',
                 current_rank_at_time: profileInfo.currentRank || null,
                 created_at: new Date().toISOString(),
@@ -2981,14 +3027,18 @@ export default function Home({ user }) {
         let saved = null;
 
         try {
+            const activeCycleId = await resolveActiveCycleId();
             const body = {
                 application_id: appId,
                 area_id: areaId,
+                cycle_id: activeCycleId || null,
                 file_path: storagePath,
                 uploaded_at: new Date().toISOString(),
                 user_id: facultyRecordId || null,
                 email: userEmail || null,
             };
+
+            try { console.debug('persistSubmissionRow: POST body', body, 'cycleInfo=', cycleInfo); } catch (e) {}
 
             const headers = { 'Content-Type': 'application/json' };
             if (backendKey) headers['x-upload-key'] = backendKey;
@@ -3438,6 +3488,7 @@ export default function Home({ user }) {
             if (!isActive) return;
             setSubmissionOpen(nextSubmissionOpen);
             setCycleInfo(nextCycleInfo);
+            try { console.debug('[hydrateHome] Setting cycleInfo:', nextCycleInfo); } catch (e) {}
 
             let profileRow = null;
             let numericFacultyId = null;
@@ -3656,7 +3707,9 @@ export default function Home({ user }) {
                     if (appIdCandidate && userCandidate) {
                         // eslint-disable-next-line no-console
                         console.debug('hydrate: fallback probing by application_id + user_id', subsTable, appIdCandidate, userCandidate);
-                        const probe = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('user_id', userCandidate);
+                        let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('user_id', userCandidate);
+                        if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                        const probe = await query;
                         if (!probe.error && Array.isArray(probe.data) && probe.data.length > 0) {
                             submissionRows = probe.data;
                             submissionResult.table = subsTable;
@@ -3669,7 +3722,9 @@ export default function Home({ user }) {
                     if ((submissionRows || []).length === 0 && appIdCandidate && userEmail) {
                         // eslint-disable-next-line no-console
                         console.debug('hydrate: fallback probing by application_id + email', subsTable, appIdCandidate, userEmail);
-                        const probe2 = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('email', userEmail);
+                        let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('email', userEmail);
+                        if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                        const probe2 = await query;
                         if (!probe2.error && Array.isArray(probe2.data) && probe2.data.length > 0) {
                             submissionRows = probe2.data;
                             submissionResult.table = subsTable;
@@ -3689,9 +3744,13 @@ export default function Home({ user }) {
                                 for (const areaCol of areaCols) {
                                     // eslint-disable-next-line no-console
                                     console.debug('hydrate: fallback probing by application+area+email', subsTable, appIdCandidate, areaCol, candidateAreaId, userEmail);
-                                    const probeArea = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail).limit(1);
+                                    let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail).limit(1);
+                                    if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                                    const probeArea = await query;
                                     if (!probeArea.error && Array.isArray(probeArea.data) && probeArea.data.length > 0) {
-                                        submissionRows = await supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail);
+                                        let finalQuery = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail);
+                                        if (nextCycleInfo.id) finalQuery = finalQuery.eq('cycle_id', nextCycleInfo.id);
+                                        submissionRows = await finalQuery;
                                         submissionResult.table = subsTable;
                                         // eslint-disable-next-line no-console
                                         console.debug('hydrate: fallback match application+area+email rows=', (submissionRows?.length||0), 'areaCol=', areaCol, 'areaId=', candidateAreaId);
@@ -3741,7 +3800,7 @@ export default function Home({ user }) {
                       ]);
                       return cycleId
                           ? String(cycleId) === String(nextCycleInfo.id)
-                          : true;
+                          : false;
                   })
                 : submissionRows;
 
@@ -3763,7 +3822,7 @@ export default function Home({ user }) {
                       ]);
                       return cycleId
                           ? String(cycleId) === String(nextCycleInfo.id)
-                          : true;
+                          : false;
                   })
                 : logResult.rows;
 

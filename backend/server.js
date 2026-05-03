@@ -131,15 +131,48 @@ async function handleUpload(req, res) {
     }
   }
 
+  // Resolve cycle_id from request first; if missing, infer currently open cycle.
+  let cycleId = payload.cycle_id || null;
+  if (!cycleId) {
+    const cycleCandidates = (process.env.SUPABASE_CYCLE_TABLE_CANDIDATES || 'ranking_cycles,cycles')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const statusColumns = ['status', 'state', 'cycle_status'];
+
+    outerCycleLookup: for (const t of cycleCandidates) {
+      for (const statusColumn of statusColumns) {
+        try {
+          const openCycle = await supabase
+            .from(t)
+            .select('*')
+            .eq(statusColumn, 'open')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!openCycle.error && openCycle.data) {
+            cycleId = openCycle.data.cycle_id || openCycle.data.id || null;
+            if (cycleId) break outerCycleLookup;
+          }
+        } catch (e) {
+          // ignore and continue
+        }
+      }
+    }
+  }
+
   const insertPayload = {
     application_id: applicationId,
     area_id: areaId,
+    cycle_id: cycleId,
     file_path: payload.file_path,
     uploaded_at: payload.uploaded_at || new Date().toISOString(),
     user_id: payload.user_id || null,
   };
 
   console.log(`[uploads] using area_id=${areaId} (received: ${receivedAreaId || 'none'})`);
+  console.log(`[uploads] received cycle_id from request: ${payload.cycle_id}, will use: ${insertPayload.cycle_id}`);
 
   // Include optional `part_id` if provided by client
   // Do not include unknown columns like `part_id` unless DB schema supports them.
@@ -163,13 +196,16 @@ async function handleUpload(req, res) {
     // 2) Try application_id + area_id + user_id
     if (!existing && applicationId && areaId && payload.user_id) {
       try {
-        const byTrip = await supabase
+        let byTripQuery = supabase
           .from('area_submissions')
           .select('*')
           .eq('application_id', applicationId)
           .eq('area_id', areaId)
-          .eq('user_id', payload.user_id)
-          .maybeSingle();
+          .eq('user_id', payload.user_id);
+        if (cycleId) {
+          byTripQuery = byTripQuery.eq('cycle_id', cycleId);
+        }
+        const byTrip = await byTripQuery.maybeSingle();
         if (!byTrip.error && byTrip.data) existing = byTrip.data;
       } catch (e) {
         // ignore
