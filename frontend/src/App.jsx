@@ -60,33 +60,20 @@ export default function App() {
         );
     }
 
-    const homePath =
-        role === "HR" ? "/hr" : role === "VPAA" ? "/vpaa" : "/faculty";
+    const homePath = "/faculty"; // All users go to Faculty portal
 
     return (
         <Routes>
             <Route
                 path="/faculty/*"
                 element={
-                    role === "Faculty" ? (
-                        <Dashboard
-                            user={portalUser}
-                            onLogout={() => {
-                                void signOut();
-                            }}
-                        />
-                    ) : (
-                        <Navigate to={homePath} replace />
-                    )
+                    <Dashboard
+                        user={portalUser}
+                        onLogout={() => {
+                            void signOut();
+                        }}
+                    />
                 }
-            />
-            <Route
-                path="/hr/*"
-                element={role === "HR" ? <Navigate to="/faculty" replace /> : <Navigate to={homePath} replace />}
-            />
-            <Route
-                path="/vpaa/*"
-                element={role === "VPAA" ? <Navigate to="/faculty" replace /> : <Navigate to={homePath} replace />}
             />
             <Route path="*" element={<Navigate to={homePath} replace />} />
         </Routes>
