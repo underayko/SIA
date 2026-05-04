@@ -3050,6 +3050,8 @@ export default function Home({ user }) {
                 area_id: areaId,
                 cycle_id: activeCycleId || null,
                 file_path: storagePath,
+                csv_total_average_rate: null,
+                part_id: part.id || null,
                 uploaded_at: new Date().toISOString(),
                 user_id: facultyRecordId || null,
                 email: userEmail || null,
@@ -3080,6 +3082,11 @@ export default function Home({ user }) {
                 }
                 // eslint-disable-next-line no-console
                 console.warn('◆ persistSubmissionRow: backend error', resp.status, bodyText);
+                // For client errors (400-499) do not attempt fallback — surface to user.
+                if (resp.status >= 400 && resp.status < 500) {
+                    pushToast('error', `Upload registration failed: ${bodyText || resp.status}`);
+                    return null;
+                }
                 pushToast('error', `Upload registration failed (${resp.status}). Trying fallback...`);
                 if (resp.status === 403) {
                     console.warn('Upload rejected: backend expects an upload key. Set VITE_BACKEND_UPLOAD_KEY to match BACKEND_UPLOAD_KEY on the backend.');

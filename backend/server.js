@@ -40,6 +40,9 @@ async function handleUpload(req, res) {
     return jsonResponse(res, 400, { error: 'Invalid JSON' });
   }
 
+  console.log('[uploads] parsed payload keys:', Object.keys(payload));
+  console.log('[uploads] payload sample:', JSON.stringify(payload).slice(0, 1000));
+
   // `file_path` is required; application_id may be inferred if missing
   const required = ['file_path'];
   for (const k of required) {
@@ -167,17 +170,57 @@ async function handleUpload(req, res) {
     area_id: areaId,
     cycle_id: cycleId,
     file_path: payload.file_path,
+    // CSV average is only populated later by admin for Area IV; leave it blank on faculty upload.
+    csv_total_average_rate: null,
     uploaded_at: payload.uploaded_at || new Date().toISOString(),
     user_id: payload.user_id || null,
+    part_id: payload.part_id || null,
   };
 
   console.log(`[uploads] using area_id=${areaId} (received: ${receivedAreaId || 'none'})`);
   console.log(`[uploads] received cycle_id from request: ${payload.cycle_id}, will use: ${insertPayload.cycle_id}`);
 
+  // Validate required non-null fields early so the DB insert doesn't fail with a generic error.
+  if (!insertPayload.application_id) {
+    console.log('[uploads] missing application_id, aborting upload');
+    return jsonResponse(res, 400, { error: 'Missing application_id: ensure an application exists for this faculty before uploading.', payload });
+  }
+  if (!insertPayload.area_id) {
+    console.log('[uploads] missing area_id, aborting upload');
+    return jsonResponse(res, 400, { error: 'Missing area_id: cannot determine area for this submission.', payload });
+  }
+
   // Include optional `part_id` if provided by client
   // Do not include unknown columns like `part_id` unless DB schema supports them.
 
   try {
+    // Try calling DB upsert function first (if available). This handles per-part idempotency.
+    try {
+      const rpcParams = {
+        p_application_id: insertPayload.application_id,
+        p_area_id: insertPayload.area_id,
+        p_user_id: insertPayload.user_id,
+        p_cycle_id: insertPayload.cycle_id,
+        p_part_id: insertPayload.part_id,
+        p_file_path: insertPayload.file_path,
+        p_csv_total_average_rate: insertPayload.csv_total_average_rate,
+        p_uploaded_at: insertPayload.uploaded_at,
+      };
+
+      console.log('[uploads] calling RPC upsert_area_submission with params:', JSON.stringify(rpcParams));
+      const rpcRes = await supabase.rpc('upsert_area_submission', rpcParams);
+      if (!rpcRes.error && rpcRes.data) {
+        // RPC returns a result row (as array for table-returning functions)
+        const returned = Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data;
+        console.log('[uploads] upsert_area_submission result:', returned);
+        return jsonResponse(res, 200, { data: returned });
+      } else if (rpcRes.error) {
+        console.log('[uploads] upsert_area_submission RPC error (falling back):', rpcRes.error.message || rpcRes.error);
+      }
+    } catch (rpcErr) {
+      console.log('[uploads] upsert_area_submission threw, falling back to legacy logic:', rpcErr?.message || rpcErr);
+    }
+
     // Idempotency: try to find existing submission to update instead of inserting duplicates.
     let existing = null;
 
@@ -204,6 +247,10 @@ async function handleUpload(req, res) {
           .eq('user_id', payload.user_id);
         if (cycleId) {
           byTripQuery = byTripQuery.eq('cycle_id', cycleId);
+        }
+        // If the client provided a part_id (sub-area), include it in the lookup so different parts don't collide
+        if (payload.part_id) {
+          byTripQuery = byTripQuery.eq('part_id', payload.part_id);
         }
         const byTrip = await byTripQuery.maybeSingle();
         if (!byTrip.error && byTrip.data) existing = byTrip.data;
