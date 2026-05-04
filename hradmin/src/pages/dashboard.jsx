@@ -867,6 +867,22 @@ export default function Dashboard() {
           })
           .eq('cycle_id', currentCycle.cycle_id);
         if (error) throw error;
+
+        // When evaluation finishes, reset all for-ranking users to inactive
+        const { error: resetError } = await supabase
+          .from('users')
+          .update({ status: 'inactive' })
+          .eq('status', 'ranking');
+        if (resetError) throw resetError;
+
+        // Mark participants in this cycle as removed once evaluation is finished
+        const { error: participantsError } = await supabase
+          .from('cycle_participants')
+          .update({ status: 'removed' })
+          .eq('cycle_id', currentCycle.cycle_id)
+          .in('status', ['invited', 'accepted']);
+        if (participantsError) throw participantsError;
+
         console.log('✅ Evaluation finalized successfully');
       }
 

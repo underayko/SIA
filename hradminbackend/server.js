@@ -41,6 +41,8 @@ async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail =
     return { data: null, error: new Error("facultyId or inviteEmail is required") };
   }
 
+  let result = null;
+
   if (facultyId) {
     const existing = await supabase
       .from("cycle_participants")
@@ -50,7 +52,7 @@ async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail =
       .maybeSingle();
 
     if (!existing.error && existing.data?.participant_id) {
-      return await supabase
+      result = await supabase
         .from("cycle_participants")
         .update({
           status,
@@ -64,7 +66,7 @@ async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail =
     }
   }
 
-  if (!facultyId && inviteEmail) {
+  if (!result && !facultyId && inviteEmail) {
     const existingInvite = await supabase
       .from("cycle_participants")
       .select("participant_id")
@@ -74,7 +76,7 @@ async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail =
       .maybeSingle();
 
     if (!existingInvite.error && existingInvite.data?.participant_id) {
-      return await supabase
+      result = await supabase
         .from("cycle_participants")
         .update({
           status,
@@ -87,22 +89,76 @@ async function upsertCycleParticipant({ cycleId, facultyId = null, inviteEmail =
     }
   }
 
-  return await supabase
-    .from("cycle_participants")
-    .insert([
-      {
-        cycle_id: cycleId,
-        faculty_id: facultyId,
-        invite_email: inviteEmail,
-        status,
-        invited_by: invitedBy,
-      },
-    ])
-    .select("*")
-    .maybeSingle();
-}
+  if (!result) {
+    result = await supabase
+      .from("cycle_participants")
+      .insert([
+        {
+          cycle_id: cycleId,
+          faculty_id: facultyId,
+          invite_email: inviteEmail,
+          status,
+          invited_by: invitedBy,
+        },
+      ])
+      .select("*")
+      .maybeSingle();
+  }
 
-// Login endpoint
+  // ✅ AUTO-CREATE APPLICATION when participant is created/updated with "accepted" status
+  if (!result.error && result.data && status === "accepted" && result.data.faculty_id) {
+    console.log(`📝 Auto-creating application for faculty ${result.data.faculty_id} in cycle ${cycleId}`);
+    
+    const { data: existingApp } = await supabase
+      .from("applications")
+      .select("application_id")
+      .eq("faculty_id", result.data.faculty_id)
+      .eq("cycle_id", cycleId)
+      .maybeSingle();
+
+    if (!existingApp) {
+      const { data: facultyData } = await supabase
+        .from("users")
+        .select("current_rank")
+        .eq("user_id", result.data.faculty_id)
+        .maybeSingle();
+
+      const { data: positions } = await supabase
+        .from("positions")
+        .select("position_id, position_name")
+        .order("position_id", { ascending: true });
+
+      let targetPositionId = positions?.[0]?.position_id;
+      if (facultyData?.current_rank && positions) {
+        const matchingPos = positions.find(p => 
+          p.position_name?.toLowerCase().includes(facultyData.current_rank?.toLowerCase())
+        );
+        targetPositionId = matchingPos?.position_id || targetPositionId;
+      }
+
+      if (targetPositionId) {
+        const { error: appError } = await supabase
+          .from("applications")
+          .insert({
+            faculty_id: result.data.faculty_id,
+            cycle_id: cycleId,
+            target_position_id: targetPositionId,
+            current_rank_at_time: facultyData?.current_rank || "Instructor I",
+            application_number: `APP-${cycleId}-${result.data.faculty_id}-${Date.now()}`,
+            status: "Draft",
+          });
+
+        if (appError) {
+          console.warn("⚠️ Failed to auto-create application in upsert:", appError);
+        } else {
+          console.log("✅ Application auto-created successfully in upsert");
+        }
+      }
+    }
+  }
+
+  return result;
+}
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -272,6 +328,63 @@ app.patch("/cycles/:cycleId/participants/:facultyId", async (req, res) => {
       .maybeSingle();
 
     if (error) throw error;
+
+    // ✅ AUTO-CREATE APPLICATION when participant is accepted
+    if (status === "accepted" && data?.faculty_id) {
+      console.log(`📝 Auto-creating application for faculty ${data.faculty_id} in cycle ${cycleId}`);
+      
+      // Check if application already exists
+      const { data: existingApp } = await supabase
+        .from("applications")
+        .select("application_id")
+        .eq("faculty_id", data.faculty_id)
+        .eq("cycle_id", cycleId)
+        .maybeSingle();
+
+      if (!existingApp) {
+        // Get faculty current rank to determine target position
+        const { data: facultyData } = await supabase
+          .from("users")
+          .select("current_rank")
+          .eq("user_id", data.faculty_id)
+          .maybeSingle();
+
+        // Get positions to find matching target position
+        const { data: positions } = await supabase
+          .from("positions")
+          .select("position_id, position_name")
+          .order("position_id", { ascending: true });
+
+        // Use first position or rank-matched position
+        let targetPositionId = positions?.[0]?.position_id;
+        if (facultyData?.current_rank && positions) {
+          const matchingPos = positions.find(p => 
+            p.position_name?.toLowerCase().includes(facultyData.current_rank?.toLowerCase())
+          );
+          targetPositionId = matchingPos?.position_id || targetPositionId;
+        }
+
+        if (targetPositionId) {
+          const { error: appError } = await supabase
+            .from("applications")
+            .insert({
+              faculty_id: data.faculty_id,
+              cycle_id: cycleId,
+              target_position_id: targetPositionId,
+              current_rank_at_time: facultyData?.current_rank || "Instructor I",
+              application_number: `APP-${cycleId}-${data.faculty_id}-${Date.now()}`,
+              status: "Draft",
+            });
+
+          if (appError) {
+            console.warn("⚠️ Failed to auto-create application:", appError);
+          } else {
+            console.log("✅ Application auto-created successfully");
+          }
+        }
+      }
+    }
+
     res.json({ participant: data || null });
   } catch (err) {
     console.error("Error updating participant:", err);

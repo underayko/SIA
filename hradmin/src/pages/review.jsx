@@ -1003,17 +1003,151 @@ export default function Review() {
       setLoading(true);
       console.log('📊 Fetching applications data (Supabase)...');
 
-      // Get active cycle first
-      const { data: cycles, error: cyclesError } = await supabase
+      // ═══════════════════════════════════════════════════════════════
+      // COMPREHENSIVE DEBUG: Check what's actually in cycle_participants
+      // ═══════════════════════════════════════════════════════════════
+      const { data: debugAllParticipants, error: debugError1 } = await supabase
+        .from('cycle_participants')
+        .select('*')
+        .limit(100);
+      
+      console.log('🔍 DEBUG: Total participants in DB:', {
+        count: debugAllParticipants?.length || 0,
+        sampleRecords: debugAllParticipants?.slice(0, 5),
+        allStatuses: debugAllParticipants?.map(p => ({ cycle_id: p.cycle_id, faculty_id: p.faculty_id, status: p.status, status_type: typeof p.status }))
+      });
+
+      // Strategy: Find cycles that HAVE participants, prioritizing those with status open/submissions_closed
+      // First, get all cycles with any participants
+      const { data: allCycles, error: allCyclesError } = await supabase
         .from('ranking_cycles')
         .select('*')
-        .eq('status', 'open')
-        .limit(1);
-      if (cyclesError) throw cyclesError;
-      let activeCycle = null;
-      if (cycles && cycles.length > 0) {
-        activeCycle = cycles[0];
-        setCurrentCycle(activeCycle);
+        .order('created_at', { ascending: false });
+      if (allCyclesError) throw allCyclesError;
+
+      console.log('📅 All cycles in system:', allCycles?.map(c => ({ id: c.cycle_id, status: c.status, sem: c.semester })));
+
+      // Get cycles that have accepted participants
+      const { data: cyclesWithParticipants, error: cyclesWithParticipantsError } = await supabase
+        .from('cycle_participants')
+        .select('cycle_id, status')
+        .eq('status', 'accepted');
+      if (cyclesWithParticipantsError) throw cyclesWithParticipantsError;
+
+      console.log('🔍 RAW cycle_participants query (status=accepted):', {
+        count: cyclesWithParticipants?.length || 0,
+        data: cyclesWithParticipants
+      });
+
+      // Also get ALL participants to see what statuses exist
+      const { data: allParticipantsDebug } = await supabase
+        .from('cycle_participants')
+        .select('cycle_id, status');
+      
+      const uniqueStatuses = new Set(allParticipantsDebug?.map(p => p.status) || []);
+      console.log('🔎 DEBUG: ALL participant statuses in system:', Array.from(uniqueStatuses));
+
+      // If no accepted found, try alternative statuses
+      if ((!cyclesWithParticipants || cyclesWithParticipants.length === 0) && allParticipantsDebug && allParticipantsDebug.length > 0) {
+        const firstStatus = allParticipantsDebug[0].status;
+        console.warn(`⚠️ No 'accepted' status found! First status in DB is: "${firstStatus}". Trying that...`);
+        
+        const { data: cyclesWithFirstStatus } = await supabase
+          .from('cycle_participants')
+          .select('cycle_id, status')
+          .eq('status', firstStatus);
+        
+        console.log(`🔄 Query with status="${firstStatus}":`, {
+          count: cyclesWithFirstStatus?.length || 0,
+          data: cyclesWithFirstStatus
+        });
+      }
+
+      const cycleIdsWithParticipants = new Set(
+        (cyclesWithParticipants || []).map((p) => p.cycle_id)
+      );
+      console.log('🎯 Cycles with accepted participants:', Array.from(cycleIdsWithParticipants));
+
+      // Filter to cycles that both (a) exist and (b) have participants
+      const cyclesWithData = (allCycles || []).filter((c) =>
+        cycleIdsWithParticipants.has(c.cycle_id)
+      );
+
+      console.log('✅ Cycles WITH participants:', cyclesWithData?.map(c => ({ id: c.cycle_id, status: c.status })));
+
+      // Prefer open/submissions_closed, otherwise latest
+      let activeCycle = cyclesWithData.find(c =>
+        ['open', 'submissions_closed'].includes(c.status)
+      ) || cyclesWithData[0];
+
+      if (!activeCycle) {
+        console.warn('❌ No cycles with participants found');
+        console.log('🔴 COMPREHENSIVE DEBUG INFO:', {
+          totalCycles: allCycles?.length,
+          allCycleIds: allCycles?.map(c => ({ id: c.cycle_id, status: c.status })),
+          totalParticipants: debugAllParticipants?.length,
+          participantsByStatus: {
+            allRecords: allParticipantsDebug?.length,
+            cycleIdsInParticipants: Array.from(cycleIdsWithParticipants),
+            acceptedCount: cyclesWithParticipants?.length
+          },
+          cycleIdsWithDataCount: cyclesWithData?.length,
+          cycleIdsWithData: cyclesWithData?.map(c => c.cycle_id),
+          sample_first_participant: debugAllParticipants?.[0]
+        });
+        setCurrentCycle(null);
+        setApplications([]);
+        return;
+      }
+
+      setCurrentCycle(activeCycle);
+      console.log('✅ Active cycle selected:', { 
+        cycle_id: activeCycle.cycle_id, 
+        status: activeCycle.status, 
+        semester: activeCycle.semester, 
+        year: activeCycle.year
+      });
+      console.log('⚠️ IS THIS CYCLE 25?', activeCycle.cycle_id === 25 ? '✅ YES' : `❌ NO, it is ${activeCycle.cycle_id}`);
+
+      // First check: ANY participants for this cycle (regardless of status)
+      const { data: allParticipants, error: allParticipantsError } = await supabase
+        .from('cycle_participants')
+        .select('*')
+        .eq('cycle_id', activeCycle.cycle_id);
+      if (allParticipantsError) throw allParticipantsError;
+      console.log('🔎 ALL participants (any status) for cycle', activeCycle.cycle_id, ':', {
+        count: allParticipants?.length || 0,
+        data: allParticipants
+      });
+
+      // Get participants for this cycle (only accepted are considered actively applied)
+      const { data: participantsData, error: participantsError } = await supabase
+        .from('cycle_participants')
+        .select('faculty_id, status')
+        .eq('cycle_id', activeCycle.cycle_id)
+        .eq('status', 'accepted');
+      if (participantsError) throw participantsError;
+
+      console.log('📋 ACCEPTED participants response:', {
+        count: participantsData?.length || 0,
+        cycle_id: activeCycle.cycle_id,
+        data: participantsData
+      });
+
+      const participantFacultyIds = Array.from(
+        new Set((participantsData || []).map((p) => {
+          console.log('🔍 Mapping participant:', p, '-> faculty_id:', p.faculty_id);
+          return p.faculty_id;
+        }).filter(Boolean))
+      );
+
+      console.log('👥 Extracted participant faculty IDs:', participantFacultyIds);
+
+      if (participantFacultyIds.length === 0) {
+        // No one applied for this cycle yet
+        console.warn('⚠️ No accepted participants for this cycle');
+        setApplications([]);
+        return;
       }
 
       // Get areas for lookup
@@ -1033,13 +1167,39 @@ export default function Review() {
         (departmentsData || []).map((dept) => [dept.department_id, dept.department_name])
       );
 
-      // Get applications with faculty data
+      // Get applications only for faculty who are participants in the active cycle
+      // AND belong to the active cycle (critical for cycle isolation)
       const { data: applicationsData, error: applicationsError } = await supabase
         .from('applications')
-        .select('*');
+        .select('*')
+        .in('faculty_id', participantFacultyIds)
+        .eq('cycle_id', activeCycle.cycle_id)
+        .order('created_at', { ascending: false });
       if (applicationsError) throw applicationsError;
 
-      const applicationIds = (applicationsData || []).map((app) => app.application_id);
+      console.log('📊 Applications query result:', {
+        participantFacultyIds,
+        cycle_id: activeCycle.cycle_id,
+        applicationsCount: applicationsData?.length || 0,
+        firstApp: applicationsData?.[0],
+        allApps: applicationsData
+      });
+
+      // Keep only latest application per faculty for the active cycle view
+      const latestByFaculty = new Map();
+      for (const app of (applicationsData || [])) {
+        if (!latestByFaculty.has(app.faculty_id)) {
+          latestByFaculty.set(app.faculty_id, app);
+        }
+      }
+      const cycleScopedApplications = Array.from(latestByFaculty.values());
+
+      console.log('🎯 After deduping (latest per faculty):', {
+        totalCount: cycleScopedApplications.length,
+        facultyIds: cycleScopedApplications.map(a => a.faculty_id)
+      });
+
+      const applicationIds = cycleScopedApplications.map((app) => app.application_id);
       let fallbackScoreByApplicationId = new Map();
 
       // Auto-fetch score fallback by summing per-area HR points when final_score is not yet saved.
@@ -1058,7 +1218,7 @@ export default function Review() {
       }
 
       const applicationsWithFaculty = [];
-      for (const appData of applicationsData) {
+      for (const appData of cycleScopedApplications) {
         // Get faculty data
         const { data: facultyData, error: facultyError } = await supabase
           .from('users')
@@ -1066,6 +1226,12 @@ export default function Review() {
           .eq('user_id', appData.faculty_id)
           .single();
         if (facultyError) continue;
+
+        // Skip VPAA users - only show faculty
+        if (facultyData?.role === 'vpaa') {
+          console.log(`⏭️ Skipping VPAA user: ${facultyData.name_first} ${facultyData.name_last}`);
+          continue;
+        }
 
         const fallbackScore = fallbackScoreByApplicationId.get(appData.application_id);
         const displayScore = appData.final_score ?? appData.hr_score ?? fallbackScore ?? null;
@@ -1524,8 +1690,10 @@ export default function Review() {
 
               {filteredApplications.length === 0 ? (
                 <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
-                  <div style={{ fontSize: '16px', marginBottom: '8px' }}>No applications found</div>
-                  <div style={{ fontSize: '14px' }}>Try adjusting your search or filter criteria.</div>
+                  <div style={{ fontSize: '16px', marginBottom: '8px' }}>No cycle applications found</div>
+                  <div style={{ fontSize: '14px' }}>
+                    Only faculty applied in the active cycle are shown. Add participants/applications for this cycle first.
+                  </div>
                 </div>
               ) : (
                 <table>

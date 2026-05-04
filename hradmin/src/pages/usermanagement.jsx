@@ -104,7 +104,7 @@ function normalizeEducationEntry(entry) {
     
 
 // ── Edit Panel ───────────────────────────────────────────────
-function EditPanel({ faculty, onClose, onSaved, departments = [] }) {
+function EditPanel({ faculty, onClose, onSaved, departments = [], selectedCycleId = '', cycles = [] }) {
   const DEPARTMENT_ORDER = ['CCS', 'CHTM', 'CBA', 'CAHS', 'CEAS'];
   const CODE_ALIASES = {
     BA: 'CBA',
@@ -220,6 +220,46 @@ function EditPanel({ faculty, onClose, onSaved, departments = [] }) {
     setDoctoralList(doctoralList.filter((_, i) => i !== index));
   };
 
+  const syncCycleParticipantForStatus = async (nextStatus) => {
+    const numericFacultyId = parseIntegerOrNull(faculty?.id);
+    const fallbackOpenCycle = (cycles || []).find((c) => c?.status === 'open' || c?.status === 'submissions_closed');
+    const cycleIdForSync = selectedCycleId || (fallbackOpenCycle ? String(fallbackOpenCycle.cycle_id) : '');
+
+    if (!numericFacultyId) return;
+
+    if (nextStatus === 'ranking') {
+      if (!cycleIdForSync) {
+        throw new Error('No active/selected cycle found. Please select a cycle before applying for ranking.');
+      }
+
+      const participantResp = await fetch(`http://localhost:5000/cycles/${cycleIdForSync}/participants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          faculty_id: numericFacultyId,
+          invite_email: form.email,
+          status: 'accepted',
+        }),
+      });
+
+      if (!participantResp.ok) {
+        const err = await participantResp.json().catch(() => ({}));
+        throw new Error(err.error || participantResp.statusText || 'Failed to upsert cycle participant');
+      }
+    } else {
+      if (!cycleIdForSync) return;
+
+      const removeResp = await fetch(`http://localhost:5000/cycles/${cycleIdForSync}/participants/${numericFacultyId}`, {
+        method: 'DELETE',
+      });
+
+      if (!removeResp.ok && removeResp.status !== 404) {
+        const err = await removeResp.json().catch(() => ({}));
+        throw new Error(err.error || removeResp.statusText || 'Failed to remove cycle participant');
+      }
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError('');
@@ -256,6 +296,10 @@ function EditPanel({ faculty, onClose, onSaved, departments = [] }) {
         .eq('domain_email', form.email);
 
       if (updateError) throw updateError;
+
+      // Keep cycle_participants in sync with user status for the selected/current cycle
+      await syncCycleParticipantForStatus(form.status || 'ranking');
+
       onSaved();
     } catch (err) {
       setError('Failed to save: ' + (err.message || err));
@@ -298,6 +342,9 @@ function EditPanel({ faculty, onClose, onSaved, departments = [] }) {
         .eq('domain_email', form.email);
 
       if (updateError) throw updateError;
+
+      // Sync cycle participants for this toggle action as well
+      await syncCycleParticipantForStatus(nextStatus);
 
       // Update local form state and refresh list
       set('status', nextStatus);
@@ -647,6 +694,7 @@ export default function UserManagement() {
         .from('users')
         .select('*')
         .neq('domain_email', 'admin@gordoncollege.edu.ph')
+        .neq('role', 'vpaa')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -928,6 +976,8 @@ export default function UserManagement() {
         <EditPanel
           faculty={selected}
           departments={departments}
+          selectedCycleId={selectedCycleId}
+          cycles={cycles}
           onClose={() => { setSelected(null); setAddingNew(false); }}
           onSaved={handleSaved}
         />
