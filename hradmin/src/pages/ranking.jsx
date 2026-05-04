@@ -3,6 +3,7 @@ import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './ranking.css';
 import { supabase } from '../supabase';
+import RankingAreaRow from './ranking/components/RankingAreaRow';
 
 /* ── Icons ───────────────────────────────── */
 const UploadIcon = () => (
@@ -355,95 +356,27 @@ export default function Ranking() {
               {areas.map((area) => {
                 const isEditing = editingId === area.id;
                 return (
-                  <tr key={area.id} className="rk-row">
-                    <td className="rk-td rk-td-num">{toRoman(area.id)}</td>
-                    <td className="rk-td rk-td-title">{area.title}</td>
-                    <td className="rk-td rk-td-desc">
-                      {isEditing ? (
-                        <textarea
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          className="rk-edit-textarea"
-                          rows={3}
-                        />
-                      ) : (
-                        area.description
-                      )}
-                    </td>
-                    <td className="rk-td rk-td-template">
-                      {/* Hidden file input */}
-                      <input
-                        type="file"
-                        id={`file-input-${area.id}`}
-                        style={{ display: 'none' }}
-                        onChange={(e) => handleFileUpload(area.id, e)}
-                        accept=".pdf"
-                      />
-                      
-                      {area.uploaded ? (
-                        <span className={`rk-badge ${isEditing ? 'resubmit' : 'uploaded'}`}>
-                          {isEditing ? (
-                            <>
-                              <ResubmitIcon /> 
-                              <span 
-                                className="rk-badge-clickable"
-                                onClick={() => handleUploadClick(area.id)}
-                              >
-                                Resubmit
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircleIcon />
-                              <span
-                                className="rk-badge-clickable"
-                                style={{ marginLeft: 4 }}
-                                onClick={() => handleViewFile(area)}
-                              >
-                                View
-                              </span>
-                            </>
-                          )}
-                        </span>
-                      ) : (
-                        <span 
-                          className="rk-badge upload rk-badge-clickable"
-                          onClick={() => handleUploadClick(area.id)}
-                        >
-                          <UploadIcon /> Upload
-                        </span>
-                      )}
-                    </td>
-                    <td className="rk-td rk-td-points">{area.points.toFixed(2)}</td>
-                    <td className="rk-td rk-td-actions">
-                      {isEditing ? (
-                        <div className="rk-edit-actions">
-                          <button 
-                            className="rk-save-btn" 
-                            title="Save"
-                            onClick={() => handleSave(area.id)}
-                          >
-                            <SaveIcon />
-                          </button>
-                          <button 
-                            className="rk-cancel-btn" 
-                            title="Cancel"
-                            onClick={handleCancel}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : (
-                        <button 
-                          className="rk-edit-btn" 
-                          title="Edit"
-                          onClick={() => handleEdit(area)}
-                        >
-                          <EditIcon />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <RankingAreaRow
+                    key={area.id}
+                    area={area}
+                    isEditing={isEditing}
+                    editDescription={editDescription}
+                    setEditDescription={setEditDescription}
+                    onFileUpload={handleFileUpload}
+                    onUploadClick={handleUploadClick}
+                    onViewFile={handleViewFile}
+                    onSave={handleSave}
+                    onCancel={handleCancel}
+                    onEdit={handleEdit}
+                    toRoman={toRoman}
+                    icons={{
+                      UploadIcon,
+                      CheckCircleIcon,
+                      ResubmitIcon,
+                      SaveIcon,
+                      EditIcon,
+                    }}
+                  />
                 );
               })}
             </tbody>

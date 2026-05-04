@@ -678,6 +678,9 @@ export default function UserManagement() {
   const [cycles, setCycles]             = useState([]);
   const [selectedCycleId, setSelectedCycleId] = useState('');
   const [facultyList, setFacultyList]   = useState([]);
+  const [facultyPage, setFacultyPage]   = useState(1);
+
+  const FACULTY_PAGE_SIZE = 10;
 
   const orderedDepartmentOptions = DEPARTMENT_ORDER
     .map((code) => {
@@ -694,12 +697,14 @@ export default function UserManagement() {
         .from('users')
         .select('*')
         .neq('domain_email', 'admin@gordoncollege.edu.ph')
-        .neq('role', 'vpaa')
+        .neq('role', 'VPAA')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const mapped = (data || []).map((u) => {
+      const mapped = (data || [])
+        .filter((u) => (u?.role || '').toString().trim().toLowerCase() !== 'vpaa')
+        .map((u) => {
         const eduList = Array.isArray(u.educational_attainment_json) ? u.educational_attainment_json.map(normalizeEducationEntry) : [];
         const eligList = Array.isArray(u.eligibility_exams_json) ? u.eligibility_exams_json.map(normalizeEligibilityEntry) : [];
         const docList = Array.isArray(u.doctorate) ? u.doctorate.map(normalizeDoctorateEntry) : [];
@@ -868,6 +873,16 @@ export default function UserManagement() {
     return matchesSearch && matchesDepartment && matchesStatus;
   });
 
+  useEffect(() => {
+    setFacultyPage(1);
+  }, [search, deptFilter, statusFilter, facultyList.length]);
+
+  const totalFacultyPages = Math.max(1, Math.ceil(filteredFaculty.length / FACULTY_PAGE_SIZE));
+  const safeFacultyPage = Math.min(facultyPage, totalFacultyPages);
+  const facultyPageStart = (safeFacultyPage - 1) * FACULTY_PAGE_SIZE;
+  const facultyPageEnd = facultyPageStart + FACULTY_PAGE_SIZE;
+  const paginatedFaculty = filteredFaculty.slice(facultyPageStart, facultyPageEnd);
+
   const cycleLabel = (cycle) => {
     if (!cycle) return '';
     const title = cycle.title || `${cycle.semester || ''} ${cycle.year || ''}`.trim();
@@ -935,32 +950,70 @@ export default function UserManagement() {
           {loading ? (
             <p style={{ marginTop: '8px', fontSize: '0.8rem', color: '#6b7280' }}>Loading faculty users…</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Department</th>
-                  <th>Current Rank</th>
-                  <th>Status</th>
-                  {/* Participation column removed; use 'For Ranking' status instead */}
-                  <th>Created At</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredFaculty.map((faculty) => (
-                  <FacultyRow
-                    key={faculty.id}
-                    faculty={faculty}
-                    departments={departments}
-                    onView={(f) => { setViewing(f); setSelected(null); }}
-                    onEdit={(f) => setSelected(f)}
-                    onDelete={() => setFacultyList(prev => prev.filter(f => f.id !== faculty.id))}
-                  />
-                ))}
-              </tbody>
-            </table>
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Department</th>
+                    <th>Current Rank</th>
+                    <th>Status</th>
+                    {/* Participation column removed; use 'For Ranking' status instead */}
+                    <th>Created At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedFaculty.map((faculty) => (
+                    <FacultyRow
+                      key={faculty.id}
+                      faculty={faculty}
+                      departments={departments}
+                      onView={(f) => { setViewing(f); setSelected(null); }}
+                      onEdit={(f) => setSelected(f)}
+                      onDelete={() => setFacultyList(prev => prev.filter(f => f.id !== faculty.id))}
+                    />
+                  ))}
+                </tbody>
+              </table>
+
+              {filteredFaculty.length > 0 && (
+                <div style={{
+                  marginTop: '12px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    Showing {facultyPageStart + 1}-{Math.min(facultyPageStart + FACULTY_PAGE_SIZE, filteredFaculty.length)} of {filteredFaculty.length}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setFacultyPage((p) => Math.max(1, p - 1))}
+                      disabled={safeFacultyPage <= 1}
+                    >
+                      Previous
+                    </button>
+                    <span style={{ fontSize: '12px', color: '#4b5563' }}>
+                      Page {safeFacultyPage} of {totalFacultyPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setFacultyPage((p) => Math.min(totalFacultyPages, p + 1))}
+                      disabled={safeFacultyPage >= totalFacultyPages}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
         </div>
