@@ -104,8 +104,35 @@ function normalizeEducationEntry(entry) {
     
 
 // ── Edit Panel ───────────────────────────────────────────────
-function EditPanel({ faculty, onClose, onSaved }) {
-  const DEPARTMENTS = ['CAHS', 'CBA', 'CCS', 'CEAS', 'CHTM'];
+function EditPanel({ faculty, onClose, onSaved, departments = [] }) {
+  const DEPARTMENT_ORDER = ['CCS', 'CHTM', 'CBA', 'CAHS', 'CEAS'];
+  const CODE_ALIASES = {
+    BA: 'CBA',
+    CS: 'CCS',
+    ENG: 'CEAS',
+  };
+
+  const toCanonicalDepartmentCode = (dept) => {
+    const rawCode = String(dept?.department_code || '').trim().toUpperCase();
+    const name = String(dept?.department_name || '').trim().toUpperCase();
+    const aliased = CODE_ALIASES[rawCode] || rawCode;
+    if (DEPARTMENT_ORDER.includes(aliased)) return aliased;
+
+    if (name.includes('COMPUTER')) return 'CCS';
+    if (name.includes('HOTEL') || name.includes('TOURISM')) return 'CHTM';
+    if (name.includes('BUSINESS')) return 'CBA';
+    if (name.includes('ALLIED HEALTH') || name.includes('HEALTH')) return 'CAHS';
+    if (name.includes('ENGINEERING') || name.includes('ARCHITECTURE')) return 'CEAS';
+    return null;
+  };
+
+  const orderedDepartmentOptions = DEPARTMENT_ORDER
+    .map((code) => {
+      const match = (departments || []).find((d) => toCanonicalDepartmentCode(d) === code);
+      return match ? { value: String(match.department_id), label: code } : null;
+    })
+    .filter(Boolean);
+
   const RANKS = [
     'Instructor I','Instructor II','Instructor III',
     'Assistant Professor I','Assistant Professor II','Assistant Professor III','Assistant Professor IV',
@@ -119,7 +146,7 @@ function EditPanel({ faculty, onClose, onSaved }) {
     nameFirst: faculty?.name ? faculty.name.split(',')[1]?.trim() : '',
     nameMiddle: '',
     email: faculty?.email ?? '',
-    department: faculty?.department ?? 'CCS',
+    department: faculty?.department != null ? String(faculty.department) : '',
     presentRank: faculty?.presentRank ?? 'Instructor I',
     natureOfAppointment: faculty?.natureOfAppointment ?? 'Permanent',
     teachingYears: faculty?.teachingYears ?? '',
@@ -206,7 +233,7 @@ function EditPanel({ faculty, onClose, onSaved }) {
         name_last: form.nameLast.trim(),
         name_first: form.nameFirst.trim(),
         name_middle: form.nameMiddle?.trim() || null,
-        department_id: form.department || null,
+        department_id: parseIntegerOrNull(form.department),
         current_rank: form.presentRank || null,
         nature_of_appointment: form.natureOfAppointment || null,
         teaching_experience_years: form.teachingYears ? parseIntegerOrNull(form.teachingYears) : null,
@@ -337,7 +364,10 @@ function EditPanel({ faculty, onClose, onSaved }) {
               <label>Department</label>
               <div className="select-field">
                 <select value={form.department} onChange={e => set('department', e.target.value)}>
-                  {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                  <option value="">Select Department</option>
+                  {orderedDepartmentOptions.map((d) => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -563,6 +593,27 @@ function EditPanel({ faculty, onClose, onSaved }) {
 
 // ── User Management Page ─────────────────────────────────────
 export default function UserManagement() {
+  const DEPARTMENT_ORDER = ['CCS', 'CHTM', 'CBA', 'CAHS', 'CEAS'];
+  const CODE_ALIASES = {
+    BA: 'CBA',
+    CS: 'CCS',
+    ENG: 'CEAS',
+  };
+
+  const toCanonicalDepartmentCode = (dept) => {
+    const rawCode = String(dept?.department_code || '').trim().toUpperCase();
+    const name = String(dept?.department_name || '').trim().toUpperCase();
+    const aliased = CODE_ALIASES[rawCode] || rawCode;
+    if (DEPARTMENT_ORDER.includes(aliased)) return aliased;
+
+    if (name.includes('COMPUTER')) return 'CCS';
+    if (name.includes('HOTEL') || name.includes('TOURISM')) return 'CHTM';
+    if (name.includes('BUSINESS')) return 'CBA';
+    if (name.includes('ALLIED HEALTH') || name.includes('HEALTH')) return 'CAHS';
+    if (name.includes('ENGINEERING') || name.includes('ARCHITECTURE')) return 'CEAS';
+    return null;
+  };
+
   const [selected, setSelected]         = useState(null);
   const [addingNew, setAddingNew]       = useState(false);
   const [viewing, setViewing]           = useState(null);
@@ -580,6 +631,13 @@ export default function UserManagement() {
   const [cycles, setCycles]             = useState([]);
   const [selectedCycleId, setSelectedCycleId] = useState('');
   const [facultyList, setFacultyList]   = useState([]);
+
+  const orderedDepartmentOptions = DEPARTMENT_ORDER
+    .map((code) => {
+      const match = (departments || []).find((d) => toCanonicalDepartmentCode(d) === code);
+      return match ? { value: String(match.department_id), label: code } : null;
+    })
+    .filter(Boolean);
 
   const fetchFaculty = async () => {
     setLoading(true);
@@ -791,13 +849,8 @@ export default function UserManagement() {
               <div className="filter-wrap">
                 <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
                   <option value="All Departments">All Departments</option>
-                  {departments.map((d) => (
-                    <option
-                      key={d.department_id}
-                      value={String(d.department_id)}
-                    >
-                      {d.department_code || d.department_name}
-                    </option>
+                  {orderedDepartmentOptions.map((d) => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
                   ))}
                 </select>
               </div>
@@ -874,6 +927,7 @@ export default function UserManagement() {
       {(selected || addingNew) && (
         <EditPanel
           faculty={selected}
+          departments={departments}
           onClose={() => { setSelected(null); setAddingNew(false); }}
           onSaved={handleSaved}
         />
