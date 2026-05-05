@@ -2,6 +2,75 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RANKING_RUBRICS } from '../../../data/rankingRubrics';
 import { supabase } from '../../../supabase';
 
+const RANKS = [
+  'Instructor I', 'Instructor II', 'Instructor III',
+  'Assistant Professor I', 'Assistant Professor II', 'Assistant Professor III', 'Assistant Professor IV',
+  'Associate Professor I', 'Associate Professor II', 'Associate Professor III', 'Associate Professor IV', 'Associate Professor V',
+  'Professor I', 'Professor II', 'Professor III', 'Professor IV', 'Professor V'
+];
+
+function collapseRangesFromArray(selected = [], options = []) {
+  if (!selected || selected.length === 0) return '';
+  const idxMap = new Map();
+  options.forEach((o, i) => idxMap.set(o, i));
+  const indices = (Array.isArray(selected) ? selected : String(selected).split(/\s*,\s*/)).map(s => idxMap.get(s)).filter(n => typeof n === 'number').sort((a,b)=>a-b);
+  if (indices.length === 0) return Array.isArray(selected) ? selected.join(', ') : String(selected);
+  
+  const parts = [];
+  let i = 0;
+  while (i < indices.length) {
+    let start = indices[i];
+    let end = start;
+    while (i + 1 < indices.length && indices[i+1] === end + 1) { i++; end = indices[i]; }
+    
+    const blockItems = [];
+    for (let k = start; k <= end; k++) blockItems.push({ idx: k, text: options[k] });
+    
+    const prefixGroups = [];
+    let currentPrefix = null;
+    let currentGroup = [];
+    for (const item of blockItems) {
+      const split = item.text.lastIndexOf(' ');
+      const prefix = split === -1 ? item.text : item.text.slice(0, split);
+      if (prefix !== currentPrefix) {
+        if (currentGroup.length > 0) prefixGroups.push({ prefix: currentPrefix, items: currentGroup });
+        currentPrefix = prefix;
+        currentGroup = [item];
+      } else {
+        currentGroup.push(item);
+      }
+    }
+    if (currentGroup.length > 0) prefixGroups.push({ prefix: currentPrefix, items: currentGroup });
+    
+    for (const pg of prefixGroups) {
+      const first = pg.items[0];
+      const last = pg.items[pg.items.length - 1];
+      const splitF = first.text.lastIndexOf(' ');
+      const splitL = last.text.lastIndexOf(' ');
+      const sufF = splitF === -1 ? first.text : first.text.slice(splitF + 1);
+      const sufL = splitL === -1 ? last.text : last.text.slice(splitL + 1);
+      
+      if (pg.items.length > 1) {
+        parts.push(`${pg.prefix} ${sufF}-${sufL}`);
+      } else {
+        parts.push(first.text);
+      }
+    }
+    i++;
+  }
+  
+  const unknowns = (Array.isArray(selected) ? selected : String(selected).split(/\s*,\s*/)).filter(s => !idxMap.has(s));
+  return parts.concat(unknowns).join(', ');
+}
+
+
+function normalizePartLookupKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 // Helper function to convert storage path to public URL
 function getPublicFileUrl(storagePath) {
   if (!storagePath) return null;
@@ -257,10 +326,11 @@ export function DocumentViewer({ fileUrl, fileName, onClose }) {
 export function ScoringCriteriaPanel({ area, submission, criteria, onClose, areaEvalData, onSaveCriteriaScores, isSavingScore }) {
   const buildCriteriaFromRubric = (areaId, partId, areaName) => {
     try {
-      // Try to extract area code from areaName (e.g., "AREA II" -> 2)
+      // Extract Roman numeral from areaName - this is the source of truth
+      // The database area_id may not match RANKING_RUBRICS areaId
       let resolvedAreaId = areaId;
       if (areaName) {
-        const match = areaName.match(/AREA\s+([IVX]+)/i);
+        const match = String(areaName).match(/AREA\s+([IVX]+)/i);
         if (match) {
           const romanNum = match[1].toUpperCase();
           const romanToNum = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10 };
@@ -313,10 +383,10 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
   const fallbackCriteria = buildCriteriaFromRubric(area?.area_id || 1, submission?.part_id, area?.area_name || area?.label);
   const getRubricMaxForCriterion = (areaId, criterionKey, partId, areaName) => {
     try {
-      // Extract area code from areaName (e.g., "AREA II" -> 2)
+      // Extract Roman numeral from areaName - this is the source of truth
       let resolvedAreaId = areaId;
       if (areaName) {
-        const match = areaName.match(/AREA\s+([IVX]+)/i);
+        const match = String(areaName).match(/AREA\s+([IVX]+)/i);
         if (match) {
           const romanNum = match[1].toUpperCase();
           const romanToNum = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10 };
@@ -389,7 +459,28 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
     };
   });
 
-  const [draftCriteriaScores, setDraftCriteriaScores] = useState(activeCriteria);
+  const areaMaxPoints = Number(area?.maxPoints ?? area?.max ?? area?.max_possible_points ?? 85);
+
+  const applyAreaMaxExcess = (criteriaList) => {
+    let runningScore = 0;
+
+    return criteriaList.map((criterion) => {
+      const score = Number(criterion.score ?? 0);
+      const scoreBeforeThisRow = Math.max(0, runningScore - areaMaxPoints);
+      runningScore += score;
+      const scoreAfterThisRow = Math.max(0, runningScore - areaMaxPoints);
+      const excessScore = Math.max(0, scoreAfterThisRow - scoreBeforeThisRow);
+
+      return {
+        ...criterion,
+        score,
+        cappedScore: Math.max(0, score - excessScore),
+        excessScore,
+      };
+    });
+  };
+
+  const [draftCriteriaScores, setDraftCriteriaScores] = useState(applyAreaMaxExcess(activeCriteria));
   const [partSubmissions, setPartSubmissions] = useState({});
   const [viewerModalOpen, setViewerModalOpen] = useState(false);
   const [viewerModalFile, setViewerModalFile] = useState(null);
@@ -437,10 +528,10 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
           cappedScore: scoreMap[criterion.criterion_key]?.cappedScore ?? 0,
         }));
 
-        setDraftCriteriaScores(mergedCriteria);
+        setDraftCriteriaScores(applyAreaMaxExcess(mergedCriteria));
       } catch (err) {
         console.error('[ScoringCriteriaPanel] Error fetching criterion scores:', err);
-        setDraftCriteriaScores(activeCriteria);
+        setDraftCriteriaScores(applyAreaMaxExcess(activeCriteria));
       }
     };
 
@@ -469,19 +560,27 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
           .eq('application_id', submission?.application_id)
           .eq('area_id', submission?.area_id);
 
-        console.log('[ScoringCriteriaPanel] Supabase query result:', { submissions, error });
+        console.log('[ScoringCriteriaPanel] Supabase query result:', { 
+          count: submissions?.length || 0,
+          submissions, 
+          error,
+          query: { application_id: submission?.application_id, area_id: submission?.area_id }
+        });
 
         if (error) {
           console.error('[ScoringCriteriaPanel] Supabase error:', error);
           return;
         }
 
-        // Map submissions by part_id
+        // Map submissions by raw and normalized part_id so nested parts like A.1/A.2 resolve correctly
         const partMap = {};
         submissions?.forEach(sub => {
           console.log('[ScoringCriteriaPanel] Processing submission:', { part_id: sub.part_id, file_path: sub.file_path });
           if (sub.part_id && sub.file_path) {
-            partMap[sub.part_id] = sub.file_path;
+            const rawKey = String(sub.part_id).trim();
+            const normalizedKey = normalizePartLookupKey(rawKey);
+            partMap[rawKey] = sub.file_path;
+            partMap[normalizedKey] = sub.file_path;
           }
         });
         console.log('[ScoringCriteriaPanel] Built partMap:', partMap);
@@ -528,28 +627,24 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
   }, [draftCriteriaScores, submission?.submission_id, onSaveCriteriaScores]);
 
   const totalCriteriaScore = draftCriteriaScores.reduce((sum, criterion) => sum + Number(criterion.score || 0), 0);
-  const totalExcessScore = draftCriteriaScores.reduce((sum, criterion) => sum + Number(criterion.excessScore || 0), 0);
-  // Prefer explicit area maxPoints, fall back to area.max, area.max_possible_points, then sum of criteria maxPoints
-  const summedCriteriaMax = draftCriteriaScores.reduce((s, c) => s + Number(c.maxPoints || 0), 0);
-  const maxCriteriaScore = Number(area?.maxPoints ?? area?.max ?? area?.max_possible_points ?? summedCriteriaMax ?? 0);
-
-  // DEBUG: log area and computed max values to trace incorrect display
-  useEffect(() => {
-    console.log('[ScoringCriteriaPanel] area object:', area);
-    console.log('[ScoringCriteriaPanel] summedCriteriaMax:', summedCriteriaMax, 'maxCriteriaScore:', maxCriteriaScore);
-    console.log('[ScoringCriteriaPanel] draftCriteriaScores sample:', draftCriteriaScores.slice(0, 6));
-  }, [area, summedCriteriaMax, maxCriteriaScore, draftCriteriaScores]);
+  const displayedCriteriaScore = Math.min(totalCriteriaScore, areaMaxPoints);
+  const totalExcessScore = Math.max(0, totalCriteriaScore - areaMaxPoints);
+  const maxCriteriaScore = areaMaxPoints;
 
   const handleCriterionChange = (criterionKey, value) => {
     // Coerce empty or invalid entries to 0 to avoid backend validation errors
     const parsed = (value === null || value === undefined || String(value).trim() === '') ? 0 : Number(value);
     const normalized = Number.isFinite(parsed) ? parsed : 0;
 
-    setDraftCriteriaScores((prev) => prev.map((criterion) => (
-      criterion.criterion_key === criterionKey
-        ? { ...criterion, score: normalized, excessScore: Math.max(0, normalized - Number(criterion.maxPoints || 0)) }
-        : criterion
-    )));
+    setDraftCriteriaScores((prev) => {
+      const updated = prev.map((criterion) => (
+        criterion.criterion_key === criterionKey
+          ? { ...criterion, score: normalized }
+          : criterion
+      ));
+
+      return applyAreaMaxExcess(updated);
+    });
   };
 
   if (!area) {
@@ -588,13 +683,13 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
         </div>
       )}
 
-      {submission && !submission.is_placeholder && (
+      {submission && (
         <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
             <div>
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Accumulated Criteria Score</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#059669', marginTop: '4px' }}>
-                {totalCriteriaScore.toFixed(2)}
+                {displayedCriteriaScore.toFixed(2)}
                 <span style={{ fontSize: '14px', fontWeight: '500', color: '#6b7280', marginLeft: '8px' }}>/ {maxCriteriaScore > 0 ? maxCriteriaScore.toFixed(2) : '—'} pts</span>
               </div>
             </div>
@@ -633,30 +728,58 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
                 const paddingLeft = criterion.label && criterion.label.includes('.') ? '24px' : '8px';
                 const hasMaxPoints = Number(criterion.maxPoints || 0) > 0;
                 
-                // Extract part letter from criterion label (e.g., "A.1" -> "A", "B.2" -> "B")
-                const partLetter = criterion.label?.split('.')[0];
+                // Match the criterion label against raw or normalized submission part ids.
+                const partLabel = criterion.label || '';
+                const partLetter = partLabel.split('.')[0];
+                const compactPartLabel = normalizePartLookupKey(partLabel);
+                const compactPartLetter = normalizePartLookupKey(partLetter);
                 
-                // Construct full part_id by combining area's Roman numeral with letter (e.g., "I-C")
+                // Construct candidate keys from the area roman numeral and the exact criterion label.
                 let partSubmissionFile = null;
-                if (partLetter && area?.label) {
-                  // Extract Roman numeral from area label (e.g., "AREA I" -> "I")
+                const candidateKeys = [
+                  partLabel,
+                  partLetter,
+                  `Part ${partLabel}`,
+                  `Part ${partLetter}`,
+                ];
+
+                if (area?.label) {
                   const areaRomanMatch = area.label.match(/AREA\s+([IVX]+)/i);
                   const areaRoman = areaRomanMatch ? areaRomanMatch[1] : '';
-                  const fullPartId = areaRoman ? `${areaRoman}-${partLetter}` : partLetter;
-                  
-                  // Try to find file using full part_id (e.g., "I-C"), then fallback to just letter
-                  partSubmissionFile = partSubmissions[fullPartId] || partSubmissions[partLetter] || partSubmissions[`Part ${partLetter}`] || null;
-                  
-                  if (i === 0) {
-                    console.log('[ScoringCriteriaPanel] File lookup for criterion 0:', {
-                      partLetter,
-                      'area.label': area.label,
-                      areaRoman,
-                      fullPartId,
-                      partSubmissions,
-                      partSubmissionFile,
-                    });
+                  if (areaRoman) {
+                    candidateKeys.unshift(
+                      `${areaRoman}-${partLabel}`,
+                      `${areaRoman}-${partLetter}`,
+                      `${areaRoman}-${compactPartLabel}`,
+                    );
                   }
+                }
+
+                const normalizedCandidates = candidateKeys
+                  .flatMap((key) => [key, normalizePartLookupKey(key)])
+                  .filter(Boolean);
+
+                partSubmissionFile = normalizedCandidates
+                  .map((key) => partSubmissions[key])
+                  .find(Boolean) || null;
+
+                if (!partSubmissionFile && compactPartLabel !== compactPartLetter) {
+                  partSubmissionFile = Object.entries(partSubmissions).find(([key, filePath]) => {
+                    const normalizedKey = normalizePartLookupKey(key);
+                    return filePath && normalizedKey.includes(compactPartLabel);
+                  })?.[1] || null;
+                }
+
+                if (i === 0) {
+                  console.log('[ScoringCriteriaPanel] File lookup for criterion 0:', {
+                    partLabel,
+                    partLetter,
+                    compactPartLabel,
+                    'area.label': area.label,
+                    candidateKeys,
+                    partSubmissions,
+                    partSubmissionFile,
+                  });
                 }
 
                 return (
@@ -677,6 +800,11 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
                           min="0"
                           step="0.01"
                           value={criterion.score}
+                          onFocus={(e) => {
+                            if (Number(criterion.score) === 0) {
+                              e.target.select();
+                            }
+                          }}
                           onChange={(e) => handleCriterionChange(criterion.criterion_key, e.target.value)}
                           aria-label={`Score for ${criterion.label}: ${criterion.title}`}
                           style={{ width: '100px', padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', textAlign: 'right', background: 'white' }}
@@ -724,7 +852,7 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
               <tr style={{ borderTop: '2px solid #d1d5db', background: '#f9fafb' }}>
                 <td style={{ padding: '10px 8px', fontWeight: '700', color: '#1f2937' }}>TOTAL</td>
                 <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '700', color: '#059669' }}>{maxCriteriaScore.toFixed(2)}</td>
-                <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '700', color: '#111827' }}>{totalCriteriaScore.toFixed(2)}</td>
+                <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '700', color: '#111827' }}>{displayedCriteriaScore.toFixed(2)}</td>
                 <td />
               </tr>
             </tbody>
@@ -1066,11 +1194,134 @@ export function AreaCard({ area, isExpanded, isSelected, draftScore, onToggle, o
   );
 }
 
+function QualificationDropdown({ label, selected, onToggle }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const displayLabel = selected && selected.length > 0
+    ? collapseRangesFromArray(selected, RANKS)
+    : `Select ${label}...`;
+
+  return (
+    <div className="qual-select-wrap" ref={ref} style={{ position: 'relative', width: '100%' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%',
+          minHeight: '32px',
+          padding: '6px 10px',
+          border: '1px solid #d1d5db',
+          borderRadius: '6px',
+          background: 'white',
+          textAlign: 'left',
+          fontSize: '12px',
+          color: selected && selected.length > 0 ? '#111827' : '#6b7280',
+          cursor: 'pointer',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {displayLabel}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            background: 'white',
+            border: '1px solid #d1d5db',
+            borderRadius: '8px',
+            boxShadow: '0 12px 24px rgba(15, 23, 42, 0.12)',
+            padding: '8px',
+            maxHeight: '280px',
+            overflowY: 'auto',
+          }}
+        >
+          {RANKS.map((option) => (
+            <label
+              key={option}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 4px',
+                fontSize: '12px',
+                color: '#111827',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={(selected || []).includes(option)}
+                onChange={() => onToggle(option)}
+              />
+              <span>{option}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SummaryView({ onBack, areaScores }) {
+  const [experienceInDegree, setExperienceInDegree] = useState([]);
+  const [degree, setDegree] = useState([]);
+
+  const toggleExperience = (option) => {
+    setExperienceInDegree((prev) => (
+      prev.includes(option)
+        ? prev.filter((item) => item !== option)
+        : [...prev, option]
+    ));
+  };
+
+  const toggleDegree = (option) => {
+    setDegree((prev) => (
+      prev.includes(option)
+        ? prev.filter((item) => item !== option)
+        : [...prev, option]
+    ));
+  };
+
+  // Calculate total score including excess points
+  const totalCappedScore = areaScores.reduce((sum, a) => sum + (a.cappedScore || 0), 0);
+  const totalExcessScore = areaScores.reduce((sum, a) => sum + (a.excessScore || 0), 0);
+  const totalScoreIncludingExcess = totalCappedScore + totalExcessScore;
+  const totalPct = Math.min(100, Math.round((totalScoreIncludingExcess / 200) * 100));
+
   return (
     <div className="summary-layout">
       <div className="scores-panel">
         <div className="scores-panel-title">Area Scores</div>
+        
+        {/* Total Score Section */}
+        <div className="total-score-section">
+          <div className="total-score-header">
+            <span style={{ fontWeight: '600' }}>TOTAL SCORE</span>
+            <span className="total-score-value">{totalScoreIncludingExcess.toFixed(2)}/200</span>
+          </div>
+          <div className="score-bar-bg">
+            <div className="score-bar-fill" style={{ width: `${totalPct}%` }} />
+          </div>
+        </div>
+
         {areaScores.length === 0 ? (
           <div style={{ padding: '8px 0', color: '#6b7280', fontSize: '0.8rem' }}>
             No scored area submissions yet.
@@ -1080,7 +1331,16 @@ export function SummaryView({ onBack, areaScores }) {
             <div className="score-bar-item" key={i}>
               <div className="score-bar-header">
                 <span>{a.label}</span>
-                <span className="score-bar-val">{a.score.toFixed(2)}</span>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  {a.excessScore > 0 ? (
+                    <>
+                      <span className="score-bar-val" style={{ color: '#065f46' }}>{a.max.toFixed(2)}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: '600' }}>+{a.excessScore.toFixed(2)}</span>
+                    </>
+                  ) : (
+                    <span className="score-bar-val">{a.cappedScore.toFixed(2)}</span>
+                  )}
+                </div>
               </div>
               <div className="score-bar-bg">
                 <div className="score-bar-fill" style={{ width: `${a.pct}%` }} />
@@ -1093,42 +1353,42 @@ export function SummaryView({ onBack, areaScores }) {
       <div className="qual-panel">
         <div className="qual-panel-title">Qualification Overview</div>
 
-        <div className="qual-row">
+        <div className="qual-row" style={{ marginBottom: '6px' }}>
           <label>Experience</label>
-          <div className="qual-select-wrap">
-            <select><option>Select (Professor I-V)</option><option>Qualified</option><option>Not Qualified</option></select>
-          </div>
+          <QualificationDropdown
+            label="Experience"
+            selected={experienceInDegree}
+            onToggle={toggleExperience}
+          />
         </div>
-        <div className="qual-row">
+        <div className="qual-row" style={{ marginBottom: '6px' }}>
           <label>Degree</label>
-          <div className="qual-select-wrap">
-            <select><option>Select (Professor I-V)</option><option>Qualified</option><option>Not Qualified</option></select>
-          </div>
+          <QualificationDropdown
+            label="Degree"
+            selected={degree}
+            onToggle={toggleDegree}
+          />
         </div>
-        <div className="qual-row">
-          <label>Teaching Experience</label>
+        <div className="qual-row" style={{ marginBottom: '6px' }}>
+          <label>Teaching performance</label>
           <div className="qual-select-wrap">
             <select defaultValue="Qualified"><option>Qualified</option><option>Not Qualified</option></select>
           </div>
         </div>
-        <div className="qual-row">
+        <div className="qual-row" style={{ marginBottom: '6px' }}>
           <label>Research Output</label>
           <div className="qual-select-wrap">
             <select defaultValue="Qualified"><option>Qualified</option><option>Not Qualified</option></select>
           </div>
         </div>
-        <div className="qual-row">
+        <div className="qual-row" style={{ marginBottom: '6px' }}>
           <label>Elegibility</label>
           <div className="qual-select-wrap">
             <select defaultValue="Qualified"><option>Qualified</option><option>Not Qualified</option></select>
           </div>
         </div>
-        <div className="qual-row">
-          <label></label>
-          <span className="qual-passed">Passed</span>
-        </div>
 
-        <div className="qual-footer">
+        <div className="qual-footer" style={{ marginTop: '12px' }}>
           <button className="btn-nav btn-nav-prev" onClick={onBack}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
             Go Back

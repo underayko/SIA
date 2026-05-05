@@ -805,8 +805,10 @@ app.get("/review/area-detail/:areaId/:applicationId", async (req, res) => {
 
 // Helper function to return scoring criteria for each area
 function getAreaCriteria(areaId, areaName) {
-  // Extract area code from areaName if available (e.g., "AREA II" -> 2)
+  // Extract area code from areaName - this is the source of truth
+  // The database area_id may not match RANKING_RUBRICS areaId, so we use the Roman numeral from the name
   let resolvedAreaId = areaId;
+  
   if (areaName) {
     const match = areaName.match(/AREA\s+([IVX]+)/i);
     if (match) {
@@ -816,9 +818,12 @@ function getAreaCriteria(areaId, areaName) {
     }
   }
 
-  // Find the rubric from RANKING_RUBRICS
+  // Find the rubric from RANKING_RUBRICS using the resolved numeric areaId
   const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(resolvedAreaId));
-  if (!rubric) return [];
+  if (!rubric) {
+    console.warn(`[getAreaCriteria] No rubric found for areaId=${areaId}, areaName=${areaName}, resolved to ${resolvedAreaId}`);
+    return [];
+  }
 
   // Flatten all subAreas and their children into a single criteria array
   const criteria = [];
@@ -845,26 +850,51 @@ function getAreaCriteria(areaId, areaName) {
   return criteria;
 }
 
-function buildCriteriaScoreRows(criteria, existingScores = []) {
+function applyAreaCapToRows(rows, areaMaxPoints = 85) {
+  let runningScore = 0;
+
+  return rows.map((row) => {
+    const score = Number(row.score || 0);
+    const excessBeforeThisRow = Math.max(0, runningScore - areaMaxPoints);
+    runningScore += score;
+    const excessAfterThisRow = Math.max(0, runningScore - areaMaxPoints);
+    const excessScore = Math.max(0, excessAfterThisRow - excessBeforeThisRow);
+
+    return {
+      ...row,
+      score,
+      cappedScore: Math.max(0, score - excessScore),
+      excessScore,
+      capped_score: Math.max(0, score - excessScore),
+      excess_score: excessScore,
+    };
+  });
+}
+
+function buildCriteriaScoreRows(criteria, existingScores = [], areaMaxPoints = 85) {
   const scoreByKey = new Map((existingScores || []).map((row) => [row.criterion_key, row]));
 
-  return criteria.map((criterion) => {
+  const rows = criteria.map((criterion) => {
     const saved = scoreByKey.get(criterion.label);
-    const maxPoints = Number(criterion.maxPoints ?? criterion.max ?? 0);
+    const savedMaxPoints = Number(saved?.criterion_max_points ?? saved?.maxPoints ?? saved?.max ?? 0);
+    const maxPoints = savedMaxPoints > 0 ? savedMaxPoints : Number(criterion.maxPoints ?? criterion.max ?? 0);
     const score = Number(saved?.score || 0);
     return {
       criterion_key: criterion.label,
       label: criterion.label,
       title: criterion.title || criterion.label,
       maxPoints,
+      criterion_max_points: maxPoints,
       score,
-      cappedScore: Math.min(score, maxPoints),
-      excessScore: Math.max(0, score - maxPoints),
+      cappedScore: score,
+      excessScore: 0,
       score_id: saved?.score_id || null,
       notes: saved?.notes || null,
       reviewed_at: saved?.reviewed_at || null,
     };
   });
+
+  return applyAreaCapToRows(rows, areaMaxPoints);
 }
 
 async function updateApplicationHrScore(applicationId) {
@@ -927,12 +957,6 @@ app.get("/review/submission-scoring/:submissionId", async (req, res) => {
       return res.status(404).json({ error: "Area not found" });
     }
 
-    // Add maxPoints from RANKING_RUBRICS to the area object
-    const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(submission.area_id));
-    if (rubric) {
-      area.maxPoints = rubric.maxPoints;
-    }
-
     const { data: savedScores, error: savedScoresError } = await supabase
       .from("area_submission_criterion_scores")
       .select("*")
@@ -941,7 +965,8 @@ app.get("/review/submission-scoring/:submissionId", async (req, res) => {
 
     if (savedScoresError) throw savedScoresError;
 
-    const criteria = buildCriteriaScoreRows(getAreaCriteria(parseInt(submission.area_id, 10), area.area_name), savedScores || []);
+    const areaMaxPoints = Number(area.max_possible_points ?? area.maxPoints ?? area.max ?? 85);
+    const criteria = buildCriteriaScoreRows(getAreaCriteria(parseInt(submission.area_id, 10), area.area_name), savedScores || [], areaMaxPoints);
     const totalScore = criteria.reduce((sum, criterion) => sum + Number(criterion.score || 0), 0);
     const totalExcessScore = criteria.reduce((sum, criterion) => sum + Number(criterion.excessScore || 0), 0);
 
@@ -1008,12 +1033,7 @@ app.patch("/review/submission-scoring/:submissionId", async (req, res) => {
       return res.status(404).json({ error: "Area not found" });
     }
 
-    // Add maxPoints from RANKING_RUBRICS to the area object
-    const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(submission.area_id));
-    if (rubric) {
-      area.maxPoints = rubric.maxPoints;
-    }
-
+    const areaMaxPoints = Number(area.max_possible_points ?? area.maxPoints ?? area.max ?? 85);
     const rubricCriteria = getAreaCriteria(Number(submission.area_id), area.area_name);
     const rubricByKey = new Map(rubricCriteria.map((criterion) => [criterion.label, criterion]));
 
@@ -1047,21 +1067,37 @@ app.patch("/review/submission-scoring/:submissionId", async (req, res) => {
         criterion_title: criterion.title || rubric.title || rubric.label,
         criterion_max_points: maxPoints,
         score: scoreValue,
-        capped_score: cappedScore,
-        excess_score: excessScore,
         reviewed_at: new Date().toISOString(),
       };
     });
 
+    const appliedRowsToUpsert = applyAreaCapToRows(rowsToUpsert, areaMaxPoints);
+    const dbRowsToUpsert = appliedRowsToUpsert.map((row) => ({
+      submission_id: row.submission_id,
+      application_id: row.application_id,
+      area_id: row.area_id,
+      part_id: row.part_id,
+      criterion_key: row.criterion_key,
+      criterion_label: row.criterion_label,
+      criterion_title: row.criterion_title,
+      criterion_max_points: row.criterion_max_points,
+      score: row.score,
+      capped_score: row.capped_score,
+      excess_score: row.excess_score,
+      notes: row.notes ?? null,
+      reviewed_by: row.reviewed_by ?? null,
+      reviewed_at: row.reviewed_at,
+    }));
+
     const { data: savedRows, error: upsertError } = await supabase
       .from("area_submission_criterion_scores")
-      .upsert(rowsToUpsert, { onConflict: "submission_id,criterion_key" })
+      .upsert(dbRowsToUpsert, { onConflict: "submission_id,criterion_key" })
       .select();
 
     if (upsertError) throw upsertError;
 
-    const totalScore = rowsToUpsert.reduce((sum, row) => sum + Number(row.score || 0), 0);
-    const totalExcessScore = rowsToUpsert.reduce((sum, row) => sum + Number(row.excess_score || 0), 0);
+    const totalScore = appliedRowsToUpsert.reduce((sum, row) => sum + Number(row.score || 0), 0);
+    const totalExcessScore = appliedRowsToUpsert.reduce((sum, row) => sum + Number(row.excessScore || row.excess_score || 0), 0);
 
     const { data: updatedSubmission, error: submissionUpdateError } = await supabase
       .from("area_submissions")

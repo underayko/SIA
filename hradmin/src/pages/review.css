@@ -161,14 +161,19 @@ tbody td:first-child { padding-left: 0; }
 .score-bar-bg       { background: #e5e7eb; border-radius: 100px; height: 5px; }
 .score-bar-fill     { background: var(--green-btn); border-radius: 100px; height: 5px; }
 
+/* ── Total Score Section ── */
+.total-score-section { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+.total-score-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text); margin-bottom: 6px; }
+.total-score-value { font-weight: 700; font-size: 0.88rem; color: var(--green-mid); }
+
 /* ── Qualification Overview panel ── */
 .qual-panel       { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
 .qual-panel-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); margin-bottom: 14px; }
-.qual-row         { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.qual-row         { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: center; margin-bottom: 10px; }
 .qual-row label   { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
-.qual-select-wrap { position: relative; }
+.qual-select-wrap { position: relative; flex: 1; }
 .qual-select-wrap::after { content: ''; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid var(--muted); pointer-events: none; }
-.qual-select-wrap select { padding: 5px 22px 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f9fafb; font-family: 'DM Sans', sans-serif; font-size: 0.78rem; color: var(--text); outline: none; appearance: none; cursor: pointer; }
+.qual-select-wrap select { width: 100%; padding: 5px 22px 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f9fafb; font-family: 'DM Sans', sans-serif; font-size: 0.78rem; color: var(--text); outline: none; appearance: none; cursor: pointer; }
 .qual-badge        { display: inline-block; padding: 4px 12px; background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; border-radius: 100px; font-size: 0.72rem; font-weight: 600; }
 .qual-passed       { display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; border-radius: 100px; font-size: 0.72rem; font-weight: 600; }
 .qual-footer       { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }

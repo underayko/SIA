@@ -16,10 +16,13 @@ import {
 
 // ══ MAIN COMPONENT ═══════════════════════════════════════════
 export default function Review() {
-  const [view, setView] = useState('list'); // 'list' | 'detail' | 'summary'
+  const [view, setView] = useState(() => localStorage.getItem('review_view') || 'list'); // 'list' | 'detail' | 'summary'
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState([]);
-  const [selectedApplication, setSelectedApplication] = useState(null);
+  const [selectedApplication, setSelectedApplication] = useState(() => {
+    const stored = localStorage.getItem('review_selectedApplication');
+    return stored ? JSON.parse(stored) : null;
+  });
   const [selectedFaculty, setSelectedFaculty] = useState(null);
   const [areaSubmissions, setAreaSubmissions] = useState([]);
   const [areas, setAreas] = useState([]);
@@ -30,7 +33,10 @@ export default function Review() {
   const [expandedAreaId, setExpandedAreaId] = useState(null);
   const [draftScores, setDraftScores] = useState({});
   const [savingAreaId, setSavingAreaId] = useState(null);
-  const [selectedArea, setSelectedArea] = useState(null);
+  const [selectedArea, setSelectedArea] = useState(() => {
+    const stored = localStorage.getItem('review_selectedArea');
+    return stored ? JSON.parse(stored) : null;
+  });
   const [areaCriteria, setAreaCriteria] = useState([]);
   const [loadingAreaDetails, setLoadingAreaDetails] = useState(false);
   const [savingAreaScore, setSavingAreaScore] = useState(false);
@@ -41,10 +47,41 @@ export default function Review() {
 
   const APPLICATION_PAGE_SIZE = 10;
 
+  // Persist view state to localStorage
+  useEffect(() => {
+    localStorage.setItem('review_view', view);
+  }, [view]);
+
+  // Persist selectedApplication to localStorage
+  useEffect(() => {
+    if (selectedApplication) {
+      localStorage.setItem('review_selectedApplication', JSON.stringify(selectedApplication));
+    } else {
+      localStorage.removeItem('review_selectedApplication');
+    }
+  }, [selectedApplication]);
+
+  // Persist selectedArea to localStorage
+  useEffect(() => {
+    if (selectedArea) {
+      localStorage.setItem('review_selectedArea', JSON.stringify(selectedArea));
+    } else {
+      localStorage.removeItem('review_selectedArea');
+    }
+  }, [selectedArea]);
+
   // Fetch data on component mount
   useEffect(() => {
     fetchApplicationsData();
   }, []);
+
+  // When selectedApplication is restored from localStorage or changes, fetch its data
+  useEffect(() => {
+    if (selectedApplication?.id && view === 'detail' && areas.length > 0) {
+      setSelectedFaculty(selectedApplication.faculty);
+      fetchAreaSubmissions(selectedApplication.id);
+    }
+  }, [selectedApplication?.id, view, areas.length]);
 
   const fetchApplicationsData = async () => {
     try {
@@ -346,6 +383,7 @@ export default function Review() {
   const fetchAreaSubmissions = async (applicationId) => {
     try {
       console.log('📄 Fetching area submissions for application:', applicationId, typeof applicationId);
+      console.log('🔄 Current cycle:', currentCycle);
 
       // ⚠️ DEBUG: Check if application_id field exists
       const { data: submissionsData, error: submissionsError } = await supabase
@@ -361,12 +399,22 @@ export default function Review() {
       console.log('📊 Raw submissions from DB:', {
         count: submissionsData?.length || 0,
         applicationIdParam: applicationId,
+        submissionIds: submissionsData?.map(s => s.submission_id),
+        areaIds: submissionsData?.map(s => s.area_id),
         firstRecord: submissionsData?.[0],
-        allApplicationIds: submissionsData?.map(s => ({ id: s.submission_id, app_id: s.application_id }))
+        allApplicationIds: submissionsData?.map(s => ({ id: s.submission_id, app_id: s.application_id, area_id: s.area_id, cycle_id: s.cycle_id }))
       });
 
       const submissions = (submissionsData || []).map((submissionData) => {
         const area = areas.find((a) => a.area_id === submissionData.area_id);
+        console.log(`[fetchAreaSubmissions] Submission ${submissionData.submission_id}:`, {
+          area_id: submissionData.area_id,
+          part_id: submissionData.part_id,
+          file_path: submissionData.file_path,
+          foundArea: area?.area_name || 'NOT FOUND',
+          areasLength: areas.length,
+          allAreas: areas.map(a => ({ id: a.area_id, name: a.area_name }))
+        });
 
         return {
           id: submissionData.submission_id,
@@ -375,21 +423,22 @@ export default function Review() {
         };
       });
 
-      // Create placeholders for ALL 10 areas from RANKING_RUBRICS
+      // Create placeholders for ALL areas from the database
       // This ensures every area is scorable, even if no submission yet
-      const submittedAreaIds = new Set(submissions.map(s => s.area_id));
+      // Normalize area_ids to numbers for consistent comparison
+      const submittedAreaIds = new Set(submissions.map(s => Number(s.area_id)));
       
-      const areasWithoutSubmissions = RANKING_RUBRICS
-        .filter(rubric => !submittedAreaIds.has(rubric.areaId))
-        .map(rubric => {
-          // Always use "AREA [Roman] : [Name]" format
-          const areaName = `AREA ${rubric.areaCode}: ${rubric.areaName}`;
-          
+      console.log('📋 Submitted area IDs (normalized):', Array.from(submittedAreaIds));
+      console.log('📚 All areas from database:', areas.map(a => ({ id: a.area_id, name: a.area_name })));
+      
+      const areasWithoutSubmissions = areas
+        .filter(area => !submittedAreaIds.has(Number(area.area_id)))
+        .map(area => {
           return {
-            id: `placeholder-${rubric.areaId}-${applicationId}`,
-            submission_id: `placeholder-${rubric.areaId}-${applicationId}`,
+            id: `placeholder-${area.area_id}-${applicationId}`,
+            submission_id: `placeholder-${area.area_id}-${applicationId}`,
             application_id: applicationId,
-            area_id: rubric.areaId,
+            area_id: area.area_id,
             file_path: null,
             hr_points: 0,
             vpaa_points: 0,
@@ -397,24 +446,42 @@ export default function Review() {
             uploaded_at: null,
             is_placeholder: true,
             area: {
-              area_id: rubric.areaId,
-              area_name: areaName,
-              max_possible_points: rubric.maxPoints,
-              template_file_path: null,
-              description: `${areaName} rubric`
+              area_id: area.area_id,
+              area_name: area.area_name,
+              max_possible_points: area.max_possible_points,
+              template_file_path: area.template_file_path,
+              description: area.area_name
             }
           };
         });
 
-      // Combine and sort by Roman numeral (I-X)
-      const allSubmissions = [...submissions, ...areasWithoutSubmissions];
+      // Combine actual submissions (with files/data) and placeholders
+      // Deduplicate by area_id: keep real submissions first, then placeholders
+      const areaMap = new Map();
       
-      // Deduplicate by area_id (keep first occurrence, which is actual submission if it exists)
-      const seenAreaIds = new Set();
-      const dedupedSubmissions = allSubmissions.filter(sub => {
-        if (seenAreaIds.has(sub.area_id)) return false;
-        seenAreaIds.add(sub.area_id);
-        return true;
+      // Normalize area_id to number for consistent Map key comparison
+      submissions.forEach(sub => {
+        const areaId = Number(sub.area_id);
+        areaMap.set(areaId, sub);
+      });
+      
+      areasWithoutSubmissions.forEach(placeholder => {
+        const areaId = Number(placeholder.area_id);
+        if (!areaMap.has(areaId)) {
+          areaMap.set(areaId, placeholder);
+        }
+      });
+      
+      const dedupedSubmissions = Array.from(areaMap.values());
+      
+      console.log('🔍 DEBUG deduplication:', {
+        submissionsCount: submissions.length,
+        placeholdersCount: areasWithoutSubmissions.length,
+        totalBeforeDedupe: submissions.length + areasWithoutSubmissions.length,
+        mapSize: areaMap.size,
+        dedupedCount: dedupedSubmissions.length,
+        mapKeys: Array.from(areaMap.keys()),
+        mapValues: dedupedSubmissions.map(s => ({ area_id: s.area_id, area_name: s.area?.area_name }))
       });
       
       const romanToNum = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10 };
@@ -429,15 +496,58 @@ export default function Review() {
         return aNum - bNum;
       });
 
-      setAreaSubmissions(dedupedSubmissions);
+      // Fetch scoring details from backend to get capped_score and excess_score
+      // Only fetch for non-placeholder submissions
+      const enrichedSubmissions = await Promise.all(
+        dedupedSubmissions.map(async (submission) => {
+          // Skip placeholders - they have no scores
+          if (submission.is_placeholder) {
+            return {
+              ...submission,
+              capped_score: 0,
+              excess_score: 0
+            };
+          }
+
+          try {
+            const response = await fetch(
+              `http://localhost:5000/review/submission-scoring/${submission.submission_id}`
+            );
+            const scoringData = await response.json();
+            
+            // Calculate capped score and excess based on area max
+            const totalScore = Number(scoringData.totalScore || 0);
+            const areaMax = Number(submission.area?.max_possible_points || 85);
+            const cappedScore = Math.min(totalScore, areaMax);
+            const excessScore = Math.max(0, totalScore - areaMax);
+            
+            // Merge the backend scoring data with the submission
+            return {
+              ...submission,
+              capped_score: cappedScore,
+              excess_score: excessScore,
+              hr_points: totalScore
+            };
+          } catch (error) {
+            console.warn(`Failed to fetch scoring for submission ${submission.submission_id}:`, error);
+            return {
+              ...submission,
+              capped_score: 0,
+              excess_score: 0
+            };
+          }
+        })
+      );
+
+      setAreaSubmissions(enrichedSubmissions);
       setDraftScores(
-        dedupedSubmissions.reduce((acc, item) => {
+        enrichedSubmissions.reduce((acc, item) => {
           acc[item.id] = item.hr_points ?? '';
           return acc;
         }, {})
       );
       setExpandedAreaId(null);
-      console.log('✅ Fetched area submissions:', submissions.length, 'actual +', areasWithoutSubmissions.length, 'placeholders, deduplicated to', dedupedSubmissions.length, 'sorted I-X');
+      console.log('✅ Fetched area submissions:', submissions.length, 'actual +', areasWithoutSubmissions.length, 'placeholders, deduplicated to', enrichedSubmissions.length, 'sorted I-X with scoring data');
     } catch (error) {
       console.error('❌ Error fetching area submissions:', error);
     }
@@ -617,7 +727,11 @@ export default function Review() {
           setSelectedArea({
             ...area,
             ...data.area,
-            submission: data.submission,
+            submission: {
+              ...data.submission,
+              area_id: data.area?.area_id || localSubmission?.area_id || area.area_id,
+              application_id: data.submission?.application_id || localSubmission?.application_id || area.application_id
+            },
             criteria: data.criteria || [],
             totalScore: data.totalScore,
             part_id: data.submission?.part_id || area.part_id || null,
@@ -628,7 +742,11 @@ export default function Review() {
         } else {
           setSelectedArea({
             ...area,
-            submission: localSubmission || null,
+            submission: {
+              ...localSubmission,
+              area_id: localSubmission?.area_id || area.area_id,
+              application_id: localSubmission?.application_id || area.application_id
+            },
             criteria: [],
             part_id: localSubmission?.part_id || area.part_id || null,
             description: localSubmission?.area?.description || area.description || ''
@@ -639,7 +757,11 @@ export default function Review() {
         console.log('Backend not available, using local area data');
         setSelectedArea({
           ...area,
-          submission: localSubmission || null,
+          submission: {
+            ...localSubmission,
+            area_id: localSubmission?.area_id || area.area_id,
+            application_id: localSubmission?.application_id || area.application_id
+          },
           criteria: [],
           part_id: localSubmission?.part_id || area.part_id || null,
           description: localSubmission?.area?.description || area.description || ''
@@ -648,7 +770,15 @@ export default function Review() {
       }
     } catch (err) {
       console.error('Error in handleSelectArea:', err);
-      setSelectedArea({ ...area, submission: localSubmission || null, criteria: [] });
+      setSelectedArea({ 
+        ...area, 
+        submission: {
+          ...localSubmission,
+          area_id: localSubmission?.area_id || area.area_id,
+          application_id: localSubmission?.application_id || area.application_id
+        },
+        criteria: [] 
+      });
       setAreaCriteria([]);
     } finally {
       setLoadingAreaDetails(false);
@@ -820,14 +950,16 @@ export default function Review() {
 
   const summaryAreaScores = areaSubmissions
     .map((submission) => {
-      const score = Number(submission.hr_points || 0);
+      const cappedScore = Number(submission.capped_score || 0);
+      const excessScore = Number(submission.excess_score || 0);
       const max = Number(submission.area?.max_possible_points || 0);
-      const pct = max > 0 ? Math.min(100, Math.round((score / max) * 100)) : 0;
+      const pct = max > 0 ? Math.min(100, Math.round((cappedScore / max) * 100)) : 0;
 
       return {
         label: submission.area?.area_name || submission.area_id,
         max,
-        score,
+        cappedScore,      // base score (capped at area max)
+        excessScore,      // excess points beyond area max
         pct
       };
     })
