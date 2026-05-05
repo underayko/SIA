@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import { supabase } from "./supabase.js";
+import { RANKING_RUBRICS } from "./rankingRubrics.js";
 
 const app = express();
 app.use(cors());
@@ -729,11 +730,16 @@ app.get("/review/areas/:applicationId", async (req, res) => {
         (s) => s.area_id === area.area_id
       );
 
+      // Add maxPoints from RANKING_RUBRICS
+      const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(area.area_id));
+      const maxPoints = rubric ? rubric.maxPoints : area.max_possible_points;
+
       return {
         area_id: area.area_id,
         area_name: area.area_name,
         description: area.description,
         max_possible_points: area.max_possible_points,
+        maxPoints: maxPoints,
         template_file_path: area.template_file_path,
         is_csv_based: area.is_csv_based,
         submission: submission || null,
@@ -765,6 +771,12 @@ app.get("/review/area-detail/:areaId/:applicationId", async (req, res) => {
       return res.status(404).json({ error: "Area not found" });
     }
 
+    // Add maxPoints from RANKING_RUBRICS to the area object
+    const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(areaId));
+    if (rubric) {
+      area.maxPoints = rubric.maxPoints;
+    }
+
     // Get submission for this area
     const { data: submission, error: submissionError } = await supabase
       .from("area_submissions")
@@ -793,38 +805,44 @@ app.get("/review/area-detail/:areaId/:applicationId", async (req, res) => {
 
 // Helper function to return scoring criteria for each area
 function getAreaCriteria(areaId, areaName) {
-  const criteriaMap = {
-    1: [ // AREA I: Educational Qualifications
-      { label: "Associate Courses/Program (2 years)", maxPoints: 25 },
-      { label: "Bachelor's Degree (4-5 years)", maxPoints: 45 },
-      { label: "Diploma course (Above Bachelor's)", maxPoints: 46 },
-      { label: "Master's Program (MA/MS)", maxPoints: 47 },
-    ],
-    2: [ // AREA II: Research and Publications
-      { label: "Peer-reviewed research articles", maxPoints: 20 },
-      { label: "Published books/chapters", maxPoints: 20 },
-      { label: "International conference presentations", maxPoints: 15 },
-      { label: "Local conference presentations", maxPoints: 15 },
-    ],
-    3: [ // AREA III: Teaching Experience
-      { label: "Years of teaching experience", maxPoints: 30 },
-      { label: "Course development", maxPoints: 20 },
-      { label: "Instructional materials development", maxPoints: 15 },
-      { label: "Teaching awards/recognition", maxPoints: 15 },
-    ],
-    4: [ // AREA IV: Performance Evaluation
-      { label: "Faculty performance rating", maxPoints: 10 },
-      { label: "Student feedback score", maxPoints: 10 },
-      { label: "Peer review rating", maxPoints: 10 },
-    ],
-    5: [ // AREA V: Training and Seminars
-      { label: "Local seminars attended", maxPoints: 15 },
-      { label: "International training programs", maxPoints: 20 },
-      { label: "Certificates obtained", maxPoints: 15 },
-    ],
-  };
+  // Extract area code from areaName if available (e.g., "AREA II" -> 2)
+  let resolvedAreaId = areaId;
+  if (areaName) {
+    const match = areaName.match(/AREA\s+([IVX]+)/i);
+    if (match) {
+      const romanNum = match[1].toUpperCase();
+      const romanToNum = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10 };
+      resolvedAreaId = romanToNum[romanNum] || areaId;
+    }
+  }
 
-  return criteriaMap[areaId] || [];
+  // Find the rubric from RANKING_RUBRICS
+  const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(resolvedAreaId));
+  if (!rubric) return [];
+
+  // Flatten all subAreas and their children into a single criteria array
+  const criteria = [];
+  rubric.subAreas.forEach(subArea => {
+    if (subArea.children && subArea.children.length > 0) {
+      // If subArea has children, add each child as a criterion
+      subArea.children.forEach(child => {
+        criteria.push({
+          label: child.label || child.id,
+          title: child.title || child.label || child.id,
+          maxPoints: Number(child.maxPoints ?? 0)
+        });
+      });
+    } else {
+      // If no children, add the subArea itself as a criterion
+      criteria.push({
+        label: subArea.label || subArea.id,
+        title: subArea.title || subArea.label || subArea.id,
+        maxPoints: Number(subArea.maxPoints ?? 0)
+      });
+    }
+  });
+
+  return criteria;
 }
 
 function buildCriteriaScoreRows(criteria, existingScores = []) {
@@ -909,6 +927,12 @@ app.get("/review/submission-scoring/:submissionId", async (req, res) => {
       return res.status(404).json({ error: "Area not found" });
     }
 
+    // Add maxPoints from RANKING_RUBRICS to the area object
+    const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(submission.area_id));
+    if (rubric) {
+      area.maxPoints = rubric.maxPoints;
+    }
+
     const { data: savedScores, error: savedScoresError } = await supabase
       .from("area_submission_criterion_scores")
       .select("*")
@@ -976,12 +1000,18 @@ app.patch("/review/submission-scoring/:submissionId", async (req, res) => {
 
     const { data: area, error: areaError } = await supabase
       .from("areas")
-      .select("area_id, area_name")
+      .select("*")
       .eq("area_id", submission.area_id)
       .single();
 
     if (areaError || !area) {
       return res.status(404).json({ error: "Area not found" });
+    }
+
+    // Add maxPoints from RANKING_RUBRICS to the area object
+    const rubric = RANKING_RUBRICS.find(r => Number(r.areaId) === Number(submission.area_id));
+    if (rubric) {
+      area.maxPoints = rubric.maxPoints;
     }
 
     const rubricCriteria = getAreaCriteria(Number(submission.area_id), area.area_name);

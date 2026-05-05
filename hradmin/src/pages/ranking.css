@@ -124,7 +124,7 @@
   margin: 0;
   max-width: 900px;
   font-family: 'DM Sans', sans-serif;
-  font-size: clamp(17px, 2vw, 22px);
+  font-size: clamp(14px, 1.6vw, 18px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.02em;

@@ -80,13 +80,14 @@ export default function ReviewDetailView({
           ) : (
             <>
               <div style={{ marginBottom: '16px', padding: '12px', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '6px', fontSize: '13px', color: '#1e40af' }}>
-                <strong>Documents:</strong> Click the eye icon to view criteria &amp; submission details
+                <strong>Documents:</strong> Click an area card to view criteria &amp; submission details
               </div>
               {submittedAreas.map((area, i) => (
                 <AreaCard
                   key={area.id ?? i}
                   area={area}
                   isExpanded={expandedAreaId === area.id}
+                  isSelected={selectedArea?.id === area.id}
                   draftScore={draftScores[area.id] ?? ''}
                   onToggle={onToggleArea}
                   onDraftChange={onDraftScoreChange}

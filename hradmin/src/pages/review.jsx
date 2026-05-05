@@ -3,6 +3,7 @@ import Sidebar from '../components/sidenav';
 import '../styles/layout.css';
 import './review.css';
 import { supabase } from '../supabase';
+import { RANKING_RUBRICS } from '../data/rankingRubrics';
 import ApplicationsListView from './review/components/ApplicationsListView';
 import ReviewDetailView from './review/components/ReviewDetailView';
 import ReviewSummaryView from './review/components/ReviewSummaryView';
@@ -374,38 +375,69 @@ export default function Review() {
         };
       });
 
-      // 🆕 Add areas with rubric templates but no submissions yet
-      // These areas should appear for all applications so everyone is scored consistently
-      const areasWithRubrics = areas.filter(a => a.template_file_path); // Areas that have rubrics uploaded
+      // Create placeholders for ALL 10 areas from RANKING_RUBRICS
+      // This ensures every area is scorable, even if no submission yet
       const submittedAreaIds = new Set(submissions.map(s => s.area_id));
       
-      const areasWithoutSubmissions = areasWithRubrics
-        .filter(area => !submittedAreaIds.has(area.area_id))
-        .map(area => ({
-          id: `placeholder-${area.area_id}-${applicationId}`, // Unique placeholder ID
-          submission_id: `placeholder-${area.area_id}-${applicationId}`,
-          application_id: applicationId,
-          area_id: area.area_id,
-          file_path: null,
-          hr_points: 0,
-          vpaa_points: 0,
-          csv_total_average_rate: null,
-          uploaded_at: null,
-          is_placeholder: true, // Flag to show this is not an actual submission yet
-          area: area
-        }));
+      const areasWithoutSubmissions = RANKING_RUBRICS
+        .filter(rubric => !submittedAreaIds.has(rubric.areaId))
+        .map(rubric => {
+          // Always use "AREA [Roman] : [Name]" format
+          const areaName = `AREA ${rubric.areaCode}: ${rubric.areaName}`;
+          
+          return {
+            id: `placeholder-${rubric.areaId}-${applicationId}`,
+            submission_id: `placeholder-${rubric.areaId}-${applicationId}`,
+            application_id: applicationId,
+            area_id: rubric.areaId,
+            file_path: null,
+            hr_points: 0,
+            vpaa_points: 0,
+            csv_total_average_rate: null,
+            uploaded_at: null,
+            is_placeholder: true,
+            area: {
+              area_id: rubric.areaId,
+              area_name: areaName,
+              max_possible_points: rubric.maxPoints,
+              template_file_path: null,
+              description: `${areaName} rubric`
+            }
+          };
+        });
 
+      // Combine and sort by Roman numeral (I-X)
       const allSubmissions = [...submissions, ...areasWithoutSubmissions];
+      
+      // Deduplicate by area_id (keep first occurrence, which is actual submission if it exists)
+      const seenAreaIds = new Set();
+      const dedupedSubmissions = allSubmissions.filter(sub => {
+        if (seenAreaIds.has(sub.area_id)) return false;
+        seenAreaIds.add(sub.area_id);
+        return true;
+      });
+      
+      const romanToNum = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10 };
+      const extractRomanNum = (areaName) => {
+        const match = String(areaName || '').match(/AREA\s+([IVX]+)/i);
+        return match ? romanToNum[match[1].toUpperCase()] || 99 : 99;
+      };
+      
+      dedupedSubmissions.sort((a, b) => {
+        const aNum = extractRomanNum(a.area?.area_name);
+        const bNum = extractRomanNum(b.area?.area_name);
+        return aNum - bNum;
+      });
 
-      setAreaSubmissions(allSubmissions);
+      setAreaSubmissions(dedupedSubmissions);
       setDraftScores(
-        allSubmissions.reduce((acc, item) => {
+        dedupedSubmissions.reduce((acc, item) => {
           acc[item.id] = item.hr_points ?? '';
           return acc;
         }, {})
       );
       setExpandedAreaId(null);
-      console.log('✅ Fetched area submissions:', submissions.length, 'actual +', areasWithoutSubmissions.length, 'from rubrics, total:', allSubmissions.length, 'for application:', applicationId);
+      console.log('✅ Fetched area submissions:', submissions.length, 'actual +', areasWithoutSubmissions.length, 'placeholders, deduplicated to', dedupedSubmissions.length, 'sorted I-X');
     } catch (error) {
       console.error('❌ Error fetching area submissions:', error);
     }
@@ -560,6 +592,22 @@ export default function Review() {
     setLoadingAreaDetails(true);
     try {
       const localSubmission = areaSubmissions.find((s) => s.id === area.id);
+
+      // If this is a placeholder (generated from rubric template), don't call backend
+      if (localSubmission?.is_placeholder) {
+        setSelectedArea({
+          ...area,
+          submission: localSubmission || null,
+          criteria: [],
+          totalScore: 0,
+          part_id: localSubmission?.part_id || area.part_id || null,
+          label: `${area.label}`,
+          description: localSubmission?.area?.description || area.description || ''
+        });
+        setAreaCriteria([]);
+        return;
+      }
+
       const submissionId = area.submission_id || area.id;
 
       try {
@@ -573,7 +621,7 @@ export default function Review() {
             criteria: data.criteria || [],
             totalScore: data.totalScore,
             part_id: data.submission?.part_id || area.part_id || null,
-            label: `${data.area?.area_name || area.label}${data.submission?.part_id ? ` • Part ${data.submission.part_id}` : ''}`,
+            label: `${data.area?.area_name || area.label}`,
             description: data.area?.description || localSubmission?.area?.description || area.description || ''
           });
           setAreaCriteria(data.criteria || []);
@@ -614,7 +662,50 @@ export default function Review() {
 
   const handleSaveCriteriaScores = async (submissionId, criteriaScores) => {
     if (!submissionId) {
-      alert('No submission ID found');
+      console.warn('No submission ID found for save');
+      return;
+    }
+
+    // If this is a placeholder submission (generated locally from rubrics), skip backend and update local state
+    if (typeof submissionId === 'string' && submissionId.startsWith('placeholder-')) {
+      try {
+        setSavingAreaScore(true);
+        const totalScore = (criteriaScores || []).reduce((sum, c) => sum + Number(c.score || 0), 0);
+
+        const updatedSubmissions = areaSubmissions.map((sub) =>
+          sub.id === submissionId
+            ? { ...sub, hr_points: totalScore }
+            : sub
+        );
+        setAreaSubmissions(updatedSubmissions);
+
+        setSelectedArea((prev) => {
+          if (!prev) return prev;
+          const currentSubmissionId = prev.submission?.submission_id || prev.id;
+          if (String(currentSubmissionId) !== String(submissionId)) return prev;
+
+          return {
+            ...prev,
+            submission: { ...(prev.submission || {}), hr_points: totalScore },
+            criteria: criteriaScores,
+            totalScore,
+          };
+        });
+
+        setAreaCriteria(criteriaScores);
+
+        // update application HR score locally as well
+        const newTotalScore = updatedSubmissions.reduce((sum, submission) => sum + Number(submission.hr_points || 0), 0);
+        if (selectedApplication?.id) {
+          const updatedApp = { ...selectedApplication, hr_score: newTotalScore, display_score: selectedApplication.final_score ?? newTotalScore };
+          setSelectedApplication(updatedApp);
+          setApplications((prev) => prev.map((app) => app.id === selectedApplication.id ? updatedApp : app));
+        }
+      } catch (err) {
+        console.error('Error updating local placeholder score:', err);
+      } finally {
+        setSavingAreaScore(false);
+      }
       return;
     }
 
@@ -648,12 +739,10 @@ export default function Review() {
         return {
           ...prev,
           submission: updatedSubmission.submission || prev.submission,
-          criteria: updatedSubmission.criteria || criteriaScores,
+          criteria: criteriaScores,
           totalScore: updatedSubmission.totalScore,
         };
       });
-
-      setAreaCriteria(updatedSubmission.criteria || criteriaScores);
 
       const totalScore = updatedSubmissions.reduce((sum, submission) => {
         return sum + Number(submission.hr_points || 0);
@@ -714,7 +803,8 @@ export default function Review() {
     submission_id: submission.id,
     part_id: submission.part_id,
     file_path: submission.file_path,
-    label: submission.area.area_name + (submission.part_id ? ` • Part ${submission.part_id}` : ''),
+    label: submission.area.area_name,
+    area_id: submission.area.area_id,
     max: Number(submission.area.max_possible_points || 0),
     score: Number(submission.hr_points || 0).toFixed(2),
     criteria: [] // For now, we'll keep this empty since criteria would need separate implementation
