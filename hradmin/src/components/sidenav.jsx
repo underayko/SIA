@@ -17,13 +17,13 @@ const navLinks = [
     ),
   },
   {
-    to: '/ranking',
-    label: 'Ranking Rubrics',
+    to: '/usermanagement',
+    label: 'User Management',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-        <rect x="9" y="3" width="6" height="4" rx="1"/>
-        <path d="M9 12h6M9 16h4"/>
+        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
       </svg>
     ),
   },
@@ -37,22 +37,13 @@ const navLinks = [
     ),
   },
   {
-    to: '/perfeval',
-    label: 'Performance Evaluation',
+    to: '/ranking',
+    label: 'Ranking Rubrics',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2v20M2 12h20M6 6l12 12M18 6l-12 12"/>
-      </svg>
-    ),
-  },
-  {
-    to: '/usermanagement',
-    label: 'User Management',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+        <path d="M9 12h6M9 16h4"/>
       </svg>
     ),
   },
