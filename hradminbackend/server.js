@@ -795,123 +795,266 @@ app.get("/review/area-detail/:areaId/:applicationId", async (req, res) => {
 function getAreaCriteria(areaId, areaName) {
   const criteriaMap = {
     1: [ // AREA I: Educational Qualifications
-      { label: "Associate Courses/Program (2 years)", max: 25, weight: 0.25 },
-      { label: "Bachelor's Degree (4-5 years)", max: 45, weight: 0.45 },
-      { label: "Diploma course (Above Bachelor's)", max: 46, weight: 0.46 },
-      { label: "Master's Program (MA/MS)", max: 47, weight: 0.47 },
+      { label: "Associate Courses/Program (2 years)", maxPoints: 25 },
+      { label: "Bachelor's Degree (4-5 years)", maxPoints: 45 },
+      { label: "Diploma course (Above Bachelor's)", maxPoints: 46 },
+      { label: "Master's Program (MA/MS)", maxPoints: 47 },
     ],
     2: [ // AREA II: Research and Publications
-      { label: "Peer-reviewed research articles", max: 20, weight: 0.2 },
-      { label: "Published books/chapters", max: 20, weight: 0.2 },
-      { label: "International conference presentations", max: 15, weight: 0.15 },
-      { label: "Local conference presentations", max: 15, weight: 0.15 },
+      { label: "Peer-reviewed research articles", maxPoints: 20 },
+      { label: "Published books/chapters", maxPoints: 20 },
+      { label: "International conference presentations", maxPoints: 15 },
+      { label: "Local conference presentations", maxPoints: 15 },
     ],
     3: [ // AREA III: Teaching Experience
-      { label: "Years of teaching experience", max: 30, weight: 0.3 },
-      { label: "Course development", max: 20, weight: 0.2 },
-      { label: "Instructional materials development", max: 15, weight: 0.15 },
-      { label: "Teaching awards/recognition", max: 15, weight: 0.15 },
+      { label: "Years of teaching experience", maxPoints: 30 },
+      { label: "Course development", maxPoints: 20 },
+      { label: "Instructional materials development", maxPoints: 15 },
+      { label: "Teaching awards/recognition", maxPoints: 15 },
     ],
     4: [ // AREA IV: Performance Evaluation
-      { label: "Faculty performance rating", max: 10, weight: 0.4 },
-      { label: "Student feedback score", max: 10, weight: 0.3 },
-      { label: "Peer review rating", max: 10, weight: 0.3 },
+      { label: "Faculty performance rating", maxPoints: 10 },
+      { label: "Student feedback score", maxPoints: 10 },
+      { label: "Peer review rating", maxPoints: 10 },
     ],
     5: [ // AREA V: Training and Seminars
-      { label: "Local seminars attended", max: 15, weight: 0.3 },
-      { label: "International training programs", max: 20, weight: 0.4 },
-      { label: "Certificates obtained", max: 15, weight: 0.3 },
+      { label: "Local seminars attended", maxPoints: 15 },
+      { label: "International training programs", maxPoints: 20 },
+      { label: "Certificates obtained", maxPoints: 15 },
     ],
   };
 
   return criteriaMap[areaId] || [];
 }
 
-// GET /review/area-evaluation/:applicationId/:areaId
-// Get complete area evaluation breakdown with editable scores
-app.get("/review/area-evaluation/:applicationId/:areaId", async (req, res) => {
-  const { applicationId, areaId } = req.params;
+function buildCriteriaScoreRows(criteria, existingScores = []) {
+  const scoreByKey = new Map((existingScores || []).map((row) => [row.criterion_key, row]));
+
+  return criteria.map((criterion) => {
+    const saved = scoreByKey.get(criterion.label);
+    const maxPoints = Number(criterion.maxPoints ?? criterion.max ?? 0);
+    const score = Number(saved?.score || 0);
+    return {
+      criterion_key: criterion.label,
+      label: criterion.label,
+      title: criterion.title || criterion.label,
+      maxPoints,
+      score,
+      cappedScore: Math.min(score, maxPoints),
+      excessScore: Math.max(0, score - maxPoints),
+      score_id: saved?.score_id || null,
+      notes: saved?.notes || null,
+      reviewed_at: saved?.reviewed_at || null,
+    };
+  });
+}
+
+async function updateApplicationHrScore(applicationId) {
+  const { data: allSubmissions, error: allSubmissionsError } = await supabase
+    .from("area_submissions")
+    .select("hr_points")
+    .eq("application_id", applicationId);
+
+  if (allSubmissionsError) throw allSubmissionsError;
+
+  const totalScore = (allSubmissions || []).reduce((sum, sub) => sum + Number(sub.hr_points || 0), 0);
+
+  const { error: appUpdateError } = await supabase
+    .from("applications")
+    .update({ hr_score: totalScore })
+    .eq("application_id", applicationId);
+
+  if (appUpdateError) throw appUpdateError;
+
+  return totalScore;
+}
+
+// GET /review/submission-scoring/:submissionId
+// Get rubric criteria and saved scores for a specific submission
+app.get("/review/submission-scoring/:submissionId", async (req, res) => {
+  const { submissionId } = req.params;
 
   try {
-    // Get area details
+    const findSubmission = async () => {
+      const primary = await supabase
+        .from("area_submissions")
+        .select("*")
+        .eq("submission_id", submissionId)
+        .maybeSingle();
+
+      if (primary.data) {
+        return primary;
+      }
+
+      return supabase
+        .from("area_submissions")
+        .select("*")
+        .eq("id", submissionId)
+        .maybeSingle();
+    };
+
+    const { data: submission, error: submissionError } = await findSubmission();
+
+    if (submissionError || !submission) {
+      return res.status(404).json({ error: "Submission not found" });
+    }
+
     const { data: area, error: areaError } = await supabase
       .from("areas")
       .select("*")
-      .eq("area_id", areaId)
+      .eq("area_id", submission.area_id)
       .single();
 
     if (areaError || !area) {
       return res.status(404).json({ error: "Area not found" });
     }
 
-    // Get submission for this area
-    const { data: submission, error: submissionError } = await supabase
-      .from("area_submissions")
+    const { data: savedScores, error: savedScoresError } = await supabase
+      .from("area_submission_criterion_scores")
       .select("*")
-      .eq("area_id", areaId)
-      .eq("application_id", applicationId)
-      .single();
+      .eq("submission_id", submissionId)
+      .order("criterion_key", { ascending: true });
 
-    // Get all submissions for this application to calculate total
-    const { data: allSubmissions, error: allSubmissionsError } = await supabase
-      .from("area_submissions")
-      .select("hr_points")
-      .eq("application_id", applicationId);
+    if (savedScoresError) throw savedScoresError;
 
-    const totalScore = (allSubmissions || []).reduce((sum, sub) => {
-      return sum + Number(sub.hr_points || 0);
-    }, 0);
-
-    const criteria = getAreaCriteria(parseInt(areaId), area.area_name);
-
-    // Generate score breakdown for the criteria table
-    const criteriaWithScores = criteria.map((criterion, idx) => ({
-      ...criterion,
-      score: submission ? Number(submission.hr_points || 0) * (criterion.weight || 0.2) : 0
-    }));
+    const criteria = buildCriteriaScoreRows(getAreaCriteria(parseInt(submission.area_id, 10), area.area_name), savedScores || []);
+    const totalScore = criteria.reduce((sum, criterion) => sum + Number(criterion.score || 0), 0);
+    const totalExcessScore = criteria.reduce((sum, criterion) => sum + Number(criterion.excessScore || 0), 0);
 
     res.json({
       area,
       submission: submission || null,
-      criteria: criteriaWithScores,
+      criteria,
       totalScore,
+      totalExcessScore,
       areaScore: submission?.hr_points || 0,
     });
   } catch (err) {
-    console.error("Error fetching area evaluation:", err);
-    res.status(500).json({ error: "Failed to fetch area evaluation" });
+    console.error("Error fetching submission scoring:", err);
+    res.status(500).json({ error: "Failed to fetch submission scoring" });
   }
 });
 
-// PATCH /review/area-score/:submissionId
-// Update score for a specific area submission
-app.patch("/review/area-score/:submissionId", async (req, res) => {
+// PATCH /review/submission-scoring/:submissionId
+// Update scores for a specific submission's criteria rows
+app.patch("/review/submission-scoring/:submissionId", async (req, res) => {
   const { submissionId } = req.params;
-  const { hrPoints, vpaaPoints } = req.body;
+  const { criteria } = req.body;
 
   if (!submissionId) {
     return res.status(400).json({ error: "submissionId is required" });
   }
 
+  if (!Array.isArray(criteria)) {
+    return res.status(400).json({ error: "criteria array is required" });
+  }
+
   try {
-    const { data, error } = await supabase
-      .from("area_submissions")
-      .update({
-        hr_points: hrPoints !== undefined ? hrPoints : undefined,
-        vpaa_points: vpaaPoints !== undefined ? vpaaPoints : undefined,
-      })
-      .eq("submission_id", submissionId)
+    const findSubmission = async () => {
+      const primary = await supabase
+        .from("area_submissions")
+        .select("*")
+        .eq("submission_id", submissionId)
+        .maybeSingle();
+
+      if (primary.data) {
+        return primary;
+      }
+
+      return supabase
+        .from("area_submissions")
+        .select("*")
+        .eq("id", submissionId)
+        .maybeSingle();
+    };
+
+    const { data: submission, error: submissionError } = await findSubmission();
+
+    if (submissionError || !submission) {
+      return res.status(404).json({ error: "Submission not found" });
+    }
+
+    const { data: area, error: areaError } = await supabase
+      .from("areas")
+      .select("area_id, area_name")
+      .eq("area_id", submission.area_id)
+      .single();
+
+    if (areaError || !area) {
+      return res.status(404).json({ error: "Area not found" });
+    }
+
+    const rubricCriteria = getAreaCriteria(Number(submission.area_id), area.area_name);
+    const rubricByKey = new Map(rubricCriteria.map((criterion) => [criterion.label, criterion]));
+
+    const rowsToUpsert = criteria.map((criterion) => {
+      const rubric = rubricByKey.get(criterion.criterion_key || criterion.label);
+      const scoreValue = Number.parseFloat(criterion.score);
+      const maxPoints = Number(criterion.maxPoints ?? criterion.max_points ?? rubric?.maxPoints ?? rubric?.max ?? 0);
+
+      if (!rubric) {
+        throw new Error(`Unknown criterion: ${criterion.criterion_key || criterion.label}`);
+      }
+
+      if (!Number.isFinite(scoreValue)) {
+        throw new Error(`Invalid score for ${rubric.label}`);
+      }
+
+      if (scoreValue < 0) {
+        throw new Error(`Score for ${rubric.label} must be 0 or higher`);
+      }
+
+      const excessScore = Math.max(0, scoreValue - maxPoints);
+      const cappedScore = Math.min(scoreValue, maxPoints);
+
+      return {
+        submission_id: Number(submissionId),
+        application_id: Number(submission.application_id),
+        area_id: Number(submission.area_id),
+        part_id: submission.part_id,
+        criterion_key: rubric.label,
+        criterion_label: rubric.label,
+        criterion_title: criterion.title || rubric.title || rubric.label,
+        criterion_max_points: maxPoints,
+        score: scoreValue,
+        capped_score: cappedScore,
+        excess_score: excessScore,
+        reviewed_at: new Date().toISOString(),
+      };
+    });
+
+    const { data: savedRows, error: upsertError } = await supabase
+      .from("area_submission_criterion_scores")
+      .upsert(rowsToUpsert, { onConflict: "submission_id,criterion_key" })
       .select();
 
-    if (error) throw error;
+    if (upsertError) throw upsertError;
+
+    const totalScore = rowsToUpsert.reduce((sum, row) => sum + Number(row.score || 0), 0);
+    const totalExcessScore = rowsToUpsert.reduce((sum, row) => sum + Number(row.excess_score || 0), 0);
+
+    const { data: updatedSubmission, error: submissionUpdateError } = await supabase
+      .from("area_submissions")
+      .update({ hr_points: totalScore })
+      .eq(submission?.submission_id != null ? "submission_id" : "id", submission?.submission_id != null ? submission.submission_id : submissionId)
+      .select("*")
+      .single();
+
+    if (submissionUpdateError) throw submissionUpdateError;
+
+    const applicationTotalScore = await updateApplicationHrScore(submission.application_id);
 
     res.json({
-      message: "Score updated successfully",
-      submission: data && data.length > 0 ? data[0] : null,
+      message: "Criteria scores saved successfully",
+      submission: updatedSubmission,
+      criteria: savedRows,
+      totalScore,
+      totalExcessScore,
+      applicationTotalScore,
     });
   } catch (err) {
-    console.error("Error updating score:", err);
-    res.status(500).json({ error: "Failed to update score" });
+    console.error("Error saving criteria scores:", err);
+    res.status(500).json({ error: err.message || "Failed to save criteria scores" });
   }
 });
 

@@ -28,9 +28,8 @@ export default function ReviewDetailView({
   selectedArea,
   areaCriteria,
   onCloseAreaDetails,
-  onAreaScoreChange,
+  onSaveCriteriaScores,
   savingAreaScore,
-  onViewDocument,
 }) {
   return (
     <>
@@ -127,14 +126,13 @@ export default function ReviewDetailView({
         <div className="pdf-panel">
           {selectedArea ? (
             <ScoringCriteriaPanel
-              area={selectedArea}
-              submission={areaSubmissions.find((s) => s.id === selectedArea.id)}
-              criteria={areaCriteria}
+              area={selectedArea.area || selectedArea}
+              submission={selectedArea.submission || areaSubmissions.find((s) => s.id === selectedArea.id)}
+              criteria={selectedArea.criteria || areaCriteria}
               onClose={onCloseAreaDetails}
               areaEvalData={null}
-              onScoreChange={onAreaScoreChange}
+              onSaveCriteriaScores={onSaveCriteriaScores}
               isSavingScore={savingAreaScore}
-              onViewDocument={onViewDocument}
             />
           ) : (
             <>

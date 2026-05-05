@@ -168,7 +168,10 @@ export type Database = {
           csv_total_average_rate: number | null
           file_path: string | null
           hr_points: number | null
+          part_id: string | null
           submission_id: number
+          user_id: number | null
+          cycle_id: number | null
           uploaded_at: string | null
           vpaa_points: number | null
         }
@@ -178,7 +181,10 @@ export type Database = {
           csv_total_average_rate?: number | null
           file_path?: string | null
           hr_points?: number | null
+          part_id?: string | null
           submission_id?: number
+          user_id?: number | null
+          cycle_id?: number | null
           uploaded_at?: string | null
           vpaa_points?: number | null
         }
@@ -188,7 +194,10 @@ export type Database = {
           csv_total_average_rate?: number | null
           file_path?: string | null
           hr_points?: number | null
+          part_id?: string | null
           submission_id?: number
+          user_id?: number | null
+          cycle_id?: number | null
           uploaded_at?: string | null
           vpaa_points?: number | null
         }
@@ -206,6 +215,89 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "areas"
             referencedColumns: ["area_id"]
+          },
+        ]
+      }
+      area_submission_criterion_scores: {
+        Row: {
+          application_id: number
+          area_id: number
+          criterion_key: string
+          criterion_label: string
+          criterion_max_points: number
+          capped_score: number | null
+          criterion_title: string | null
+          notes: string | null
+          part_id: string | null
+          excess_score: number | null
+          reviewed_at: string | null
+          reviewed_by: number | null
+          score: number
+          score_id: number
+          submission_id: number
+        }
+        Insert: {
+          application_id: number
+          area_id: number
+          criterion_key: string
+          criterion_label: string
+          criterion_max_points?: number
+          capped_score?: number | null
+          criterion_title?: string | null
+          notes?: string | null
+          part_id?: string | null
+          excess_score?: number | null
+          reviewed_at?: string | null
+          reviewed_by?: number | null
+          score?: number
+          score_id?: number
+          submission_id: number
+        }
+        Update: {
+          application_id?: number
+          area_id?: number
+          criterion_key?: string
+          criterion_label?: string
+          criterion_max_points?: number
+          capped_score?: number | null
+          criterion_title?: string | null
+          notes?: string | null
+          part_id?: string | null
+          excess_score?: number | null
+          reviewed_at?: string | null
+          reviewed_by?: number | null
+          score?: number
+          score_id?: number
+          submission_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "area_submission_criterion_scores_application_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["application_id"]
+          },
+          {
+            foreignKeyName: "area_submission_criterion_scores_area_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["area_id"]
+          },
+          {
+            foreignKeyName: "area_submission_criterion_scores_submission_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "area_submissions"
+            referencedColumns: ["submission_id"]
+          },
+          {
+            foreignKeyName: "area_submission_criterion_scores_participant_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["user_id"]
           },
         ]
       }

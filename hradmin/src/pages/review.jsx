@@ -8,7 +8,6 @@ import ReviewDetailView from './review/components/ReviewDetailView';
 import ReviewSummaryView from './review/components/ReviewSummaryView';
 import {
   FacultyInfoCard,
-  DocumentViewer,
   ScoringCriteriaPanel,
   AreaCard,
   SummaryView,
@@ -37,7 +36,6 @@ export default function Review() {
   const [editingFinalScore, setEditingFinalScore] = useState(false);
   const [draftFinalScore, setDraftFinalScore] = useState('');
   const [savingFinalScore, setSavingFinalScore] = useState(false);
-  const [viewingDocument, setViewingDocument] = useState(null);
   const [applicationPage, setApplicationPage] = useState(1);
 
   const APPLICATION_PAGE_SIZE = 10;
@@ -561,28 +559,30 @@ export default function Review() {
   const handleSelectArea = async (area) => {
     setLoadingAreaDetails(true);
     try {
-      // Find the submission from local state
-      const localSubmission = areaSubmissions.find(s => s.id === area.id);
-      
-      // Get area ID and application ID
-      const areaId = area.area_id || area.id || 1;
-      const appId = selectedApplication?.id;
-      
-      // Try to fetch detailed area evaluation data from backend for criteria
+      const localSubmission = areaSubmissions.find((s) => s.id === area.id);
+      const submissionId = area.submission_id || area.id;
+
       try {
-        const response = await fetch(`http://localhost:5000/review/area-evaluation/${appId}/${areaId}`);
+        const response = await fetch(`http://localhost:5000/review/submission-scoring/${submissionId}`);
         if (response.ok) {
           const data = await response.json();
           setSelectedArea({
             ...area,
             ...data.area,
-            description: data.area?.description || area.description || ''
+            submission: data.submission,
+            criteria: data.criteria || [],
+            totalScore: data.totalScore,
+            part_id: data.submission?.part_id || area.part_id || null,
+            label: `${data.area?.area_name || area.label}${data.submission?.part_id ? ` • Part ${data.submission.part_id}` : ''}`,
+            description: data.area?.description || localSubmission?.area?.description || area.description || ''
           });
           setAreaCriteria(data.criteria || []);
         } else {
-          // Fall back to local area data if backend fails
           setSelectedArea({
             ...area,
+            submission: localSubmission || null,
+            criteria: [],
+            part_id: localSubmission?.part_id || area.part_id || null,
             description: localSubmission?.area?.description || area.description || ''
           });
           setAreaCriteria([]);
@@ -591,13 +591,16 @@ export default function Review() {
         console.log('Backend not available, using local area data');
         setSelectedArea({
           ...area,
+          submission: localSubmission || null,
+          criteria: [],
+          part_id: localSubmission?.part_id || area.part_id || null,
           description: localSubmission?.area?.description || area.description || ''
         });
         setAreaCriteria([]);
       }
     } catch (err) {
       console.error('Error in handleSelectArea:', err);
-      setSelectedArea(area);
+      setSelectedArea({ ...area, submission: localSubmission || null, criteria: [] });
       setAreaCriteria([]);
     } finally {
       setLoadingAreaDetails(false);
@@ -609,7 +612,7 @@ export default function Review() {
     setAreaCriteria([]);
   };
 
-  const handleAreaScoreChange = async (submissionId, newScore) => {
+  const handleSaveCriteriaScores = async (submissionId, criteriaScores) => {
     if (!submissionId) {
       alert('No submission ID found');
       return;
@@ -617,25 +620,41 @@ export default function Review() {
 
     setSavingAreaScore(true);
     try {
-      const response = await fetch(`http://localhost:5000/review/area-score/${submissionId}`, {
+      const response = await fetch(`http://localhost:5000/review/submission-scoring/${submissionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hrPoints: newScore }),
+        body: JSON.stringify({ criteria: criteriaScores }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update score');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update score');
       }
 
       const updatedSubmission = await response.json();
-      
-      // Update local state
+
       const updatedSubmissions = areaSubmissions.map((sub) =>
-        sub.id === submissionId ? { ...sub, hr_points: newScore } : sub
+        sub.id === Number(submissionId)
+          ? { ...sub, hr_points: updatedSubmission.totalScore ?? updatedSubmission.submission?.hr_points ?? sub.hr_points }
+          : sub
       );
       setAreaSubmissions(updatedSubmissions);
 
-      // Update total score in application
+      setSelectedArea((prev) => {
+        if (!prev) return prev;
+        const currentSubmissionId = prev.submission?.submission_id || prev.id;
+        if (Number(currentSubmissionId) !== Number(submissionId)) return prev;
+
+        return {
+          ...prev,
+          submission: updatedSubmission.submission || prev.submission,
+          criteria: updatedSubmission.criteria || criteriaScores,
+          totalScore: updatedSubmission.totalScore,
+        };
+      });
+
+      setAreaCriteria(updatedSubmission.criteria || criteriaScores);
+
       const totalScore = updatedSubmissions.reduce((sum, submission) => {
         return sum + Number(submission.hr_points || 0);
       }, 0);
@@ -654,7 +673,6 @@ export default function Review() {
         }
       }
 
-      alert('Score updated successfully');
     } catch (err) {
       console.error('Error updating score:', err);
       alert('Failed to update score: ' + err.message);
@@ -693,7 +711,10 @@ export default function Review() {
   // Convert area submissions to the format expected by AreaCard
   const submittedAreas = areaSubmissions.map(submission => ({
     id: submission.id,
-    label: submission.area.area_name,
+    submission_id: submission.id,
+    part_id: submission.part_id,
+    file_path: submission.file_path,
+    label: submission.area.area_name + (submission.part_id ? ` • Part ${submission.part_id}` : ''),
     max: Number(submission.area.max_possible_points || 0),
     score: Number(submission.hr_points || 0).toFixed(2),
     criteria: [] // For now, we'll keep this empty since criteria would need separate implementation
@@ -800,9 +821,8 @@ export default function Review() {
               selectedArea={selectedArea}
               areaCriteria={areaCriteria}
               onCloseAreaDetails={handleCloseAreaDetails}
-              onAreaScoreChange={handleAreaScoreChange}
+              onSaveCriteriaScores={handleSaveCriteriaScores}
               savingAreaScore={savingAreaScore}
-              onViewDocument={setViewingDocument}
             />
           )}
 
@@ -827,14 +847,6 @@ export default function Review() {
         </div>
       </div>
 
-      {/* Document Viewer Modal */}
-      {viewingDocument && (
-        <DocumentViewer 
-          fileUrl={viewingDocument.url}
-          fileName={viewingDocument.name}
-          onClose={() => setViewingDocument(null)}
-        />
-      )}
     </div>
   );
 }
