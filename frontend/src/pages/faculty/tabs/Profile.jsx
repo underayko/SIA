@@ -31,7 +31,6 @@ import {
     X,
     Plus,
     Camera,
-    Clock,
     AlertCircle,
     Upload,
     Shield,
@@ -59,8 +58,6 @@ const styles = `
     --danger-pale: #fdf0ee;
     --blue: #2471a3;
     --blue-pale: #eaf3fb;
-    --pending: #d35400;
-    --pending-pale: #fef0e6;
   }
 
   /* ── HERO ── */
@@ -97,12 +94,6 @@ const styles = `
   }
   .pf-avatar-wrap:hover .pf-avatar-overlay { opacity:1; }
   .pf-avatar-label { font-size:9px; font-weight:700; letter-spacing:0.5px; line-height:1; }
-  .pf-avatar-pending {
-    position:absolute; bottom:0; right:0;
-    width:20px; height:20px; border-radius:50%;
-    background:var(--pending); border:2px solid var(--white);
-    display:flex; align-items:center; justify-content:center;
-  }
 
   .pf-hero-info { flex:1; min-width:0; position:relative; z-index:1; }
   .pf-hero-tag  {
@@ -199,14 +190,6 @@ const styles = `
   .pf-edit-btn-cancel { background:var(--off-white); color:var(--text-muted); }
   .pf-edit-btn-cancel:hover { background:var(--border); }
 
-  /* Pending badge on a field */
-  .pf-pending-badge {
-    display:inline-flex; align-items:center; gap:4px;
-    font-size:10.5px; font-weight:600; color:var(--pending);
-    background:var(--pending-pale); border:1px solid rgba(211,84,0,0.2);
-    padding:2px 8px; border-radius:6px; margin-top:3px;
-  }
-
   /* ── EDUCATION LIST (editable) ── */
   .pf-edu-list { display:flex; flex-direction:column; gap:12px; }
   .pf-edu-item {
@@ -280,7 +263,6 @@ const styles = `
     animation: pfFadeUp 0.5s 0.3s ease both;
   }
   .pf-notice-blue    { background:var(--blue-pale); border:1px solid rgba(36,113,163,0.2); color:var(--blue); }
-  .pf-notice-pending { background:var(--pending-pale); border:1px solid rgba(211,84,0,0.2); color:var(--pending); }
   .pf-notice strong  { color:var(--gc-green-dark); }
 
     /* ── TOASTS ── */
@@ -502,13 +484,6 @@ const styles = `
 const DEFAULT_PROFILE_EDIT_OPEN = false;
 const PROFILE_PICTURE_BUCKET =
     import.meta.env.VITE_SUPABASE_PROFILE_PICTURE_BUCKET || "profile-pictures";
-const CHANGE_REQUEST_TABLE_CANDIDATES = (
-    import.meta.env.VITE_SUPABASE_PROFILE_CHANGE_TABLE_CANDIDATES ||
-    "profile_change_requests,profilechangerequests,user_profile_change_requests"
-)
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
 const USER_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_USER_TABLE_CANDIDATES ||
     "users"
@@ -556,11 +531,6 @@ function getFirstValue(source, keys, fallback = null) {
     return fallback;
 }
 
-function stripUndefined(obj) {
-    return Object.fromEntries(
-        Object.entries(obj).filter(([, value]) => value !== undefined),
-    );
-}
 
 function normalizeStatus(value) {
     return String(value || "").trim().toLowerCase();
@@ -812,7 +782,6 @@ function normalizeEducationEntry(entry) {
             levelClass: "edu-bachelor",
             degree: entry,
             school: "",
-            pending: false,
         };
     }
 
@@ -827,7 +796,6 @@ function normalizeEducationEntry(entry) {
                   : "edu-bachelor",
         degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
         school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
-        pending: false,
     };
 }
 
@@ -837,7 +805,6 @@ function normalizeEligibilityEntry(entry) {
             typeof entry === "string"
                 ? entry
                 : String(getFirstValue(entry, ["text", "name", "title"], "Eligibility")),
-        pending: false,
     };
 }
 
@@ -846,14 +813,12 @@ function normalizeDoctorateEntry(entry) {
         return {
             degree: entry,
             school: "",
-            pending: false,
         };
     }
 
     return {
         degree: String(getFirstValue(entry, ["degree", "title", "name"], "Untitled degree")),
         school: String(getFirstValue(entry, ["school", "institution", "meta"], "")),
-        pending: false,
     };
 }
 
@@ -863,7 +828,6 @@ function buildEducationPayload(educationList) {
             level: entry.level,
             degree: entry.degree,
             institution: entry.school,
-            pending: Boolean(entry.pending),
         })),
         educational_attainment: educationList[0]?.degree || null,
     };
@@ -873,7 +837,6 @@ function buildEligibilityPayload(eligibilityList) {
     return {
         eligibility_exams_json: eligibilityList.map((entry) => ({
             text: entry.text,
-            pending: Boolean(entry.pending),
         })),
         eligibility_exams: eligibilityList.map((entry) => entry.text).join("\n") || null,
     };
@@ -884,7 +847,6 @@ function buildDoctoratePayload(doctoralList) {
         doctorate: doctoralList.map((entry) => ({
             degree: entry.degree,
             institution: entry.school,
-            pending: Boolean(entry.pending),
         })),
     };
 }
@@ -903,7 +865,7 @@ function getStrength(pw) {
 }
 
 // ── Reusable editable field component ──
-function EditableField({ label, value, onSave, pending, disabled }) {
+function EditableField({ label, value, onSave, disabled }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
     const inputType = "text";
@@ -953,8 +915,7 @@ function EditableField({ label, value, onSave, pending, disabled }) {
                     <div className="pf-value" style={{ flex: 1 }}>
                         {value}
                     </div>
-                    {/* Pencil hidden when: field has a pending change, or the edit window is closed */}
-                    {!pending && !disabled && (
+                    {!disabled && (
                         <button
                             className="pf-edit-btn pf-edit-btn-pencil"
                             onClick={() => setEditing(true)}
@@ -964,16 +925,11 @@ function EditableField({ label, value, onSave, pending, disabled }) {
                     )}
                 </div>
             )}
-            {pending && (
-                <div className="pf-pending-badge">
-                    <Clock size={10} /> Pending HR verification
-                </div>
-            )}
         </div>
     );
 }
 
-function NumberField({ label, value, onSave, pending, disabled, min = 0 }) {
+function NumberField({ label, value, onSave, disabled, min = 0 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
 
@@ -1017,7 +973,7 @@ function NumberField({ label, value, onSave, pending, disabled, min = 0 }) {
                     <div className="pf-value" style={{ flex: 1 }}>
                         {value ?? ""}
                     </div>
-                    {!pending && !disabled && (
+                    {!disabled && (
                         <button
                             className="pf-edit-btn pf-edit-btn-pencil"
                             onClick={() => setEditing(true)}
@@ -1025,11 +981,6 @@ function NumberField({ label, value, onSave, pending, disabled, min = 0 }) {
                             <Pencil size={13} />
                         </button>
                     )}
-                </div>
-            )}
-            {pending && (
-                <div className="pf-pending-badge">
-                    <Clock size={10} /> Pending HR verification
                 </div>
             )}
         </div>
@@ -1441,14 +1392,14 @@ function DoctoralModal({ isOpen, onClose, onSubmit, isLoading, initialData = nul
                         );
                     }
 
-
 export default function Profile({ user }) {
     const { refreshProfile } = useAuth();
     const userId = user?.user_id ?? user?.id ?? null;
     const userEmail = user?.domain_email ?? user?.email ?? null;
-    
+
     // Initialize state from user prop if available
     const [profileEditOpen, setProfileEditOpen] = useState(DEFAULT_PROFILE_EDIT_OPEN);
+    const [profileEditWindowResolved, setProfileEditWindowResolved] = useState(false);
     const [profileEditWindowLabel, setProfileEditWindowLabel] = useState("");
     const [activeCycleRow, setActiveCycleRow] = useState(null);
     const [profilePicture, setProfilePicture] = useState(user?.profile_picture || user?.avatar_url || "");
@@ -1464,10 +1415,6 @@ export default function Profile({ user }) {
     const [teachingYears, setTeachingYears] = useState(String(user?.teaching_experience_years ?? user?.teaching_years ?? user?.years_teaching ?? ""));
     const [industryYears, setIndustryYears] = useState(String(user?.industry_experience_years ?? user?.industry_years ?? user?.years_industry ?? ""));
     const [performanceChip, setPerformanceChip] = useState(user?.current_rank || "");
-    const [avatarPending, setAvatarPending] = useState(false);
-    const [changeRequestTable, setChangeRequestTable] = useState(null);
-
-    const [pendingFields, setPendingFields] = useState({});
 
     // Parse education from user prop
     const parseUserEducation = () => {
@@ -1605,47 +1552,10 @@ export default function Profile({ user }) {
         if (field === "industryYears") setIndustryYears(value);
     };
 
-    const getCurrentFieldValue = (field) => {
-        if (field === "firstName") return firstName;
-        if (field === "lastName") return lastName;
-        if (field === "middleName") return middleName;
-        if (field === "altEmail") return altEmail;
-        if (field === "teachingYears") return teachingYears;
-        if (field === "industryYears") return industryYears;
-        return "";
-    };
-
-    const writeChangeRequest = async ({ field, oldValue, newValue, meta }) => {
-        const nowIso = new Date().toISOString();
-        const payload = stripUndefined({
-            user_id: userId,
-            email: userEmail,
-            field,
-            old_value: oldValue,
-            new_value: newValue,
-            status: "pending",
-            requested_at: nowIso,
-            created_at: nowIso,
-            meta,
-        });
-
-        const targetTables = changeRequestTable
-            ? [changeRequestTable, ...CHANGE_REQUEST_TABLE_CANDIDATES]
-            : CHANGE_REQUEST_TABLE_CANDIDATES;
-
-        for (const table of targetTables) {
-            const result = await supabase.from(table).insert([payload]).select("id");
-            if (!result.error) {
-                setChangeRequestTable(table);
-                return result.data?.[0] || null;
-            }
-        }
-
-        return null;
-    };
 
     useEffect(() => {
         let isActive = true;
+        setProfileEditWindowResolved(false);
 
         const hydrateProfile = async () => {
             // Parallelize expensive probes: cycles + user row
@@ -1682,6 +1592,7 @@ export default function Profile({ user }) {
                     setActiveCycleRow(null);
                 }
             }
+            if (isActive) setProfileEditWindowResolved(true);
 
             // Apply userRow if found
             if (isActive && userRow) {
@@ -1721,20 +1632,8 @@ export default function Profile({ user }) {
                 if (doctorate.length > 0) setDoctoralList(doctorate.map(normalizeDoctorateEntry));
             }
 
-            // Fetch change requests and area submissions in parallel using targeted queries
+            // Fetch area submissions using targeted queries.
             const useNumeric = isNumericId(userId);
-
-            const changeRequestsPromise = (async () => {
-                // if we already resolved a change request table, query it directly first
-                const candidateTable = changeRequestTable || (CHANGE_REQUEST_TABLE_CANDIDATES[0] || null);
-                if (candidateTable) {
-                    const q = supabase.from(candidateTable).select("*").limit(200);
-                    const r = await q;
-                    if (!r.error && Array.isArray(r.data)) return { table: candidateTable, rows: r.data };
-                }
-                // fallback to probing known candidates (this may probe multiple tables)
-                return await queryRowsWithTableFromCandidates(CHANGE_REQUEST_TABLE_CANDIDATES, 200);
-            })();
 
             const areaSubmissionsPromise = (async () => {
                 const subsTable = AREA_SUBMISSION_TABLE_CANDIDATES[0] || "area_submissions";
@@ -1753,68 +1652,7 @@ export default function Profile({ user }) {
                 return await queryRowsWithTableFromCandidates(AREA_SUBMISSION_TABLE_CANDIDATES, 100);
             })();
 
-            const [requestResult, areaResult] = await Promise.all([changeRequestsPromise, areaSubmissionsPromise]);
-
-            // process change requests
-            const requestRows = (requestResult?.rows || []).filter((row) => {
-                const status = normalizeStatus(getFirstValue(row, ["status", "request_status"], "pending"));
-                if (status !== "pending") return false;
-
-                const rowUserId = String(getFirstValue(row, ["user_id", "uid", "faculty_id"], ""));
-                const rowEmail = String(getFirstValue(row, ["email", "user_email"], ""));
-                return (useNumeric && rowUserId && rowUserId === String(userId)) || (!useNumeric && userEmail && rowEmail === String(userEmail));
-            });
-
-            if (isActive) {
-                setChangeRequestTable(requestResult?.table || null);
-
-                const nextPending = {};
-                const pendingEdu = [];
-                const pendingElig = [];
-                let hasAvatarPending = false;
-
-                for (const row of requestRows) {
-                    const field = String(getFirstValue(row, ["field", "field_name", "target_field"], ""));
-                    const newValue = getFirstValue(row, ["new_value", "value", "requested_value"], "");
-
-                    if (["middleName", "altEmail", "teachingYears", "industryYears"].includes(field)) {
-                        nextPending[field] = String(newValue || "");
-                    }
-
-                    if (field === "profile_picture") {
-                        hasAvatarPending = true;
-                    }
-
-                    if (field === "educational_attainment") {
-                        try {
-                            const parsed = JSON.parse(String(newValue));
-                            if (parsed && typeof parsed === "object") {
-                                pendingEdu.push({ ...parsed, pending: true });
-                            }
-                        } catch {
-                            pendingEdu.push({
-                                level: "Credential",
-                                levelClass: "edu-bachelor",
-                                degree: String(newValue),
-                                school: "",
-                                pending: true,
-                            });
-                        }
-                    }
-
-                    if (field === "eligibility_exams") {
-                        pendingElig.push({
-                            text: String(newValue),
-                            pending: true,
-                        });
-                    }
-                }
-
-                setPendingFields(nextPending);
-                setAvatarPending(hasAvatarPending);
-                if (pendingEdu.length > 0) setEduList((prev) => [...prev, ...pendingEdu]);
-                if (pendingElig.length > 0) setEligList((prev) => [...prev, ...pendingElig]);
-            }
+            const areaResult = await areaSubmissionsPromise;
 
             // process area submissions
             if (isActive && areaResult && Array.isArray(areaResult.rows) && areaResult.rows.length > 0) {
@@ -1882,7 +1720,6 @@ export default function Profile({ user }) {
         }
 
         applyProfileFieldLocally(field, value);
-        setPendingFields((prev) => ({ ...prev, [field]: value }));
         await refreshProfile();
         pushToast("success", "Profile updated successfully.");
     };
@@ -1926,7 +1763,6 @@ export default function Profile({ user }) {
 
             setProfilePicture(imageUrl || "");
             await refreshProfile();
-            setAvatarPending(true);
             pushToast("success", "Profile photo updated successfully.");
         };
         document.body.appendChild(input);
@@ -1949,7 +1785,6 @@ export default function Profile({ user }) {
                 school: eduData.yearGraduated
                     ? `${eduData.institution} · ${eduData.yearGraduated}`
                     : eduData.institution,
-                pending: false,
             };
 
             const nextList = [...eduList, newEntry];
@@ -1982,7 +1817,6 @@ export default function Profile({ user }) {
                 levelClass: eduData.level.toLowerCase().includes('doctor') ? 'edu-doctorate' : (eduData.level.toLowerCase().includes('master') ? 'edu-masters' : 'edu-bachelor'),
                 degree: eduData.degree,
                 school: eduData.yearGraduated ? `${eduData.institution} · ${eduData.yearGraduated}` : eduData.institution,
-                pending: false,
             } : e));
 
             const useNumeric = isNumericId(userId);
@@ -2030,7 +1864,6 @@ export default function Profile({ user }) {
         try {
             const newEntry = {
                 text: eligData.text,
-                pending: false,
             };
 
             const nextList = [...eligList, newEntry];
@@ -2058,7 +1891,7 @@ export default function Profile({ user }) {
     const handleUpdateElig = async (index, eligData) => {
         setIsSubmittingElig(true);
         try {
-            const updated = eligList.map((e, i) => (i === index ? { text: eligData.text, pending: false } : e));
+            const updated = eligList.map((e, i) => (i === index ? { text: eligData.text } : e));
             const useNumeric = isNumericId(userId);
             const { error } = await supabase
                 .from(USER_TABLE)
@@ -2107,7 +1940,6 @@ export default function Profile({ user }) {
                 school: doctoralData.yearGraduated
                     ? `${doctoralData.institution} · ${doctoralData.yearGraduated}`
                     : doctoralData.institution,
-                pending: false,
             };
 
             const nextList = [...doctoralList, newEntry];
@@ -2135,7 +1967,7 @@ export default function Profile({ user }) {
     const handleUpdateDoctoral = async (index, doctoralData) => {
         setIsSubmittingDoctoral(true);
         try {
-            const updated = doctoralList.map((d, i) => (i === index ? { degree: doctoralData.degree, school: doctoralData.yearGraduated ? `${doctoralData.institution} · ${doctoralData.yearGraduated}` : doctoralData.institution, pending: false } : d));
+            const updated = doctoralList.map((d, i) => (i === index ? { degree: doctoralData.degree, school: doctoralData.yearGraduated ? `${doctoralData.institution} · ${doctoralData.yearGraduated}` : doctoralData.institution } : d));
             const useNumeric = isNumericId(userId);
             const { error } = await supabase
                 .from(USER_TABLE)
@@ -2175,7 +2007,6 @@ export default function Profile({ user }) {
         await refreshProfile();
         pushToast('success', 'Doctorate removed.');
     };
-    
 
     const handleCpSubmit = async () => {
         setCpError("");
@@ -2230,12 +2061,6 @@ export default function Profile({ user }) {
         }
     };
 
-    const hasPendingChanges =
-        Object.keys(pendingFields).length > 0 ||
-        avatarPending ||
-        eduList.some((e) => e.pending) ||
-        eligList.some((e) => e.pending);
-
     return (
         <>
             <style>{styles}</style>
@@ -2259,16 +2084,11 @@ export default function Profile({ user }) {
                     <div className="pf-avatar-overlay">
                         <Camera size={16} />
                     </div>
-                    {avatarPending && (
-                        <div className="pf-avatar-pending">
-                            <Clock size={10} color="white" />
-                        </div>
-                    )}
                 </div>
 
                 <div className="pf-hero-info">
                     <div className="pf-hero-tag">
-                        Faculty Profile · Some fields require HR verification
+                        Faculty Profile
                     </div>
                     <div className="pf-hero-name">
                         {`${firstName} ${lastName}`.trim() || user?.displayName || ""}
@@ -2303,7 +2123,7 @@ export default function Profile({ user }) {
             </div>
 
             {/* Profile edit window closed notice */}
-            {!profileEditOpen && (
+            {profileEditWindowResolved && !profileEditOpen && (
                 <div
                     className="pf-notice"
                     style={{
@@ -2317,21 +2137,9 @@ export default function Profile({ user }) {
                     <p>
                         <strong>Profile editing is currently closed.</strong> HR
                         has not yet opened the profile edit window for this
-                        cycle. You will be notified when you can update your
-                        information.
+                        ranking period. You will be notified when you can update
+                        your information.
                         {profileEditWindowLabel ? ` ${profileEditWindowLabel}` : ""}
-                    </p>
-                </div>
-            )}
-
-            {/* Pending changes notice */}
-            {hasPendingChanges && (
-                <div className="pf-notice pf-notice-pending">
-                    <Clock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-                    <p>
-                        You have <strong>pending changes</strong> awaiting HR
-                        verification. They will be visible to others only after
-                        HR approves them.
                     </p>
                 </div>
             )}
@@ -2355,23 +2163,20 @@ export default function Profile({ user }) {
                         <div className="pf-row">
                             <EditableField
                                 label="Last Name"
-                                value={pendingFields.lastName || lastName}
-                                pending={!!pendingFields.lastName}
+                                value={lastName}
                                 onSave={(v) => handleFieldSave("lastName", v)}
                                 disabled={!profileEditOpen}
                             />
                             <EditableField
                                 label="First Name"
-                                value={pendingFields.firstName || firstName}
-                                pending={!!pendingFields.firstName}
+                                value={firstName}
                                 onSave={(v) => handleFieldSave("firstName", v)}
                                 disabled={!profileEditOpen}
                             />
                         </div>
                         <EditableField
                             label="Middle Name"
-                            value={pendingFields.middleName || middleName}
-                            pending={!!pendingFields.middleName}
+                            value={middleName}
                             onSave={(v) => handleFieldSave("middleName", v)}
                             disabled={!profileEditOpen}
                         />
@@ -2415,15 +2220,13 @@ export default function Profile({ user }) {
                                     </span>
                                 </>
                             }
-                            value={pendingFields.teachingYears || teachingYears}
-                            pending={!!pendingFields.teachingYears}
+                            value={teachingYears}
                             onSave={(v) => handleFieldSave("teachingYears", v)}
                             disabled={!profileEditOpen}
                         />
                         <NumberField
                             label="Industry Experience"
-                            value={pendingFields.industryYears || industryYears}
-                            pending={!!pendingFields.industryYears}
+                            value={industryYears}
                             onSave={(v) => handleFieldSave("industryYears", v)}
                             disabled={!profileEditOpen}
                         />
@@ -2493,11 +2296,6 @@ export default function Profile({ user }) {
                                 <div style={{ flex: 1 }}>
                                     <div className="pf-edu-degree">{edu.degree}</div>
                                     <div className="pf-edu-school"><Building2 size={11} /> {edu.school}</div>
-                                    {edu.pending && (
-                                        <div className="pf-pending-badge" style={{ marginTop: 6 }}>
-                                            <Clock size={10} /> Pending HR verification
-                                        </div>
-                                    )}
                                 </div>
                                 {profileEditOpen && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2543,11 +2341,6 @@ export default function Profile({ user }) {
                             <div className="pf-elig-item" key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <span className="pf-elig-dot" />
                                 <span className="pf-elig-text" style={{ flex: 1 }}>{e.text}</span>
-                                {e.pending && (
-                                    <div className="pf-pending-badge" style={{ flexShrink: 0 }}>
-                                        <Clock size={10} /> Pending
-                                    </div>
-                                )}
                                 {profileEditOpen && (
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <button className="pf-edit-btn pf-edit-btn-pencil" onClick={() => { setEditEligIndex(i); setEligModalOpen(true); }} title="Edit eligibility">
@@ -2591,11 +2384,6 @@ export default function Profile({ user }) {
                             <div style={{ flex: 1 }}>
                                 <div className="pf-edu-degree">{d.degree}</div>
                                 <div className="pf-edu-school"><Building2 size={12} /> {d.school || ""}</div>
-                                {d.pending && (
-                                    <div className="pf-pending-badge">
-                                        <Clock size={10} /> Pending
-                                    </div>
-                                )}
                             </div>
                             {profileEditOpen && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2623,8 +2411,7 @@ export default function Profile({ user }) {
                 <p>
                     Fields marked <strong>HR managed</strong> were set by the{" "}
                     <strong>HR Department</strong> and cannot be edited here.
-                    For corrections, contact HR directly. Editable fields
-                    require HR verification before changes become visible.
+                    For corrections, contact HR directly.
                 </p>
             </div>
 
@@ -2667,7 +2454,7 @@ export default function Profile({ user }) {
                             personnel — specifically the{" "}
                             <strong>HR Department</strong> and the{" "}
                             <strong>Office of the VPAA</strong> — for the
-                            duration of an active evaluation cycle.
+                            duration of an active evaluation period.
                         </li>
                         <li>
                             Uploaded documents submitted for evaluation are

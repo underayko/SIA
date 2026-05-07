@@ -23,7 +23,7 @@
 // • Score breakdown removed (HR-only), Ranking Summary added.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Send,
     FileText,
@@ -37,15 +37,14 @@ import {
     Star,
     Building2,
     ArrowRight,
-    Upload,
     Calendar,
-    Megaphone,
     TrendingUp,
     ChevronLeft,
     Info,
     Lock,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
+import { getRequiredFileName } from "../../../data/fileNames";
 import { useSearchParams } from "react-router-dom";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ import { useSearchParams } from "react-router-dom";
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // SUBMISSION WINDOW FLAG
-// Default fallback used until ranking cycle data is hydrated from Supabase.
+// Default fallback used until ranking period data is hydrated from Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_SUBMISSION_OPEN = false;
 
@@ -868,7 +867,7 @@ function getProgress(area) {
     };
 }
 
-const DEFAULT_CYCLE_LABEL = "No active cycle";
+const DEFAULT_PERIOD_LABEL = "No active ranking period";
 const DEFAULT_DEADLINE_LABEL = "TBA";
 const TEMPLATE_BUCKET =
     import.meta.env.VITE_SUPABASE_TEMPLATE_BUCKET || "documents";
@@ -1053,94 +1052,6 @@ function toFriendlyLabel(value) {
         .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function resolveLastCycleResult(applicationRow, minimumScore, lastScore) {
-    const explicitResult = String(
-        getFirstValue(
-            applicationRow,
-            [
-                "last_cycle_result",
-                "result",
-                "result_label",
-                "outcome",
-                "outcome_label",
-                "status",
-                "application_status",
-            ],
-            "",
-        ),
-    )
-        .replace(/[_-]/g, " ")
-        .trim();
-
-    const normalizedResult = explicitResult.toLowerCase();
-    const numericMinimum = Number(minimumScore);
-    const numericScore = Number(lastScore);
-    const hasScoredResult =
-        Number.isFinite(numericMinimum) &&
-        numericMinimum > 0 &&
-        Number.isFinite(numericScore);
-
-    if (normalizedResult) {
-        if (
-            normalizedResult.includes("pending") ||
-            normalizedResult.includes("submitted") ||
-            normalizedResult.includes("draft") ||
-            normalizedResult.includes("not started") ||
-            normalizedResult.includes("review") ||
-            normalizedResult.includes("processing")
-        ) {
-            return { label: "Pending", tone: "pending" };
-        }
-
-        if (
-            normalizedResult.includes("retain") ||
-            normalizedResult.includes("qualified") ||
-            normalizedResult.includes("approve") ||
-            normalizedResult.includes("pass") ||
-            normalizedResult.includes("success")
-        ) {
-            return { label: "Retained", tone: "positive" };
-        }
-
-        if (
-            normalizedResult.includes("reject") ||
-            normalizedResult.includes("fail") ||
-            normalizedResult.includes("deny") ||
-            normalizedResult.includes("disapprove") ||
-            normalizedResult.includes("not qualified") ||
-            normalizedResult.includes("not retained")
-        ) {
-            return { label: "Not Retained", tone: "negative" };
-        }
-
-        return {
-            label: toFriendlyLabel(explicitResult),
-            tone: normalizedResult.includes("retain") ? "positive" : "neutral",
-        };
-    }
-
-    if (hasScoredResult) {
-        return numericScore >= numericMinimum
-            ? { label: "Retained", tone: "positive" }
-            : { label: "Not Retained", tone: "negative" };
-    }
-
-    return { label: "Pending", tone: "pending" };
-}
-
-function getLastCycleResultClass(tone) {
-    switch (tone) {
-        case "positive":
-            return "hm-rs-badge hm-rs-badge-positive";
-        case "negative":
-            return "hm-rs-badge hm-rs-badge-negative";
-        case "neutral":
-            return "hm-rs-badge hm-rs-badge-neutral";
-        default:
-            return "hm-rs-badge hm-rs-badge-pending";
-    }
-}
-
 function stripUndefined(obj) {
     return Object.fromEntries(
         Object.entries(obj).filter(([, value]) => value !== undefined),
@@ -1161,7 +1072,7 @@ function resolvePartAreaId(part) {
  * The frontend uses Roman numerals (I, II, III, etc.) or numeric codes (1, 2, 3, etc.),
  * but the database may store different IDs. This function matches the frontend identifier
  * (e.g., "I") to the real database area_id by checking the loaded areasData.
- * 
+ *
  * @param {string} frontendAreaId - The frontend area identifier (e.g., "I", "II", "1", etc.)
  * @param {Array} areasData - The loaded areas data from the database
  * @returns {number|null} The actual database area_id, or null if not found
@@ -1183,11 +1094,11 @@ function lookupDatabaseAreaId(frontendAreaId, areasData) {
     for (const area of areasData) {
         const areaName = String(area.area_name || area.name || '');
         const dbAreaId = area.area_id || area.id;
-        
+
         // Build the pattern to search for, e.g., "AREA I:" (with colon to avoid matching "AREA II")
         const romanPatternWithColon = `AREA ${frontendAreaId}:`;
         const numPatternWithColon = `AREA ${frontendNum}:`;
-        
+
         if (areaName.includes(romanPatternWithColon) || areaName.includes(numPatternWithColon)) {
             return dbAreaId;
         }
@@ -1197,9 +1108,9 @@ function lookupDatabaseAreaId(frontendAreaId, areasData) {
         roman: `AREA ${frontendAreaId}:`,
         numeric: `AREA ${frontendNum}:`
     });
-    console.warn('[lookupDatabaseAreaId] available areas:', areasData.map(a => ({ 
-        area_id: a.area_id || a.id, 
-        name: (a.area_name || a.name || '').slice(0, 50) 
+    console.warn('[lookupDatabaseAreaId] available areas:', areasData.map(a => ({
+        area_id: a.area_id || a.id,
+        name: (a.area_name || a.name || '').slice(0, 50)
     })));
     return null;
 }
@@ -1226,6 +1137,12 @@ function sanitizeFileName(fileName) {
         .replace(/\s+/g, "_")
         .replace(/[^a-zA-Z0-9._-]/g, "")
         .slice(0, 120);
+}
+
+function isPdfFile(file) {
+    if (!file) return false;
+    const name = String(file.name || "").toLowerCase();
+    return file.type === "application/pdf" || name.endsWith(".pdf");
 }
 
 function romanToNumber(value) {
@@ -1558,21 +1475,21 @@ function mergePartWithSubmission(part, submissionRow) {
     // If we have a submission row in area_submissions table, it means the file was
     // successfully uploaded and registered. Default to "submitted" status.
     let status = "submitted";
-    
+
     // Check if there's an explicit status field in the submission row
     const statusRaw = String(
         getFirstValue(submissionRow, ["status", "submission_status", "state"], ""),
     )
         .trim()
         .toLowerCase();
-    
+
     // Override with explicit status if present
     if (statusRaw.includes("draft")) {
         status = "draft";
     } else if (statusRaw.includes("pending")) {
         status = "draft"; // Treat pending as draft
     }
-    
+
     const file =
         getFirstValue(submissionRow, [
             "file_name",
@@ -1619,21 +1536,21 @@ function mergePartWithSubmission(part, submissionRow) {
  */
 function buildAreaIdMapping(databaseAreas) {
     const mapping = {};
-    
+
     for (const area of (databaseAreas || [])) {
         const dbAreaId = area.area_id || area.id;
         const areaName = String(area.area_name || area.name || '');
-        
+
         // Extract "I" from "AREA I: Educational Qualifications"
         // Try multiple regex patterns to be more flexible
         let romanNumeral = null;
-        
+
         // Pattern 1: "AREA I:" (with colon)
         let match = areaName.match(/AREA\s+([IVX]+):/i);
         if (match) {
             romanNumeral = match[1].toUpperCase();
         }
-        
+
         // Pattern 2: "AREA I " (with space, no colon)
         if (!romanNumeral) {
             match = areaName.match(/AREA\s+([IVX]+)\s/i);
@@ -1641,7 +1558,7 @@ function buildAreaIdMapping(databaseAreas) {
                 romanNumeral = match[1].toUpperCase();
             }
         }
-        
+
         // Pattern 3: "AREA I" (at end or before non-letter)
         if (!romanNumeral) {
             match = areaName.match(/AREA\s+([IVX]+)(?:\s|$)/i);
@@ -1649,7 +1566,7 @@ function buildAreaIdMapping(databaseAreas) {
                 romanNumeral = match[1].toUpperCase();
             }
         }
-        
+
         if (romanNumeral) {
             const numericId = romanToNumber(romanNumeral);
             if (numericId) {
@@ -1657,7 +1574,7 @@ function buildAreaIdMapping(databaseAreas) {
             }
         }
     }
-    
+
     return mapping;
 }
 
@@ -1678,7 +1595,7 @@ function mergeAreasWithSubmissions(areas, submissionRows, areaIdMapping) {
         // try to associate it with the area's first leaf part using `area_id`.
         if (!partId) {
             let areaIdVal = getFirstValue(row, ["area_id", "areaId", "area"]);
-            
+
             // If we have an area_id mapping (database ID → frontend ID), use it
             if (areaIdMapping && areaIdVal) {
                 const frontendAreaId = areaIdMapping[areaIdVal];
@@ -1686,7 +1603,7 @@ function mergeAreasWithSubmissions(areas, submissionRows, areaIdMapping) {
                     areaIdVal = frontendAreaId;
                 }
             }
-            
+
             if (areaIdVal) {
                 const matchedArea = areas.find((a) => {
                     // Try both raw comparison and normalized comparison
@@ -1842,7 +1759,7 @@ async function queryRowsFromTableCandidates(tableCandidates, selectClause, candi
     return { table: null, rows: [] };
 }
 
-async function queryLatestCycleFromCandidates(tableCandidates) {
+async function queryLatestPeriodFromCandidates(tableCandidates) {
     for (const table of tableCandidates) {
         const ordered = await supabase
             .from(table)
@@ -1888,54 +1805,6 @@ async function querySingleByColumnCandidates(tableCandidates, selectClause, colu
     return { table: null, row: null };
 }
 
-function toActivityItems(rows, cycleLabel) {
-    if (!Array.isArray(rows) || rows.length === 0) {
-        return [];
-    }
-
-    return rows.slice(0, 8).map((row, index) => {
-        const action = String(
-            getFirstValue(row, ["action", "new_status", "status", "event"], "updated"),
-        ).toLowerCase();
-        const partId = getFirstValue(row, ["part_id", "subpart_id"], null);
-        const areaId = getFirstValue(row, ["area_id"], null);
-        const oldStatus = getFirstValue(row, ["old_status", "from_status"], null);
-        const newStatus = getFirstValue(row, ["new_status", "to_status"], null);
-
-        let icon = "blue";
-        if (action.includes("submit") || action.includes("approve") || action.includes("publish")) {
-            icon = "green";
-        } else if (action.includes("draft") || action.includes("pending") || action.includes("return")) {
-            icon = "gold";
-        }
-
-        let text = "Application activity updated";
-        if (oldStatus && newStatus) {
-            text = `Status changed: ${oldStatus} -> ${newStatus}`;
-        } else if (partId && areaId) {
-            text = `Area ${areaId} - ${partId} ${action}`;
-        } else if (areaId) {
-            text = `Area ${areaId} ${action}`;
-        } else if (action) {
-            text = `Application ${action}`;
-        }
-
-        const metaDate = formatDateTime(
-            getFirstValue(row, ["changed_at", "created_at", "updated_at", "timestamp"], null),
-        );
-
-        return {
-            icon,
-            IconComp: icon === "green" ? CheckCircle : icon === "gold" ? Paperclip : Megaphone,
-            text,
-            meta: metaDate
-                ? `${metaDate}${cycleLabel ? ` · ${cycleLabel}` : ""}`
-                : cycleLabel || "System",
-            id: getFirstValue(row, ["log_id", "id"], `log-${index}`),
-        };
-    });
-}
-
 // ── Styles ──
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
@@ -1951,7 +1820,7 @@ const styles = `
   .hm-hero::before{content:'';position:absolute;top:-60px;right:-60px;width:260px;height:260px;border-radius:50%;background:rgba(201,168,76,0.09);pointer-events:none;}
   .hm-hero-left{display:flex;align-items:center;position:relative;z-index:1;flex:1;min-width:0;}
   .hm-hero-info{min-width:0;}
-  .hm-cycle-tag{font-size:10.5px;color:var(--gc-gold-light);letter-spacing:1.5px;text-transform:uppercase;font-weight:600;margin-bottom:4px;}
+  .hm-period-tag{font-size:10.5px;color:var(--gc-gold-light);letter-spacing:1.5px;text-transform:uppercase;font-weight:600;margin-bottom:4px;}
   .hm-name{font-family:'Playfair Display',serif;font-size:20px;color:var(--white);font-weight:600;margin-bottom:7px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .hm-rank-flow{display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap;}
   .hm-rank-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.22);border-radius:20px;padding:3px 11px;font-size:12px;color:var(--white);font-weight:500;}
@@ -1978,24 +1847,6 @@ const styles = `
   .hm-rs-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;}
   .hm-rs-value{font-family:'Playfair Display',serif;font-size:15px;font-weight:600;color:var(--text-dark);line-height:1.2;display:flex;align-items:center;gap:6px;}
   .hm-rs-sub{font-size:11px;color:var(--text-muted);margin-top:1px;}
-  .hm-rs-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:8px;}
-    .hm-rs-badge-positive{background:#eef8f1;color:var(--gc-green);}
-    .hm-rs-badge-negative{background:#fdf0ee;color:var(--danger);}
-    .hm-rs-badge-pending{background:#fff4e8;color:#c56a18;}
-    .hm-rs-badge-neutral{background:#eef1f4;color:#56616b;}
-  .hm-rs-bar{height:5px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:5px;}
-  .hm-rs-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gc-green),var(--gc-green-light));}
-  /* SUBMIT BAR */
-  .hm-submit-bar{background:var(--white);border-radius:12px;border:1px solid var(--border);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 2px 6px rgba(0,0,0,0.04);animation:hmFU .5s .2s ease both;}
-  .hm-submit-info h4{font-size:14px;font-weight:600;color:var(--text-dark);margin-bottom:2px;}
-  .hm-submit-info p{font-size:12px;color:var(--text-muted);}
-  .hm-prog-track{width:260px;margin-left:auto;margin-right:16px;flex-shrink:0;}
-  .hm-prog-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:500;}
-  .hm-prog-bar{height:10px;background:#e0e8e2;border-radius:8px;overflow:hidden;}
-  .hm-prog-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--gc-green),var(--gc-green-light));}
-  .hm-btn-submit-all{display:flex;align-items:center;gap:7px;padding:10px 20px;background:linear-gradient(135deg,var(--gc-green),var(--gc-green-light));color:var(--white);border:none;border-radius:9px;font-family:'Source Sans 3',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;transition:opacity .2s,transform .15s;box-shadow:0 4px 14px rgba(26,107,60,0.25);white-space:nowrap;}
-  .hm-btn-submit-all:hover:not(:disabled){opacity:0.9;transform:translateY(-1px);}
-  .hm-btn-submit-all:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
   /* AREA LIST PANEL */
   .hm-areas-panel{background:var(--white);border-radius:14px;border:1px solid var(--border);padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.04);margin-bottom:20px;animation:hmFU .5s .25s ease both;}
   .hm-panel-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:8px;}
@@ -2053,6 +1904,9 @@ const styles = `
   .hm-pc-rubric-list li::before{content:'▸';position:absolute;left:0;color:var(--gc-gold);font-size:9.5px;top:2px;}
   .hm-pc-rubric-list li.indent{padding-left:24px;color:var(--text-muted);}
   .hm-pc-rubric-list li.indent::before{left:10px;}
+  .hm-required-file{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 11px;border:1px dashed rgba(26,107,60,.35);border-radius:9px;background:#f7fbf8;color:var(--text-muted);font-size:12px;}
+  .hm-required-file strong{color:var(--gc-green-dark);font-weight:700;}
+  .hm-required-file code{font-family:Consolas,'Courier New',monospace;font-size:11.5px;color:#1a1a1a;background:#fff;border:1px solid #dde5df;border-radius:6px;padding:2px 6px;overflow-wrap:anywhere;}
   /* Auto info */
   .hm-auto-info{background:var(--blue-pale);border:1px solid rgba(36,113,163,0.2);border-radius:8px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px;}
   .hm-auto-info p{font-size:13px;color:var(--blue);line-height:1.6;}
@@ -2078,20 +1932,10 @@ const styles = `
     .hm-toast.success{border-color:#a9dfbf;background:#eafaf1;color:#1e8449;}
     .hm-toast.error{border-color:#f5b7b1;background:#fef2f2;color:#c0392b;}
     .hm-toast.info{border-color:#bcd7ea;background:#eef6fc;color:#1f5f8a;}
-  /* ACTIVITY LOG */
-  .hm-activity-panel{background:var(--white);border-radius:14px;border:1px solid var(--border);padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.04);animation:hmFU .5s .3s ease both;}
-  .hm-activity-list{display:flex;flex-direction:column;}
-  .hm-act-item{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid #f0f3f1;}
-  .hm-act-item:last-child{border-bottom:none;}
-  .hm-act-icon{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
-  .hm-ai-gold{background:var(--gc-gold-pale);color:#b7950b;}.hm-ai-green{background:#eafaf1;color:#1e8449;}.hm-ai-blue{background:var(--blue-pale);color:var(--blue);}
-  .hm-act-title{font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:3px;line-height:1.4;}
-  .hm-act-meta{font-size:11.5px;color:var(--text-muted);}
   /* RESPONSIVE */
   @media(max-width:900px){
     .hm-area-list{grid-template-columns:1fr;}
     .hm-rank-summary{flex-wrap:wrap;}.hm-rs-divider{display:none;}.hm-rs-item{padding:0;flex:1 1 calc(50% - 12px);}
-    .hm-submit-bar{flex-direction:column;align-items:stretch;gap:12px;}.hm-prog-track{width:100%;margin:0;}.hm-btn-submit-all{justify-content:center;}
   }
   @media(max-width:640px){
     .hm-hero{flex-direction:column;align-items:flex-start;padding:20px;}
@@ -2130,6 +1974,7 @@ function PartCard({
     onSubmitPart,
     onViewFile,
     onDownloadFile,
+    getRequiredName,
 }) {
     // ── GROUP HEADER BRANCH ──
     // If this part is a group (isGroup: true), render a section header and
@@ -2155,6 +2000,7 @@ function PartCard({
                             onSubmitPart={onSubmitPart}
                             onViewFile={onViewFile}
                             onDownloadFile={onDownloadFile}
+                            getRequiredName={getRequiredName}
                         />
                     ))}
                 </div>
@@ -2180,6 +2026,8 @@ function PartCard({
                         : "Pending";
         const partBusyAction = getBusyAction?.(part.id) || null;
         const isBusy = Boolean(partBusyAction);
+        const requiredName = getRequiredName?.(part.id) || null;
+        const requiredDisplayName = requiredName ? `${requiredName}.pdf` : null;
 
     return (
         <div className={`hm-pc ${sc}`}>
@@ -2210,6 +2058,13 @@ function PartCard({
                     </ul>
                 </div>
 
+                {requiredDisplayName && (
+                    <div className="hm-required-file">
+                        <strong>Required filename</strong>
+                        <code>{requiredDisplayName}</code>
+                    </div>
+                )}
+
                 {part.auto ? (
                     <div className="hm-auto-info">
                         <Lock
@@ -2221,11 +2076,11 @@ function PartCard({
                             <strong>No file upload needed.</strong> HR scores
                             this area automatically from the student evaluation
                             CSV each semester. Your rating will appear here once
-                            HR uploads the CSV for this cycle.
+                            HR uploads the CSV for this ranking period.
                         </p>
                     </div>
                 ) : !submissionOpen ? (
-                    /* ── CLOSED STATE ── shown when HR has not yet opened the cycle,
+                    /* ── CLOSED STATE ── shown when HR has not yet opened the ranking period,
                        or after the submission deadline has passed. */
                     <>
                         {/* Still allow template download and viewing submitted files when closed */}
@@ -2296,9 +2151,9 @@ function PartCard({
                                 <strong>
                                     Submissions are currently closed.
                                 </strong>{" "}
-                                The ranking cycle has not been opened by HR yet,
+                                The ranking period has not been opened by HR yet,
                                 or the submission deadline has passed. You will
-                                be notified when the next cycle opens.
+                                be notified when the next ranking period opens.
                             </p>
                         </div>
 
@@ -2525,31 +2380,25 @@ export default function Home({ user }) {
     const [areasData, setAreasData] = useState(DEFAULT_AREAS_DATA);
     const [databaseAreas, setDatabaseAreas] = useState([]); // Store actual areas table from database
     const [submissionOpen, setSubmissionOpen] = useState(false);
-    const [cycleInfo, setCycleInfo] = useState({
+    const [periodInfo, setPeriodInfo] = useState({
         id: null,
-        label: DEFAULT_CYCLE_LABEL,
+        label: DEFAULT_PERIOD_LABEL,
         deadlineLabel: DEFAULT_DEADLINE_LABEL,
         daysLeft: 0,
     });
     const [profileInfo, setProfileInfo] = useState({
         currentRank: "Not set",
         department: "Not set",
+        firstName: "FirstName",
+        lastName: "LastName",
     });
     const [applicationInfo, setApplicationInfo] = useState({
         id: null,
         targetRank: "Not set",
         status: "Not started",
-        minimumScore: 0,
-        lastScore: 0,
-        lastCycleLabel: "No published cycle",
-        lastCycleResult: "Pending",
-        lastCycleResultTone: "pending",
     });
-    const [isSubmittingApplication, setIsSubmittingApplication] =
-        useState(false);
     const [partActionMap, setPartActionMap] = useState({});
     const [toasts, setToasts] = useState([]);
-    const [activityLog, setActivityLog] = useState([]);
     const [resolvedTables, setResolvedTables] = useState({
         applications: APPLICATION_TABLE_CANDIDATES[0] || "applications",
         areaSubmissions:
@@ -2557,6 +2406,9 @@ export default function Home({ user }) {
         applicationLogs:
             APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
     });
+
+    const getFacultyRequiredFileName = (partId) =>
+        getRequiredFileName(partId, profileInfo.lastName, profileInfo.firstName);
 
     const setPartAction = (partId, action) => {
         setPartActionMap((prev) => {
@@ -2622,7 +2474,7 @@ export default function Home({ user }) {
     const pickSingleFile = (onFile) => {
         const input = document.createElement("input");
         input.type = "file";
-        input.accept = ".pdf,.doc,.docx,.png,.jpg,.jpeg";
+        input.accept = ".pdf";
         input.style.display = "none";
         input.id = "file-upload-input";
         input.name = "file-upload";
@@ -2641,14 +2493,14 @@ export default function Home({ user }) {
         input.click();
     };
 
-    const resolveActiveCycleId = async () => {
-        if (cycleInfo.id) return cycleInfo.id;
+    const resolveActivePeriodId = async () => {
+        if (periodInfo.id) return periodInfo.id;
 
         const statusColumns = ["status", "state", "cycle_status"];
         for (const table of CYCLE_TABLE_CANDIDATES) {
             for (const statusColumn of statusColumns) {
                 try {
-                    const openCycle = await supabase
+                    const openPeriod = await supabase
                         .from(table)
                         .select("*")
                         .eq(statusColumn, "open")
@@ -2656,11 +2508,11 @@ export default function Home({ user }) {
                         .limit(1)
                         .maybeSingle();
 
-                    if (!openCycle.error && openCycle.data) {
-                        return getFirstValue(openCycle.data, ["cycle_id", "id"], null);
+                    if (!openPeriod.error && openPeriod.data) {
+                        return getFirstValue(openPeriod.data, ["cycle_id", "id"], null);
                     }
 
-                    if (openCycle.error && !isColumnOrTableError(openCycle.error)) {
+                    if (openPeriod.error && !isColumnOrTableError(openPeriod.error)) {
                         break;
                     }
                 } catch (e) {
@@ -2669,21 +2521,21 @@ export default function Home({ user }) {
             }
         }
 
-        const fallbackCycle = await queryLatestCycleFromCandidates(CYCLE_TABLE_CANDIDATES);
-        if (!fallbackCycle.row) return null;
-        return getFirstValue(fallbackCycle.row, ["cycle_id", "id"], null);
+        const fallbackPeriod = await queryLatestPeriodFromCandidates(CYCLE_TABLE_CANDIDATES);
+        if (!fallbackPeriod.row) return null;
+        return getFirstValue(fallbackPeriod.row, ["cycle_id", "id"], null);
     };
 
     const writeSubmissionRow = async ({ part, storagePath, appId }) => {
         const nowIso = new Date().toISOString();
-        const activeCycleId = await resolveActiveCycleId();
-        
+        const activePeriodId = await resolveActivePeriodId();
+
         // Get the frontend area identifier (e.g., "I" from part ID "I-A")
         const frontendAreaId = resolvePartAreaId(part);
-        
+
         // Look up the actual database area_id using the database areas
         let areaId = lookupDatabaseAreaId(frontendAreaId, databaseAreas);
-        
+
         if (!areaId) {
             // Fallback: use old conversion (Roman to number) for backward compatibility
             areaId = normalizeDbAreaId(frontendAreaId);
@@ -2699,7 +2551,7 @@ export default function Home({ user }) {
 
         const base = {
             area_id: areaId,
-            cycle_id: activeCycleId || null,
+            cycle_id: activePeriodId || null,
             file_path: storagePath,
             uploaded_at: nowIso,
             user_id: submitterId,
@@ -2766,13 +2618,13 @@ export default function Home({ user }) {
                 const appCols = ["application_id", "applicationId", "app_id", "application"];
                 const areaCols = ["area_id", "areaId", "area"];
                 const userCols = ["user_id", "faculty_id", "uid", "user"];
-                const cycleCols = activeCycleId
+                const periodColumnCandidates = activePeriodId
                     ? ["cycle_id", "ranking_cycle_id", "cycleId"]
                     : [null];
                 outer: for (const aCol of appCols) {
                     for (const arCol of areaCols) {
                         for (const uCol of userCols) {
-                            for (const cCol of cycleCols) {
+                            for (const cCol of periodColumnCandidates) {
                                 try {
                                     let probeQuery = supabase
                                         .from(resolvedTables.areaSubmissions)
@@ -2781,7 +2633,7 @@ export default function Home({ user }) {
                                         .eq(arCol, areaId)
                                         .eq(uCol, submitterId);
                                     if (cCol) {
-                                        probeQuery = probeQuery.eq(cCol, activeCycleId);
+                                        probeQuery = probeQuery.eq(cCol, activePeriodId);
                                     }
 
                                     const probe = await probeQuery.maybeSingle();
@@ -2881,16 +2733,16 @@ export default function Home({ user }) {
             ["email", userEmail],
             ["user_email", userEmail],
         ].filter(([, value]) => Boolean(value));
-        const cyclePairs = [
-            ["cycle_id", cycleInfo.id],
-            ["ranking_cycle_id", cycleInfo.id],
-            ["cycleId", cycleInfo.id],
+        const periodColumnPairs = [
+            ["cycle_id", periodInfo.id],
+            ["ranking_cycle_id", periodInfo.id],
+            ["cycleId", periodInfo.id],
         ].filter(([, value]) => Boolean(value));
 
         for (const partColumn of partColumns) {
             const scopedPairs = [
                 ...userPairs.slice(0, 1),
-                ...cyclePairs.slice(0, 1),
+                ...periodColumnPairs.slice(0, 1),
             ];
 
             const attempts = [scopedPairs, userPairs.slice(0, 1), []];
@@ -2913,14 +2765,14 @@ export default function Home({ user }) {
     };
 
     const ensureApplicationExists = async () => {
-        const activeCycleId = await resolveActiveCycleId();
+        const activePeriodId = await resolveActivePeriodId();
 
         // If application already exists, return it
         if (applicationInfo.id) return applicationInfo.id;
 
-        // If no cycle or faculty record, can't create application
-        if (!activeCycleId || !facultyRecordId) {
-            console.warn('ensureApplicationExists: cannot create - missing cycle or facultyRecordId');
+        // If no ranking period or faculty record, cannot create application
+        if (!activePeriodId || !facultyRecordId) {
+            console.warn('ensureApplicationExists: cannot create - missing ranking period or facultyRecordId');
             return null;
         }
 
@@ -2976,7 +2828,7 @@ export default function Home({ user }) {
             const payload = {
                 application_number: appNumber,
                 faculty_id: facultyRecordId,
-                cycle_id: activeCycleId,
+                cycle_id: activePeriodId,
                 status: 'Draft',
                 current_rank_at_time: profileInfo.currentRank || null,
                 created_at: new Date().toISOString(),
@@ -3012,7 +2864,7 @@ export default function Home({ user }) {
     };
 
     const persistSubmissionRow = async (part, storagePath) => {
-        
+
         // Get the frontend area identifier (e.g., "I" from part ID "I-A")
         const frontendAreaId = resolvePartAreaId(part);
 
@@ -3024,7 +2876,7 @@ export default function Home({ user }) {
             areaId = normalizeDbAreaId(frontendAreaId);
             console.warn('◆ persistSubmissionRow: database lookup failed, falling back to Roman conversion:', areaId);
         }
-        
+
         // Auto-create application if it doesn't exist
         let appId = applicationInfo.id;
         if (!appId) {
@@ -3044,11 +2896,11 @@ export default function Home({ user }) {
         let saved = null;
 
         try {
-            const activeCycleId = await resolveActiveCycleId();
+            const activePeriodId = await resolveActivePeriodId();
             const body = {
                 application_id: appId,
                 area_id: areaId,
-                cycle_id: activeCycleId || null,
+                cycle_id: activePeriodId || null,
                 file_path: storagePath,
                 csv_total_average_rate: null,
                 part_id: part.id || null,
@@ -3057,7 +2909,7 @@ export default function Home({ user }) {
                 email: userEmail || null,
             };
 
-            try { console.debug('persistSubmissionRow: POST body', body, 'cycleInfo=', cycleInfo); } catch (e) {}
+            try { console.debug('persistSubmissionRow: POST body', body, 'periodInfo=', periodInfo); } catch (e) {}
 
             const headers = { 'Content-Type': 'application/json' };
             if (backendKey) headers['x-upload-key'] = backendKey;
@@ -3119,12 +2971,13 @@ export default function Home({ user }) {
 
     const uploadFileForPart = async (part, file, nextStatus) => {
         const areaId = resolvePartAreaId(part);
-        const cycleSegment = cycleInfo.id || "current-cycle";
+        const periodSegment = periodInfo.id || "current-period";
         const userSegment = userId || userEmail || "anonymous";
         const areaFolder = toAreaFolderName(areaId);
         const partFolder = toPartFolderName(part);
-        const cleanName = sanitizeFileName(file.name);
-        const storagePath = `Faculty/${areaFolder}/${partFolder}/${cycleSegment}/${userSegment}/${Date.now()}_${cleanName}`;
+        const requiredBaseName = getFacultyRequiredFileName(part.id);
+        const cleanName = sanitizeFileName(requiredBaseName ? `${requiredBaseName}.pdf` : file.name);
+        const storagePath = `Faculty/${areaFolder}/${partFolder}/${periodSegment}/${userSegment}/${Date.now()}_${cleanName}`;
 
         const uploadResult = await supabase.storage
             .from(SUBMISSIONS_BUCKET)
@@ -3153,7 +3006,7 @@ export default function Home({ user }) {
         patchPartLocal(part.id, (prev) => ({
             ...prev,
             status: nextStatus,
-            file: file.name,
+            file: cleanName,
             date: nowText,
             fileUrl,
             storagePath,
@@ -3242,6 +3095,11 @@ export default function Home({ user }) {
         pickSingleFile(async (file) => {
             if (!file) return;
 
+            if (!isPdfFile(file)) {
+                pushToast("error", "Please attach a PDF file.");
+                return;
+            }
+
             // Keep attach local — upload only when user submits the part.
             setPartAction(part.id, "attach");
             try {
@@ -3258,6 +3116,11 @@ export default function Home({ user }) {
     const handleReplaceFile = (part) => {
         pickSingleFile(async (file) => {
             if (!file) return;
+
+            if (!isPdfFile(file)) {
+                pushToast("error", "Please attach a PDF file.");
+                return;
+            }
 
             setPartAction(part.id, "replace");
             try {
@@ -3380,7 +3243,7 @@ export default function Home({ user }) {
                 await supabase.from(resolvedTables.applicationLogs).insert([
                     stripUndefined({
                         user_id: facultyRecordId,
-                        cycle_id: cycleInfo.id,
+                        cycle_id: periodInfo.id,
                         area_id: resolvePartAreaId(part),
                         part_id: part.id,
                         action: "submitted",
@@ -3453,56 +3316,56 @@ export default function Home({ user }) {
             });
 
             let nextSubmissionOpen = false;
-            let nextCycleInfo = {
+            let nextPeriodInfo = {
                 id: null,
-                label: DEFAULT_CYCLE_LABEL,
+                label: DEFAULT_PERIOD_LABEL,
                 deadlineLabel: DEFAULT_DEADLINE_LABEL,
                 daysLeft: 0,
             };
 
-            const cycleResult = await queryLatestCycleFromCandidates(
+            const periodResult = await queryLatestPeriodFromCandidates(
                 CYCLE_TABLE_CANDIDATES,
             );
 
-            if (cycleResult.row) {
-                const cycle = cycleResult.row;
-                const deadline = getFirstValue(cycle, [
+            if (periodResult.row) {
+                const period = periodResult.row;
+                const deadline = getFirstValue(period, [
                     "deadline",
                     "deadline_at",
                     "submission_deadline",
                     "end_date",
                     "closing_date",
                 ]);
-                const cycleStatus = getFirstValue(cycle, [
+                const periodStatus = getFirstValue(period, [
                     "status",
                     "state",
                     "cycle_status",
                 ], "");
 
-                // Check cycle status to determine if submissions are open:
+                // Check ranking period status to determine if submissions are open:
                 // - 'open' → submissions allowed
                 // - 'submissions_closed' or 'finished' → submissions blocked
                 // - Falls back to old fields for backward compatibility
-                if (cycleStatus === 'submissions_closed' || cycleStatus === 'finished') {
+                if (periodStatus === 'submissions_closed' || periodStatus === 'finished') {
                     nextSubmissionOpen = false;
-                } else if (cycleStatus === 'open') {
+                } else if (periodStatus === 'open') {
                     nextSubmissionOpen = true;
                 } else {
                     // Fallback to submission_open/is_open/open fields for backward compatibility
                     nextSubmissionOpen = toBoolean(
-                        getFirstValue(cycle, [
+                        getFirstValue(period, [
                             "submission_open",
                             "is_open",
                             "open",
-                        ], cycleStatus),
+                        ], periodStatus),
                         false,
                     );
                 }
 
-                nextCycleInfo = {
-                    id: getFirstValue(cycle, ["id", "cycle_id"], null),
+                nextPeriodInfo = {
+                    id: getFirstValue(period, ["id", "cycle_id"], null),
                     label: String(
-                        getFirstValue(cycle, ["cycle", "cycle_name", "name"], DEFAULT_CYCLE_LABEL),
+                        getFirstValue(period, ["cycle", "cycle_name", "name"], DEFAULT_PERIOD_LABEL),
                     ),
                     deadlineLabel: formatLongDate(deadline, DEFAULT_DEADLINE_LABEL),
                     daysLeft: toDaysLeft(deadline, 15),
@@ -3511,8 +3374,8 @@ export default function Home({ user }) {
 
             if (!isActive) return;
             setSubmissionOpen(nextSubmissionOpen);
-            setCycleInfo(nextCycleInfo);
-            try { console.debug('[hydrateHome] Setting cycleInfo:', nextCycleInfo); } catch (e) {}
+            setPeriodInfo(nextPeriodInfo);
+            try { console.debug('[hydrateHome] Setting periodInfo:', nextPeriodInfo); } catch (e) {}
 
             let profileRow = null;
             let numericFacultyId = null;
@@ -3556,6 +3419,20 @@ export default function Home({ user }) {
                                     "college_department",
                                 ],
                                 "Not set",
+                            ),
+                        ),
+                        firstName: String(
+                            getFirstValue(
+                                profileRow,
+                                ["first_name", "firstname", "given_name", "firstName"],
+                                user?.user_metadata?.first_name || user?.user_metadata?.given_name || "FirstName",
+                            ),
+                        ),
+                        lastName: String(
+                            getFirstValue(
+                                profileRow,
+                                ["last_name", "lastname", "surname", "family_name", "lastName"],
+                                user?.user_metadata?.last_name || user?.user_metadata?.family_name || "LastName",
                             ),
                         ),
                     });
@@ -3616,30 +3493,6 @@ export default function Home({ user }) {
             }
 
             if (applicationRow && isActive) {
-                const minScore = Number(
-                    getFirstValue(
-                        applicationRow,
-                        [
-                            "minimum_score",
-                            "required_score",
-                            "score_threshold",
-                        ],
-                        getFirstValue(positionRow, ["minimum_score"], 0),
-                    ),
-                );
-                const lastScore = Number(
-                    getFirstValue(
-                        applicationRow,
-                        [
-                            "last_cycle_score",
-                            "previous_cycle_score",
-                            "score",
-                            "total_score",
-                        ],
-                        0,
-                    ),
-                );
-
                 setApplicationInfo({
                     id: getFirstValue(applicationRow, ["id", "application_id"], null),
                     targetRank: String(
@@ -3654,31 +3507,6 @@ export default function Home({ user }) {
                             applicationRow,
                             ["status", "application_status"],
                             "Not started",
-                        ),
-                    ),
-                    minimumScore: Number.isFinite(minScore) ? minScore : 0,
-                    lastScore: Number.isFinite(lastScore) ? lastScore : 0,
-                    ...resolveLastCycleResult(
-                        applicationRow,
-                        Number.isFinite(minScore) ? minScore : 0,
-                        Number.isFinite(lastScore) ? lastScore : 0,
-                    ),
-                    lastCycleLabel: String(
-                        getFirstValue(
-                            applicationRow,
-                            [
-                                "last_cycle_label",
-                                "previous_cycle",
-                                "cycle_label",
-                            ],
-                            "No published cycle",
-                        ),
-                    ),
-                    lastCycleResult: String(
-                        getFirstValue(
-                            applicationRow,
-                            ["last_cycle_result", "result", "result_label"],
-                            "Pending",
                         ),
                     ),
                 });
@@ -3732,7 +3560,7 @@ export default function Home({ user }) {
                         // eslint-disable-next-line no-console
                         console.debug('hydrate: fallback probing by application_id + user_id', subsTable, appIdCandidate, userCandidate);
                         let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('user_id', userCandidate);
-                        if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                        if (nextPeriodInfo.id) query = query.eq('cycle_id', nextPeriodInfo.id);
                         const probe = await query;
                         if (!probe.error && Array.isArray(probe.data) && probe.data.length > 0) {
                             submissionRows = probe.data;
@@ -3747,7 +3575,7 @@ export default function Home({ user }) {
                         // eslint-disable-next-line no-console
                         console.debug('hydrate: fallback probing by application_id + email', subsTable, appIdCandidate, userEmail);
                         let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq('email', userEmail);
-                        if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                        if (nextPeriodInfo.id) query = query.eq('cycle_id', nextPeriodInfo.id);
                         const probe2 = await query;
                         if (!probe2.error && Array.isArray(probe2.data) && probe2.data.length > 0) {
                             submissionRows = probe2.data;
@@ -3756,7 +3584,7 @@ export default function Home({ user }) {
                             console.debug('hydrate: fallback match application+email rows=', submissionRows.length);
                         }
                     }
-                    
+
                     // Additional fallback: probe by application + area + email across known area ids
                     if ((submissionRows || []).length === 0 && appIdCandidate && userEmail && Array.isArray(baseAreas) && baseAreas.length > 0) {
                         try {
@@ -3769,11 +3597,11 @@ export default function Home({ user }) {
                                     // eslint-disable-next-line no-console
                                     console.debug('hydrate: fallback probing by application+area+email', subsTable, appIdCandidate, areaCol, candidateAreaId, userEmail);
                                     let query = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail).limit(1);
-                                    if (nextCycleInfo.id) query = query.eq('cycle_id', nextCycleInfo.id);
+                                    if (nextPeriodInfo.id) query = query.eq('cycle_id', nextPeriodInfo.id);
                                     const probeArea = await query;
                                     if (!probeArea.error && Array.isArray(probeArea.data) && probeArea.data.length > 0) {
                                         let finalQuery = supabase.from(subsTable).select('*').eq('application_id', appIdCandidate).eq(areaCol, candidateAreaId).eq('email', userEmail);
-                                        if (nextCycleInfo.id) finalQuery = finalQuery.eq('cycle_id', nextCycleInfo.id);
+                                        if (nextPeriodInfo.id) finalQuery = finalQuery.eq('cycle_id', nextPeriodInfo.id);
                                         submissionRows = await finalQuery;
                                         submissionResult.table = subsTable;
                                         // eslint-disable-next-line no-console
@@ -3815,7 +3643,7 @@ export default function Home({ user }) {
                 logResult.table || nextResolvedTables.applicationLogs;
             setResolvedTables(nextResolvedTables);
 
-            const scopedRows = nextCycleInfo.id
+            const scopedRows = nextPeriodInfo.id
                 ? submissionRows.filter((row) => {
                       const cycleId = getFirstValue(row, [
                           "cycle_id",
@@ -3823,7 +3651,7 @@ export default function Home({ user }) {
                           "cycleId",
                       ]);
                       return cycleId
-                          ? String(cycleId) === String(nextCycleInfo.id)
+                          ? String(cycleId) === String(nextPeriodInfo.id)
                           : false;
                   })
                 : submissionRows;
@@ -3837,20 +3665,6 @@ export default function Home({ user }) {
                 setAreasData(baseAreas);
             }
 
-            const scopedLogs = nextCycleInfo.id
-                ? logResult.rows.filter((row) => {
-                      const cycleId = getFirstValue(row, [
-                          "cycle_id",
-                          "ranking_cycle_id",
-                          "cycleId",
-                      ]);
-                      return cycleId
-                          ? String(cycleId) === String(nextCycleInfo.id)
-                          : false;
-                  })
-                : logResult.rows;
-
-            setActivityLog(toActivityItems(scopedLogs, nextCycleInfo.label));
         };
 
         void hydrateHome();
@@ -3886,13 +3700,7 @@ export default function Home({ user }) {
 
     const currentArea = areasData.find((a) => a.id === openAreaId);
 
-    const submittable = areasData.filter((a) => getAreaStatus(a) !== "auto");
-    const completed = submittable.filter(
-        (a) => getAreaStatus(a) === "submitted",
-    ).length;
-    const allDone = completed === submittable.length;
-
-        const appStatus = String(applicationInfo.status || "Not started").toLowerCase();
+    const appStatus = String(applicationInfo.status || "Not started").toLowerCase();
     const appStatusLabel = appStatus.includes("submit")
         ? "Submitted"
         : appStatus.includes("review")
@@ -3900,66 +3708,6 @@ export default function Home({ user }) {
                     : appStatus.includes("draft")
                         ? "Draft"
                         : "Not Started";
-    const isApplicationSubmitted = appStatus.includes("submit");
-
-    const scoreShort = Math.max(
-        applicationInfo.minimumScore - applicationInfo.lastScore,
-        0,
-    );
-    const summaryProgressPct =
-        applicationInfo.minimumScore > 0
-            ? Math.min(
-                  100,
-                  Math.round(
-                      (applicationInfo.lastScore / applicationInfo.minimumScore) *
-                          100,
-                  ),
-              )
-            : 0;
-    const submitProgressPct = useMemo(() => {
-        if (submittable.length === 0) return 0;
-        return Math.round((completed / submittable.length) * 100);
-    }, [completed, submittable.length]);
-
-    const handleSubmitApplication = async () => {
-        if (!applicationInfo.id || isApplicationSubmitted) return;
-
-        setIsSubmittingApplication(true);
-        // Try both 'id' and 'application_id' as the primary key
-        const { error } = await supabase
-            .from(resolvedTables.applications)
-            .update({
-                status: "Submitted",
-                submitted_at: new Date().toISOString(),
-            })
-            .eq("application_id", applicationInfo.id);
-
-        // If that fails, try with 'id'
-        let finalError = error;
-        if (error?.message?.includes("does not exist")) {
-            const result = await supabase
-                .from(resolvedTables.applications)
-                .update({
-                    status: "Submitted",
-                    submitted_at: new Date().toISOString(),
-                })
-                .eq("id", applicationInfo.id);
-            finalError = result.error;
-        }
-
-        if (!finalError) {
-            setApplicationInfo((prev) => ({
-                ...prev,
-                status: "Submitted",
-            }));
-            pushToast("success", "Application submitted successfully.");
-        } else {
-            pushToast("error", "Unable to submit application right now.");
-        }
-
-        setIsSubmittingApplication(false);
-    };
-
     return (
         <>
             <style>{styles}</style>
@@ -3968,10 +3716,10 @@ export default function Home({ user }) {
             <div className="hm-hero">
                 <div className="hm-hero-left">
                     <div className="hm-hero-info">
-                        <div className="hm-cycle-tag">
-                            {cycleInfo.label} ·{" "}
+                        <div className="hm-period-tag">
+                            {periodInfo.label} ·{" "}
                             {submissionOpen
-                                ? "Open Cycle"
+                                ? "Open Period"
                                 : "Submissions Closed"}
                         </div>
                         <div className="hm-name">
@@ -3988,7 +3736,7 @@ export default function Home({ user }) {
                                 <Star size={11} /> {applicationInfo.targetRank}
                             </span>
                             <span className="hm-status-pill hm-status-draft">
-                                ● {appStatusLabel}
+                                {appStatusLabel}
                             </span>
                         </div>
                         <div className="hm-dept-tag">
@@ -4016,7 +3764,7 @@ export default function Home({ user }) {
                                 </svg>
                                 <div className="hm-ring-center">
                                     <span className="hm-ring-days">
-                                        {cycleInfo.daysLeft}
+                                        {periodInfo.daysLeft}
                                     </span>
                                     <span className="hm-ring-days-label">
                                         Days Left
@@ -4027,7 +3775,7 @@ export default function Home({ user }) {
                                 Submission Deadline
                             </div>
                             <div className="hm-deadline-date">
-                                {cycleInfo.deadlineLabel}
+                                {periodInfo.deadlineLabel}
                             </div>
                         </>
                     ) : (
@@ -4064,7 +3812,7 @@ export default function Home({ user }) {
                 </div>
             </div>
 
-            {/* ── RANKING SUMMARY ── */}
+            {/* Ranking summary */}
             <div className="hm-rank-summary">
                 <div className="hm-rs-item">
                     <div className="hm-rs-label">Current Rank</div>
@@ -4081,92 +3829,8 @@ export default function Home({ user }) {
                         <TrendingUp size={14} color="var(--gc-green)" />{" "}
                         {applicationInfo.targetRank}
                     </div>
-                    <div className="hm-rs-sub">This cycle's target</div>
+                    <div className="hm-rs-sub">This period's target</div>
                 </div>
-                <div className="hm-rs-divider" />
-                <div className="hm-rs-item">
-                    <div className="hm-rs-label">Score Needed</div>
-                    <div className="hm-rs-value">
-                        {applicationInfo.lastScore} / {applicationInfo.minimumScore} pts
-                    </div>
-                    <div className="hm-rs-bar">
-                        <div
-                            className="hm-rs-bar-fill"
-                            style={{ width: `${summaryProgressPct}%` }}
-                        />
-                    </div>
-                    <div className="hm-rs-sub">
-                        Last score: {applicationInfo.lastScore} pts · {scoreShort} pts short
-                    </div>
-                </div>
-                <div className="hm-rs-divider" />
-                <div className="hm-rs-item">
-                    <div className="hm-rs-label">Last Cycle Result</div>
-                    <div className="hm-rs-value">
-                        <span className={getLastCycleResultClass(applicationInfo.lastCycleResultTone)}>
-                            {applicationInfo.lastCycleResult}
-                        </span>
-                    </div>
-                    <div className="hm-rs-sub">
-                        {applicationInfo.lastCycleLabel} · {applicationInfo.lastScore} pts
-                    </div>
-                </div>
-            </div>
-
-            {/* ── SUBMIT BAR ── */}
-            <div className="hm-submit-bar">
-                <div className="hm-submit-info">
-                    <h4>Ready to submit your application?</h4>
-                    <p>
-                        Complete all required Parts across all 9 areas. Area IV
-                        is auto-scored by HR.
-                    </p>
-                </div>
-                <div className="hm-prog-track">
-                    <div className="hm-prog-label">
-                        <span>Areas completed</span>
-                        <span>
-                            {completed} / {submittable.length}
-                        </span>
-                    </div>
-                    <div className="hm-prog-bar">
-                        <div
-                            className="hm-prog-fill"
-                            style={{
-                                width: `${submitProgressPct}%`,
-                            }}
-                        />
-                    </div>
-                </div>
-                <button
-                    className="hm-btn-submit-all"
-                    onClick={handleSubmitApplication}
-                    disabled={
-                        !allDone ||
-                        !submissionOpen ||
-                        isSubmittingApplication ||
-                        !applicationInfo.id ||
-                        isApplicationSubmitted
-                    }
-                >
-                    {!submissionOpen ? (
-                        <>
-                            <Lock size={14} /> Submissions Closed
-                        </>
-                    ) : isSubmittingApplication ? (
-                        <>
-                            <Upload size={14} /> Submitting...
-                        </>
-                    ) : isApplicationSubmitted ? (
-                        <>
-                            <CheckCircle size={14} /> Application Submitted
-                        </>
-                    ) : (
-                        <>
-                            <Upload size={14} /> Submit Application
-                        </>
-                    )}
-                </button>
             </div>
 
             {/* ── LEVEL 1: AREA LIST or LEVEL 2: AREA DETAIL ── */}
@@ -4238,50 +3902,12 @@ export default function Home({ user }) {
                                 onSubmitPart={handleSubmitPart}
                                 onViewFile={handleViewFile}
                                 onDownloadFile={handleDownloadFile}
+                                getRequiredName={getFacultyRequiredFileName}
                             />
                         ))}
                     </div>
                 </div>
             ) : null}
-
-            {/* Activity log — list view only */}
-            {view === "list" && (
-                <div className="hm-activity-panel">
-                    <div className="hm-panel-header">
-                        <div>
-                            <div className="hm-panel-title">
-                                Application Log
-                            </div>
-                            <div className="hm-panel-sub">
-                                Submission and review activity for this cycle
-                            </div>
-                        </div>
-                        <span className="hm-badge-green">{cycleInfo.label || "Cycle"}</span>
-                    </div>
-                    <div className="hm-activity-list">
-                        {activityLog.length > 0 ? (
-                            activityLog.map((a, i) => (
-                                <div className="hm-act-item" key={a.id || i}>
-                                    <div className={`hm-act-icon hm-ai-${a.icon}`}>
-                                        <a.IconComp size={15} />
-                                    </div>
-                                    <div>
-                                        <div className="hm-act-title">{a.text}</div>
-                                        <div className="hm-act-meta">{a.meta}</div>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="hm-act-item">
-                                <div>
-                                    <div className="hm-act-title">No activity yet</div>
-                                    <div className="hm-act-meta">Submission and review updates will appear here once records are created.</div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {toasts.length > 0 && (
                 <div className="hm-toast-wrap" role="status" aria-live="polite">

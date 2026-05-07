@@ -1,9 +1,9 @@
-// 📄 SIA/frontend/src/pages/faculty/tabs/History.jsx
+﻿// SIA/frontend/src/pages/faculty/tabs/History.jsx
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
-// ─── Styles ──────────────────────────────────────────────────
+// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const css = `
   @keyframes histFadeUp {
     from { opacity: 0; transform: translateY(14px); }
@@ -63,21 +63,6 @@ const css = `
   .hcb-draft     { background: #fdf8ec; color: #7d5a10; }
   .hcb-closed    { background: #f5f5f5; color: #888; }
 
-  .hc-score {
-    font-size: 14px; font-weight: 700;
-    color: #134f2c; font-family: 'Playfair Display', serif;
-  }
-  .hc-score.pending {
-    font-size: 11px; color: #6b7c70;
-    font-family: 'Source Sans 3', sans-serif; font-style: italic; font-weight: 400;
-  }
-
-  .hc-rank {
-    display: flex; align-items: center; gap: 5px;
-    margin-top: 8px; font-size: 11px; color: #6b7c70;
-  }
-  .hc-rank .arrow { color: #1a6b3c; font-weight: 700; }
-  .hc-rank .retained { color: #c0392b; }
 
   .open-pill {
     position: absolute; top: 14px; right: 14px;
@@ -123,16 +108,6 @@ const css = `
 
 // Intentionally no mock rows here so History only shows live data.
 
-const ACTION_ICONS = {
-    "File Uploaded": "📎",
-    "File Replaced": "🔄",
-    "Submitted":     "📤",
-    "Published":     "🏆",
-    "VPAA Review":   "🔍",
-    "VPAA Approved": "✅",
-    "HR Scored":     "📋",
-    "Draft Saved":   "📝",
-};
 
 const CYCLE_TABLE_CANDIDATES = (
     import.meta.env.VITE_SUPABASE_CYCLE_TABLE_CANDIDATES ||
@@ -339,58 +314,27 @@ function mapStatusToCard(statusText, isOpen) {
     return { status: "closed", statusLabel: "Closed", isOpen: false };
 }
 
-function toCycleCards(cycleRows, applicationRows, currentRank) {
-    if (!Array.isArray(cycleRows) || cycleRows.length === 0) {
+function toPeriodCards(periodRows) {
+    if (!Array.isArray(periodRows) || periodRows.length === 0) {
         return [];
     }
 
-    const appByCycleId = new Map();
-    for (const row of applicationRows || []) {
-        const cycleId = getFirstValue(row, ["cycle_id", "ranking_cycle_id", "cycleId"]);
-        if (!cycleId) continue;
-        const key = String(cycleId);
-        const existing = appByCycleId.get(key);
-        if (!existing || parseTimestamp(row) >= parseTimestamp(existing)) {
-            appByCycleId.set(key, row);
-        }
-    }
-
-    return cycleRows.map((cycle, index) => {
-        const cycleId = getFirstValue(cycle, ["cycle_id", "id"]);
-        const app = cycleId ? appByCycleId.get(String(cycleId)) : null;
-
+    return periodRows.map((period, index) => {
+        const periodId = getFirstValue(period, ["cycle_id", "id"]);
         const title = String(
-            getFirstValue(cycle, ["title", "cycle", "cycle_name", "name"], `Cycle ${index + 1}`),
+            getFirstValue(period, ["title", "cycle", "cycle_name", "name"], `Period ${index + 1}`),
         );
-        const startDate = getFirstValue(cycle, ["start_date", "start_at", "created_at"]);
-        const deadlineDate = getFirstValue(cycle, ["deadline", "deadline_at", "submission_deadline"]);
-        const publishedAt = getFirstValue(cycle, ["published_at", "closed_at", "updated_at"]);
+        const startDate = getFirstValue(period, ["start_date", "start_at", "created_at"]);
+        const deadlineDate = getFirstValue(period, ["deadline", "deadline_at", "submission_deadline"]);
+        const publishedAt = getFirstValue(period, ["published_at", "closed_at", "updated_at"]);
         const statusBits = mapStatusToCard(
-            getFirstValue(cycle, ["status", "state"], ""),
-            Boolean(getFirstValue(cycle, ["is_open", "submission_open", "open"], false)),
+            getFirstValue(period, ["status", "state"], ""),
+            Boolean(getFirstValue(period, ["is_open", "submission_open", "open"], false)),
         );
-
-        const scoreValue = Number(
-            getFirstValue(app, ["final_score", "total_score", "score", "vpaa_score", "hr_score"], NaN),
-        );
-        const minimumValue = Number(
-            getFirstValue(app, ["minimum_score", "required_score", "score_threshold"], 200),
-        );
-        const hasScore = Number.isFinite(scoreValue);
-        const rankFrom = String(
-            getFirstValue(app, ["current_rank", "rank_from"], currentRank || "Current Rank"),
-        );
-        const rankTo = String(
-            getFirstValue(app, ["applying_for", "target_rank", "rank_to"], "Target Rank"),
-        );
-
-        const retained = hasScore && Number.isFinite(minimumValue)
-            ? scoreValue < minimumValue
-            : String(getFirstValue(app, ["result", "result_label", "status"], "")).toLowerCase().includes("retain");
 
         return {
-            id: cycleId || `cycle-${index}`,
-            tag: statusBits.isOpen ? "Current Cycle" : "Completed",
+            id: periodId || `period-${index}`,
+            tag: statusBits.isOpen ? "Current Period" : "Completed",
             title,
             meta: [
                 `Started: ${formatShortDate(startDate, "Unknown")}`,
@@ -400,10 +344,6 @@ function toCycleCards(cycleRows, applicationRows, currentRank) {
             ],
             status: statusBits.status,
             statusLabel: statusBits.statusLabel,
-            score: hasScore ? `${scoreValue} / ${Number.isFinite(minimumValue) ? minimumValue : 200}` : null,
-            rankFrom,
-            rankTo: retained ? "Retained (not qualified)" : rankTo,
-            retained,
             isOpen: statusBits.isOpen,
         };
     });
@@ -431,9 +371,9 @@ function toLogRows(logRows, cycleRows, fallbackBy) {
     }
 
     const cycleMap = new Map(
-        (cycleRows || []).map((cycle) => [
-            String(getFirstValue(cycle, ["cycle_id", "id"], "")),
-            String(getFirstValue(cycle, ["title", "cycle", "cycle_name", "name"], "Unknown cycle")),
+        (periodRows || []).map((period) => [
+            String(getFirstValue(period, ["cycle_id", "id"], "")),
+            String(getFirstValue(period, ["title", "cycle", "cycle_name", "name"], "Unknown period")),
         ]),
     );
 
@@ -447,7 +387,7 @@ function toLogRows(logRows, cycleRows, fallbackBy) {
             const cycleId = getFirstValue(row, ["cycle_id", "ranking_cycle_id", "cycleId"]);
             const cycleLabel = cycleId
                 ? cycleMap.get(String(cycleId))
-                : getFirstValue(row, ["cycle_label", "cycle_name"], "Unknown cycle");
+                : getFirstValue(row, ["cycle_label", "cycle_name"], "Unknown period");
 
             const areaId = getFirstValue(row, ["area_id"], null);
             const partId = getFirstValue(row, ["part_id", "subpart_id"], null);
@@ -465,7 +405,7 @@ function toLogRows(logRows, cycleRows, fallbackBy) {
                 datetime: formatDateTime(
                     getFirstValue(row, ["changed_at", "created_at", "updated_at", "timestamp"], null),
                 ),
-                cycle: String(cycleLabel || "Unknown cycle"),
+                cycle: String(cycleLabel || "Unknown period"),
                 action,
                 actionClass: mapActionClass(action),
                 area: areaDescription,
@@ -476,46 +416,37 @@ function toLogRows(logRows, cycleRows, fallbackBy) {
         });
 }
 
-// ─── Sub-components ───────────────────────────────────────────
-function CycleCard({ cycle }) {
+// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function PeriodCard({ period }) {
     const badgeClass = {
         open:      "hcb-open",
         published: "hcb-published",
         draft:     "hcb-draft",
         closed:    "hcb-closed",
-    }[cycle.status] || "hcb-closed";
+    }[period.status] || "hcb-closed";
 
     return (
-        <div className={`hc${cycle.isOpen ? " open" : ""}`}>
-            {cycle.isOpen && <span className="open-pill">Open</span>}
-            <div className="hc-tag">{cycle.tag}</div>
-            <div className="hc-title">{cycle.title}</div>
+        <div className={`hc${period.isOpen ? " open" : ""}`}>
+            {period.isOpen && <span className="open-pill">Open</span>}
+            <div className="hc-tag">{period.tag}</div>
+            <div className="hc-title">{period.title}</div>
             <div className="hc-meta">
-                {cycle.meta.map((m, i) => <span key={i}>{m}<br /></span>)}
+                {period.meta.map((m, i) => <span key={i}>{m}<br /></span>)}
             </div>
             <div className="hc-row">
-                <span className={`hc-badge ${badgeClass}`}>{cycle.statusLabel}</span>
-                {cycle.score
-                    ? <span className="hc-score">{cycle.score}</span>
-                    : <span className="hc-score pending">Score pending</span>
-                }
-            </div>
-            <div className="hc-rank">
-                <span>{cycle.rankFrom}</span>
-                <span className="arrow">{cycle.retained ? "✓" : "→"}</span>
-                <span className={cycle.retained ? "retained" : ""}>{cycle.rankTo}</span>
+                <span className={`hc-badge ${badgeClass}`}>{period.statusLabel}</span>
             </div>
         </div>
     );
 }
 
-// ─── Main Export ──────────────────────────────────────────────
+// â”€â”€â”€ Main Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function History({ user, cycles, logs }) {
-    const [cycleData, setCycleData] = useState(cycles || []);
+    const [periodData, setPeriodData] = useState(cycles || []);
     const [isLoading, setIsLoading] = useState(!cycles);
 
     const [showAll, setShowAll] = useState(false);
-    const visibleCycles = showAll ? cycleData : cycleData.slice(0, 3);
+    const visiblePeriods = showAll ? periodData : periodData.slice(0, 3);
 
     useEffect(() => {
         let isActive = true;
@@ -523,33 +454,20 @@ export default function History({ user, cycles, logs }) {
         const hydrateHistory = async () => {
             if (cycles) {
                 if (!isActive) return;
-                setCycleData(cycles);
+                setPeriodData(cycles);
                 setIsLoading(false);
                 return;
             }
 
-            const [cycleResult, applicationResult, profileResult] =
-                await Promise.all([
-                    queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40),
-                    queryRowsByUser(APPLICATION_TABLE_CANDIDATES, user, 120),
-                    querySingleByUser(USER_TABLE_CANDIDATES, user),
-                ]);
+            const periodResult = await queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40);
 
             if (!isActive) return;
 
-            const currentRank = String(
-                getFirstValue(
-                    profileResult.row,
-                    ["current_rank", "rank", "position_rank", "faculty_rank"],
-                    "Instructor I",
-                ),
-            );
-
-            const nextCycles = cycles
+            const nextPeriods = cycles
                 ? cycles
-                : toCycleCards(cycleResult.rows, applicationResult.rows, currentRank);
+                : toPeriodCards(periodResult.rows);
 
-            setCycleData(nextCycles);
+            setPeriodData(nextPeriods);
             setIsLoading(false);
         };
 
@@ -565,7 +483,7 @@ export default function History({ user, cycles, logs }) {
             {/* Inject styles once */}
             <style>{css}</style>
 
-            {/* ── Ranking Cycle History ── */}
+            {/* Ranking Period History */}
             <div className="hist-panel">
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <div>
@@ -573,33 +491,33 @@ export default function History({ user, cycles, logs }) {
                             Ranking History
                         </div>
                         <div style={{ fontSize: 12.5, color: "#6b7c70", marginTop: 3 }}>
-                            All cycles you have participated in or that are currently open
+                            All ranking periods you have participated in or that are currently open
                         </div>
                     </div>
                     <span style={{ background: "#eef7f2", color: "#1a6b3c", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, whiteSpace: "nowrap" }}>
-                        {cycleData.length} Cycle{cycleData.length !== 1 ? "s" : ""}
+                        {periodData.length} Period{periodData.length !== 1 ? "s" : ""}
                     </span>
                 </div>
 
                 <div className="hist-grid">
-                    {visibleCycles.length > 0 ? (
-                        visibleCycles.map((c) => <CycleCard key={c.id} cycle={c} />)
+                    {visiblePeriods.length > 0 ? (
+                        visiblePeriods.map((c) => <PeriodCard key={c.id} period={c} />)
                     ) : (
                         <div style={{ gridColumn: "1 / -1", color: "#6b7c70", fontSize: 13, fontStyle: "italic", padding: "6px 2px" }}>
                             {isLoading
-                                ? "Loading cycle history..."
-                                : "No ranking cycles found for your account yet."}
+                                ? "Loading ranking period history..."
+                                : "No ranking periods found for your account yet."}
                         </div>
                     )}
                 </div>
 
-                {cycleData.length > 3 && (
+                {periodData.length > 3 && (
                     <div style={{ marginTop: 14, textAlign: "right" }}>
                         <button
                             onClick={() => setShowAll(p => !p)}
                             style={{ background: "none", border: "none", color: "#1a6b3c", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "'Source Sans 3', sans-serif", display: "inline-flex", alignItems: "center", gap: 4 }}
                         >
-                            {showAll ? "Show less ←" : `See more →`}
+                            {showAll ? "Show less" : "See more"}
                         </button>
                     </div>
                 )}
