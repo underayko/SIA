@@ -942,6 +942,70 @@ function getFirstValue(source, keys, fallback = null) {
     return fallback;
 }
 
+const ROMAN_ORDER = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
+function compressSequentialApplyingFor(value) {
+    let items = value;
+    if (typeof items === "string") {
+        const trimmed = items.trim();
+        if (!trimmed) {
+            items = [];
+        } else {
+            try {
+                const parsed = JSON.parse(trimmed);
+                items = Array.isArray(parsed) ? parsed : trimmed.split(/\s*,\s*/);
+            } catch {
+                items = trimmed.split(/\s*,\s*/);
+            }
+        }
+    }
+
+    items = Array.isArray(items)
+        ? items
+        : String(items || "")
+            .split(/\s*,\s*/)
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+
+    if (items.length <= 1) {
+        return items[0] || "";
+    }
+
+    const parsed = items.map((item) => {
+        const match = item.match(/^(.*?)(I{1,3}|IV|V|VI{0,3}|IX|X)$/i);
+        if (!match) return null;
+        return {
+            prefix: match[1].trim(),
+            numeral: match[2].toUpperCase(),
+        };
+    });
+
+    if (parsed.some((entry) => !entry)) {
+        return items.join(", ");
+    }
+
+    const prefix = parsed[0].prefix;
+    if (!parsed.every((entry) => entry.prefix === prefix)) {
+        return items.join(", ");
+    }
+
+    const indices = parsed.map((entry) => ROMAN_ORDER.indexOf(entry.numeral));
+    if (indices.some((index) => index === -1)) {
+        return items.join(", ");
+    }
+
+    const sortedIndices = [...indices].sort((a, b) => a - b);
+    for (let index = 1; index < sortedIndices.length; index += 1) {
+        if (sortedIndices[index] !== sortedIndices[index - 1] + 1) {
+            return items.join(", ");
+        }
+    }
+
+    const firstNumeral = ROMAN_ORDER[sortedIndices[0]];
+    const lastNumeral = ROMAN_ORDER[sortedIndices[sortedIndices.length - 1]];
+    return `${prefix} ${firstNumeral}-${lastNumeral}`.replace(/\s+/g, " ").trim();
+}
+
 function isColumnOrTableError(error) {
     const message = String(error?.message || "").toLowerCase();
     return (
@@ -1687,6 +1751,22 @@ async function querySingleByCandidates(table, selectClause, candidates) {
     return null;
 }
 
+async function queryDepartmentName(departmentId) {
+    if (!departmentId) return "";
+
+    const result = await supabase
+        .from("departments")
+        .select("department_name")
+        .eq("department_id", departmentId)
+        .maybeSingle();
+
+    if (!result.error) {
+        return String(result.data?.department_name || "");
+    }
+
+    return "";
+}
+
 async function queryRowsByCandidates(table, selectClause, candidates) {
     for (const [column, value] of candidates) {
         try {
@@ -2391,6 +2471,7 @@ export default function Home({ user }) {
         department: "Not set",
         firstName: "FirstName",
         lastName: "LastName",
+        applyingFor: "Not set",
     });
     const [applicationInfo, setApplicationInfo] = useState({
         id: null,
@@ -3365,7 +3446,11 @@ export default function Home({ user }) {
                 nextPeriodInfo = {
                     id: getFirstValue(period, ["id", "cycle_id"], null),
                     label: String(
-                        getFirstValue(period, ["cycle", "cycle_name", "name"], DEFAULT_PERIOD_LABEL),
+                        getFirstValue(
+                            period,
+                            ["cycle", "cycle_name", "name"],
+                            nextSubmissionOpen ? "Open Ranking Period" : DEFAULT_PERIOD_LABEL,
+                        ),
                     ),
                     deadlineLabel: formatLongDate(deadline, DEFAULT_DEADLINE_LABEL),
                     daysLeft: toDaysLeft(deadline, 15),
@@ -3396,6 +3481,32 @@ export default function Home({ user }) {
                 profileRow = profileResult.row;
 
                 if (profileRow && isActive) {
+                    const resolvedFirstName = String(
+                        getFirstValue(
+                            profileRow,
+                            ["name_first", "first_name", "firstname", "given_name", "firstName"],
+                            user?.user_metadata?.first_name || user?.user_metadata?.given_name || "FirstName",
+                        ),
+                    );
+                    const resolvedLastName = String(
+                        getFirstValue(
+                            profileRow,
+                            ["name_last", "last_name", "lastname", "surname", "family_name", "lastName"],
+                            user?.user_metadata?.last_name || user?.user_metadata?.family_name || "LastName",
+                        ),
+                    );
+                    const resolvedDepartmentId = getFirstValue(profileRow, ["department_id"], null);
+                    const resolvedDepartmentName = await queryDepartmentName(resolvedDepartmentId);
+                    const rawApplyingFor = getFirstValue(profileRow, ["applying_for_json", "applying_for"], null);
+                    const resolvedApplyingFor = compressSequentialApplyingFor(rawApplyingFor);
+                    const resolvedCurrentPosition = String(
+                        getFirstValue(
+                            profileRow,
+                            ["current_rank", "rank", "faculty_rank"],
+                            "",
+                        ),
+                    ).trim();
+
                     setProfileInfo({
                         currentRank: String(
                             getFirstValue(
@@ -3409,7 +3520,7 @@ export default function Home({ user }) {
                                 "Not set",
                             ),
                         ),
-                        department: String(
+                        department: resolvedDepartmentName || String(
                             getFirstValue(
                                 profileRow,
                                 [
@@ -3421,20 +3532,9 @@ export default function Home({ user }) {
                                 "Not set",
                             ),
                         ),
-                        firstName: String(
-                            getFirstValue(
-                                profileRow,
-                                ["first_name", "firstname", "given_name", "firstName"],
-                                user?.user_metadata?.first_name || user?.user_metadata?.given_name || "FirstName",
-                            ),
-                        ),
-                        lastName: String(
-                            getFirstValue(
-                                profileRow,
-                                ["last_name", "lastname", "surname", "family_name", "lastName"],
-                                user?.user_metadata?.last_name || user?.user_metadata?.family_name || "LastName",
-                            ),
-                        ),
+                        firstName: resolvedFirstName,
+                        lastName: resolvedLastName,
+                        applyingFor: resolvedApplyingFor || resolvedCurrentPosition || "",
                     });
 
                     const resolvedFacultyId = getFirstValue(profileRow, ["user_id", "id"], null);
@@ -3493,15 +3593,17 @@ export default function Home({ user }) {
             }
 
             if (applicationRow && isActive) {
+                const resolvedTargetRank = String(
+                    getFirstValue(
+                        applicationRow,
+                        ["target_rank", "applying_for"],
+                        getFirstValue(positionRow, ["name", "position_name", "rank", "title"], profileInfo.applyingFor || ""),
+                    ),
+                );
+
                 setApplicationInfo({
                     id: getFirstValue(applicationRow, ["id", "application_id"], null),
-                    targetRank: String(
-                        getFirstValue(
-                            applicationRow,
-                            ["target_rank", "applying_for"],
-                            getFirstValue(positionRow, ["name", "position_name", "rank", "title"], "Not set"),
-                        ),
-                    ),
+                    targetRank: resolvedTargetRank,
                     status: String(
                         getFirstValue(
                             applicationRow,
@@ -3723,21 +3825,7 @@ export default function Home({ user }) {
                                 : "Submissions Closed"}
                         </div>
                         <div className="hm-name">
-                            {user?.displayName || "Faculty Member"}
-                        </div>
-                        <div className="hm-rank-flow">
-                            <span className="hm-rank-chip">
-                                <School size={11} /> {profileInfo.currentRank}
-                            </span>
-                            <span className="hm-rank-arrow">
-                                <ArrowRight size={13} />
-                            </span>
-                            <span className="hm-rank-chip target">
-                                <Star size={11} /> {applicationInfo.targetRank}
-                            </span>
-                            <span className="hm-status-pill hm-status-draft">
-                                {appStatusLabel}
-                            </span>
+                            {`${profileInfo.firstName} ${profileInfo.lastName}`.trim() || user?.displayName || "Faculty Member"}
                         </div>
                         <div className="hm-dept-tag">
                             <Building2 size={12} /> {profileInfo.department}
@@ -3820,14 +3908,13 @@ export default function Home({ user }) {
                         <School size={14} color="var(--gc-green)" />{" "}
                         {profileInfo.currentRank}
                     </div>
-                    <div className="hm-rs-sub">Since June 2020</div>
                 </div>
                 <div className="hm-rs-divider" />
                 <div className="hm-rs-item">
                     <div className="hm-rs-label">Applying For</div>
                     <div className="hm-rs-value">
                         <TrendingUp size={14} color="var(--gc-green)" />{" "}
-                        {applicationInfo.targetRank}
+                        {compressSequentialApplyingFor(profileInfo.applyingFor || applicationInfo.targetRank)}
                     </div>
                     <div className="hm-rs-sub">This period's target</div>
                 </div>
