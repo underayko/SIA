@@ -195,13 +195,12 @@ tbody td:first-child { padding-left: 0; }
   box-shadow: 0 0 0 2px #dbeafe;
 }
 
-
-.action-btn--delete {
-  color: var(--red);
+.action-btn--archive {
+  color: #d97706;
 }
-.action-btn--delete:hover {
-  background: #fef2f2;
-  box-shadow: 0 0 0 2px #fee2e2;
+.action-btn--archive:hover {
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px #fef3c7;
 }
 
 .participation-cell {
@@ -256,6 +255,8 @@ tbody td:first-child { padding-left: 0; }
 .select-field select { border: none; background: none; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 500; color: var(--text); cursor: pointer; outline: none; padding: 0; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
 
 .edu-item        { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.btn-confirm-archive       { background: #ea580c; color: #fff; border: none; }
+.btn-confirm-archive:hover { opacity: 0.88; }
 .edu-item strong { display: block; font-size: 0.82rem; font-weight: 500; color: var(--text); }
 .edu-item small  { font-size: 0.72rem; color: var(--muted); }
 .edu-item span   { font-size: 0.82rem; font-weight: 500; color: var(--text); }
@@ -417,7 +418,7 @@ tbody td:first-child { padding-left: 0; }
 .btn-danger       { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 7px 14px; font-size: 0.82rem; font-weight: 500; cursor: pointer; margin-right: auto; }
 .btn-danger:hover { background: #fca5a5; }
 
-/* ══ CONFIRM DELETE MODAL ════════════════ */
+/* ══ CONFIRM ARCHIVE MODAL ═══════════════ */
 .confirm-overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.4);
@@ -441,10 +442,10 @@ tbody td:first-child { padding-left: 0; }
 
 .confirm-modal-icon {
   width: 52px; height: 52px;
-  background: #fee2e2;
+  background: #ffedd5;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  color: var(--red);
+  color: #ea580c;
 }
 .confirm-modal-icon svg { width: 24px; height: 24px; }
 
@@ -465,5 +466,5 @@ tbody td:first-child { padding-left: 0; }
 .btn-cancel       { background: #f3f4f6; color: var(--text); border: 1px solid var(--border); }
 .btn-cancel:hover { background: #e5e7eb; opacity: 1; }
 
-.btn-confirm-delete       { background: var(--red); color: #fff; border: none; }
-.btn-confirm-delete:hover { opacity: 0.88; }
+.btn-confirm-archive       { background: #ea580c; color: #fff; border: none; }
+.btn-confirm-archive:hover { opacity: 0.88; }

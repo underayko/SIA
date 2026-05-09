@@ -6,7 +6,7 @@ import { supabase } from '../supabase';
 import EducationModal from './usermanagement/EducationModal';
 import EligibilityModal from './usermanagement/EligibilityModal';
 import DoctoralModal from './usermanagement/DoctoralModal';
-import ConfirmDeleteModal from './usermanagement/ConfirmDeleteModal';
+import ConfirmArchiveModal from './usermanagement/ConfirmDeleteModal';
 
 import FacultyRow from './usermanagement/FacultyRow';
 import ViewPanel from './usermanagement/ViewPanel';
@@ -349,17 +349,17 @@ function EditPanel({ faculty, onClose, onSaved, departments = [], selectedCycleI
   };
 
 
-  const handleDelete = async () => {
+  const handleArchive = async () => {
     if (!faculty?.id) return;
     try {
-      const { error: deleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('domain_email', form.email);
-      if (deleteError) throw deleteError;
+      const { error: archiveError } = await supabase.rpc('archive_faculty_user', {
+        p_user_id: Number(faculty.id),
+      });
+
+      if (archiveError) throw archiveError;
       onSaved();
     } catch (err) {
-      setError('Failed to delete: ' + err.message);
+      setError('Failed to archive: ' + err.message);
     }
   };
 
@@ -614,7 +614,7 @@ function EditPanel({ faculty, onClose, onSaved, departments = [], selectedCycleI
 
         <div className="panel-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           {faculty?.id && (
-            <button className="btn btn-danger" onClick={handleDelete}>Delete</button>
+            <button className="btn btn-danger" onClick={handleArchive}>Archive</button>
           )}
           <button className="btn btn-cancel" onClick={onClose}>Cancel</button>
           <button className="btn btn-save" onClick={handleSave} disabled={saving}>
@@ -674,8 +674,8 @@ function EditPanel({ faculty, onClose, onSaved, departments = [], selectedCycleI
   );
 }
 
-// ── Confirm Delete Modal ─────────────────────────────────────
-// ConfirmDeleteModal extracted to ./usermanagement/ConfirmDeleteModal.jsx
+// ── Confirm Archive Modal ────────────────────────────────────
+// ConfirmArchiveModal extracted to ./usermanagement/ConfirmDeleteModal.jsx
 
 // ── View Panel (Read-only) ──────────────────────────────────
 // ViewPanel extracted to ./usermanagement/ViewPanel.jsx
@@ -907,6 +907,24 @@ export default function UserManagement() {
     fetchFaculty();
   };
 
+  const handleArchiveFaculty = async (faculty) => {
+    if (!faculty?.id) return;
+
+    try {
+      setLoadError('');
+
+      const { error: archiveError } = await supabase.rpc('archive_faculty_user', {
+        p_user_id: Number(faculty.id),
+      });
+
+      if (archiveError) throw archiveError;
+
+      await fetchFaculty();
+    } catch (err) {
+      setLoadError('Failed to archive: ' + (err.message || err));
+    }
+  };
+
 
 
   // Status is now managed via EditPanel; admin changes status to include/exclude from ranking
@@ -1047,7 +1065,7 @@ export default function UserManagement() {
                       departments={departments}
                       onView={(f) => { setViewing(f); setSelected(null); }}
                       onEdit={(f) => setSelected(f)}
-                      onDelete={() => setFacultyList(prev => prev.filter(f => f.id !== faculty.id))}
+                      onArchive={handleArchiveFaculty}
                     />
                   ))}
                 </tbody>

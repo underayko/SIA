@@ -1,24 +1,24 @@
 import React from 'react';
 
-export default function ConfirmDeleteModal({ name, onConfirm, onCancel }) {
+export default function ConfirmArchiveModal({ name, onConfirm, onCancel }) {
   return (
     <div className="confirm-overlay" onClick={(e) => e.target.classList.contains('confirm-overlay') && onCancel()}>
       <div className="confirm-modal">
         <div className="confirm-modal-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14H6L5 6"/>
-            <path d="M10 11v6M14 11v6"/>
-            <path d="M9 6V4h6v2"/>
+            <path d="M21 8v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/>
+            <path d="M7 8V6a5 5 0 0 1 10 0v2"/>
+            <path d="M12 12v5"/>
+            <path d="M9 15l3 3 3-3"/>
           </svg>
         </div>
-        <h3 className="confirm-modal-title">Delete Faculty</h3>
+        <h3 className="confirm-modal-title">Archive Faculty</h3>
         <p className="confirm-modal-msg">
-          Are you sure you want to remove <strong>{name}</strong> from the system? This action cannot be undone.
+          Are you sure you want to archive <strong>{name}</strong>? The user will be removed from the active list but kept in the archive table.
         </p>
         <div className="confirm-modal-actions">
           <button className="btn btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="btn btn-confirm-delete" onClick={onConfirm}>Yes, Delete</button>
+          <button className="btn btn-confirm-archive" onClick={onConfirm}>Yes, Archive</button>
         </div>
       </div>
     </div>

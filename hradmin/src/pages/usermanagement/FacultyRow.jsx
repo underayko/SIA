@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import ConfirmDeleteModal from './ConfirmDeleteModal';
+import { createPortal } from 'react-dom';
+import ConfirmArchiveModal from './ConfirmDeleteModal';
 
-export default function FacultyRow({ faculty, departments, onView, onEdit, onDelete }) {
+export default function FacultyRow({ faculty, departments, onView, onEdit, onArchive }) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const departmentMatch = (departments || []).find((d) => {
@@ -32,7 +33,7 @@ export default function FacultyRow({ faculty, departments, onView, onEdit, onDel
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
             </button>
-            <button className="action-btn action-btn--delete" onClick={() => setShowConfirm(true)}>
+            <button className="action-btn action-btn--archive" onClick={() => setShowConfirm(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="3 6 5 6 21 6"/>
                 <path d="M19 6l-1 14H6L5 6"/>
@@ -43,12 +44,13 @@ export default function FacultyRow({ faculty, departments, onView, onEdit, onDel
           </div>
         </td>
       </tr>
-      {showConfirm && (
-        <ConfirmDeleteModal
+      {showConfirm && typeof document !== 'undefined' && createPortal(
+        <ConfirmArchiveModal
           name={faculty.name}
-          onConfirm={() => { setShowConfirm(false); onDelete(); }}
+          onConfirm={() => { setShowConfirm(false); onArchive?.(faculty); }}
           onCancel={() => setShowConfirm(false)}
-        />
+        />,
+        document.body
       )}
     </>
   );
