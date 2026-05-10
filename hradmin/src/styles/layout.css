@@ -7,13 +7,13 @@
 .app {
   display: flex;
   height: 100vh;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
   position: relative;
 }
 
 .main {
   flex: 1;
-  background: #f4f6f8;
+  background: var(--surface);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -34,7 +34,7 @@
 .page-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text);
   margin-bottom: 20px;
 }
 
@@ -51,13 +51,13 @@
 .rk-card-title {
   font-size: 1.2rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .rk-semester {
   font-size: 0.85rem;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--muted);
+  background: var(--gold-pale);
   padding: 4px 12px;
   border-radius: 6px;
 }

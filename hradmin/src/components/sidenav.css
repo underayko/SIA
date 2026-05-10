@@ -9,7 +9,7 @@
   left: 0;
   width: 220px !important;     /* Force exact width */
   height: 100vh;
-  background: #1a3c2b;
+  background: linear-gradient(180deg, var(--green-dark) 0%, #104224 100%);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -54,16 +54,16 @@
   margin: 0 0 2px 0;
   text-align: center;
   letter-spacing: 0.02em;
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: 'Playfair Display', serif !important;
 }
 
 .sidebar-brand span {
   font-size: 10px !important;
-  color: #c9a84c !important;
+  color: var(--gold) !important;
   letter-spacing: 0.12em !important;
   text-transform: uppercase !important;
   text-align: center;
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif !important;
 }
 
 /* ── Nav ──────────────────────────────────── */
@@ -80,7 +80,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 20px;
-  color: rgba(255, 255, 255, 0.60);
+  color: rgba(255, 255, 255, 0.62);
   font-size: 13px !important;
   font-weight: 400 !important;
   font-family: 'DM Sans', sans-serif !important;
@@ -110,8 +110,8 @@
 
 .nav-item.active {
   background: rgba(77, 175, 125, 0.18);
-  color: #4caf7d;
-  border-left: 3px solid #4caf7d;
+  color: var(--gold);
+  border-left: 3px solid var(--gold);
   font-weight: 600;
 }
 
@@ -134,7 +134,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 0 4px;
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif !important;
 }
 
 .user-info strong {
@@ -146,8 +146,8 @@
 
 .user-info small {
   font-size: 10px;
-  color: #c9a84c;
-  font-family: 'DM Sans', sans-serif !important;
+  color: var(--gold);
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif !important;
 }
 
 .logout-btn {

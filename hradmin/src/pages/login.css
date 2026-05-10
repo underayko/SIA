@@ -1,39 +1,45 @@
 /* ══════════════════════════════════════════
    Login.css — ALL styles for login page
    ══════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --green-dark: #1a5c30;
-  --green-mid:  #1e6e38;
-  --green-btn:  #1e7a3e;
+  --green-dark: #134f2c;
+  --green-mid:  #1a6b3c;
+  --green-btn:  #228b4e;
+  --gold: #c9a84c;
+  --surface: #f8f7f4;
   --white:      #ffffff;
-  --text:       #1f2937;
-  --muted:      #6b7280;
-  --border:     #e5e7eb;
-  --shadow-lg:  0 8px 32px rgba(0,0,0,0.13);
+  --text:       #1a1a1a;
+  --muted:      #6b7c70;
+  --border:     #dde5df;
+  --shadow-lg:  0 8px 32px rgba(26,107,60,0.12);
 }
 
 html, body, #root {
   height: 100%; width: 100%; margin: 0; padding: 0;
-  font-family: 'DM Sans', sans-serif; background: #fff;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif; background: var(--surface);
+  overflow-x: hidden;
 }
 
 /* ── Layout ── */
 .split {
   display: flex;
-  width: 100vw;
+  width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* ── Left panel ── */
 .login-left {
-  width: 42%;
+  flex: 0 0 55%;
+  width: 55%;
   min-height: 100vh;
-  background: var(--green-dark);
+  background-color: var(--green-dark);
   background-image:
+    linear-gradient(135deg, rgba(19, 79, 44, 0.98) 0%, rgba(26, 107, 60, 0.95) 58%, rgba(34, 112, 74, 0.96) 100%),
     radial-gradient(ellipse at 20% 20%, rgba(255,255,255,0.04) 0%, transparent 60%),
     radial-gradient(ellipse at 80% 80%, rgba(0,0,0,0.18) 0%, transparent 60%);
   padding: 72px 52px;
@@ -44,6 +50,11 @@ html, body, #root {
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+.login-left::after,
+.login-left::before {
+  animation: loginFloat 10s ease-in-out infinite;
 }
 
 .login-left::before {
@@ -59,54 +70,126 @@ html, body, #root {
   border: 1.5px solid rgba(255,255,255,0.06);
 }
 
+@keyframes loginFloat {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+  50% { transform: translate3d(10px, -14px, 0) scale(1.03); opacity: 0.95; }
+}
+
 .left-content   { position: relative; z-index: 1; }
-.login-section  { margin-bottom: 36px; }
+.login-section  { margin-bottom: 34px; }
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 34px;
+}
+
+.brand-mark-badge {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+}
+
+.brand-mark-logo {
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+}
+
+.brand-mark h1 {
+  margin: 0;
+  font-family: 'Playfair Display', serif;
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.05;
+  color: #fff;
+}
+
+.brand-mark p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--gold);
+}
 
 .section-label {
   font-size: 0.78rem; font-weight: 600;
-  letter-spacing: 0.04em; color: rgba(255,255,255,0.9);
+  letter-spacing: 0.12em; color: var(--gold);
   margin-bottom: 6px; text-align: left;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
 }
 
 .login-section p {
   font-size: 0.875rem; line-height: 1.7;
-  color: rgba(255,255,255,0.72); font-weight: 300;
+  color: rgba(255,255,255,0.84); font-weight: 400;
   padding-left: 1.5em; text-align: left;
 }
 
 .login-divider {
   width: 32px; height: 1px;
-  background: rgba(255,255,255,0.2); margin: 28px 0;
+  background: rgba(201,168,76,0.38); margin: 28px 0;
 }
 
 .core-values    { list-style: none; }
 .core-values li {
-  font-size: 0.875rem; color: rgba(255,255,255,0.72);
-  font-weight: 300; padding: 5px 0 5px 1.5em;
+  font-size: 0.875rem; color: rgba(255,255,255,0.84);
+  font-weight: 400; padding: 5px 0 5px 1.5em;
   position: relative; line-height: 1.5; text-align: left;
 }
 .core-values li::before {
   content: '—'; position: absolute; left: 0;
-  color: rgba(255,255,255,0.35);
+  color: rgba(201,168,76,0.78);
 }
 
 /* ── Right panel ── */
 .login-right {
-  flex: 1; min-height: 100vh;
+  flex: 0 0 45%;
+  width: 45%;
+  min-height: 100vh;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  background: var(--white); padding: 40px 32px;
+  background: var(--surface); padding: 40px 32px;
 }
 
-.brand       { text-align: center; margin-bottom: 36px; }
-.brand h2    { font-size: 1.3rem; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-.brand p     { font-size: 0.82rem; color: var(--muted); font-weight: 400; }
+.brand       { text-align: center; margin-bottom: 36px; display: flex; flex-direction: column; align-items: center; }
+.brand-seal-wrap {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  box-shadow: 0 10px 28px rgba(26,107,60,0.12);
+}
+.brand-seal-image {
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+}
+.brand h2    { font-size: 1.55rem; font-weight: 600; color: var(--green-dark); margin-bottom: 4px; font-family: 'Playfair Display', serif; }
+.brand p     { font-size: 0.82rem; color: var(--green-mid); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.brand-subtitle {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 400;
+}
 
-/* ── Card ── */
-.login-card {
-  background: var(--white); border: 1px solid var(--border);
-  border-radius: 16px; padding: 36px 36px 28px;
-  width: 100%; max-width: 380px; box-shadow: var(--shadow-lg);
+/* ── Form block ── */
+.login-form {
+  width: 100%;
+  max-width: 440px;
 }
 
 .form-group { margin-bottom: 20px; }
@@ -120,8 +203,8 @@ html, body, #root {
 .form-group input[type='password'],
 .form-group input[type='text'] {
   width: 100%; padding: 11px 14px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: #fafafa; font-family: 'DM Sans', sans-serif;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: #fafafa; font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
   font-size: 0.875rem; color: var(--text); outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -149,14 +232,14 @@ html, body, #root {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  background: #f9fafb;
+  background: #fdf8ec;
   border: 1px solid var(--border);
   border-left: none;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
   color: #6b7280;
   font-size: 0.875rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
   white-space: nowrap;
 }
 
@@ -188,9 +271,10 @@ html, body, #root {
 .btn-sign-in {
   width: 100%; padding: 12px;
   background: var(--green-btn); color: #fff;
-  border: none; border-radius: 8px;
-  font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 500;
+  border: none; border-radius: 12px;
+  font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif; font-size: 0.9rem; font-weight: 600;
   cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 6px;
+  box-shadow: 0 10px 22px rgba(26,107,60,0.18);
 }
 .btn-sign-in:hover  { background: #175e2f; }
 .btn-sign-in:active { transform: scale(0.99); }
@@ -214,6 +298,6 @@ html, body, #root {
 
 @media (max-width: 768px) {
   .split       { flex-direction: column; }
-  .login-left  { width: 100%; padding: 48px 32px; }
-  .login-right { padding: 48px 24px; }
+  .login-left  { width: 100%; flex: none; padding: 48px 32px; }
+  .login-right { width: 100%; flex: none; padding: 48px 24px; }
 }

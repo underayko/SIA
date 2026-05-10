@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import { RANKING_RUBRICS } from '../data/rankingRubrics';
 
@@ -38,6 +38,8 @@ export function useReviewData() {
   const [editingFinalScore, setEditingFinalScore] = useState(false);
   const [draftFinalScore, setDraftFinalScore] = useState('');
   const [savingFinalScore, setSavingFinalScore] = useState(false);
+  const realtimeChannelRef = useRef(null);
+  const refreshTimerRef = useRef(null);
 
   const APPLICATION_PAGE_SIZE = 10;
 
@@ -45,6 +47,64 @@ export function useReviewData() {
   useEffect(() => {
     fetchApplicationsData();
   }, []);
+
+  useEffect(() => {
+    if (!currentCycle?.cycle_id) return undefined;
+
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+
+      refreshTimerRef.current = window.setTimeout(async () => {
+        try {
+          // Avoid refetching everything (which sets the global loading spinner).
+          // For realtime submission/score events, do a lightweight refresh:
+          // - If admin is viewing details for a specific application, refresh only its area submissions.
+          // - Otherwise skip heavy refresh to prevent global spinner flicker.
+          if (selectedApplication?.id && areas.length > 0 && (view === 'detail' || view === 'summary')) {
+            await fetchAreaSubmissions(selectedApplication.id);
+          }
+        } catch (error) {
+          console.error('❌ Error refreshing review data from realtime event:', error);
+        }
+      }, 250);
+    };
+
+    const matchesCurrentCycle = (payload) => {
+      const newCycleId = payload?.new?.cycle_id != null ? Number(payload.new.cycle_id) : null;
+      const oldCycleId = payload?.old?.cycle_id != null ? Number(payload.old.cycle_id) : null;
+      return newCycleId === Number(currentCycle.cycle_id) || oldCycleId === Number(currentCycle.cycle_id);
+    };
+
+    const channel = supabase
+      .channel(`review-live-updates-${currentCycle.cycle_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'area_submissions' }, (payload) => {
+        if (matchesCurrentCycle(payload)) {
+          scheduleRefresh();
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'area_submission_criterion_scores' }, (payload) => {
+        const payloadCycleId = payload?.new?.cycle_id != null ? Number(payload.new.cycle_id) : (payload?.old?.cycle_id != null ? Number(payload.old.cycle_id) : null);
+        if (payloadCycleId === Number(currentCycle.cycle_id)) {
+          scheduleRefresh();
+        }
+      })
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
+
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [currentCycle?.cycle_id, selectedApplication?.id, areas.length, view]);
 
   // ─── Fetch Area Submissions When Selection Changes ───────
   useEffect(() => {

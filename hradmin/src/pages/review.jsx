@@ -419,8 +419,15 @@ export default function Review() {
       return;
     }
 
-    reviewData.setSavingAreaScore(true);
+    // Optimistic UI: update the local submissions immediately and show a small inline saving state
     try {
+      const optimisticTotalScore = (criteriaScores || []).reduce((sum, c) => sum + Number(c.score || 0), 0);
+      const optimisticSubmissions = reviewData.areaSubmissions.map((sub) =>
+        String(sub.id) === String(submissionId)
+          ? { ...sub, hr_points: optimisticTotalScore, isSaving: true }
+          : sub
+      );
+      reviewData.setAreaSubmissions(optimisticSubmissions);
       const scoringContext = saveContext || {
         application_id: reviewData.selectedArea?.submission?.application_id || reviewData.selectedApplication?.id || null,
         area_id: reviewData.selectedArea?.submission?.area_id || reviewData.selectedArea?.area_id || null,
@@ -452,6 +459,7 @@ export default function Review() {
               is_placeholder: false,
               ...(updatedSubmission.submission || {}),
               hr_points: updatedSubmission.totalScore ?? updatedSubmission.submission?.hr_points ?? sub.hr_points,
+              isSaving: false,
             }
           : sub
       );
@@ -491,8 +499,8 @@ export default function Review() {
     } catch (err) {
       console.error('Error updating score:', err);
       alert('Failed to update score: ' + err.message);
-    } finally {
-      reviewData.setSavingAreaScore(false);
+      // Clear optimistic saving flags on error
+      reviewData.setAreaSubmissions((prev) => prev.map((s) => ({ ...s, isSaving: false })));
     }
   };
 
@@ -540,6 +548,19 @@ export default function Review() {
     return (hasFile * 1e15) + (hasPart * 1e14) + (hasScore * 1e13) + (uploadedTs * 1e3) + sid;
   };
 
+  const areaSubmissionGroups = reviewData.areaSubmissions.reduce((acc, submission) => {
+    const areaId = Number(submission.area_id);
+    if (!acc.has(areaId)) acc.set(areaId, []);
+    acc.get(areaId).push(submission);
+    return acc;
+  }, new Map());
+
+  const pickBestAreaSubmission = (areaId) => {
+    const group = areaSubmissionGroups.get(Number(areaId)) || [];
+    if (group.length === 0) return null;
+    return [...group].sort((a, b) => rankSubmissionForDisplay(b) - rankSubmissionForDisplay(a))[0] || null;
+  };
+
   const uniqueSubmittedAreasMap = new Map();
   reviewData.areaSubmissions.forEach((submission) => {
     const areaId = Number(submission.area_id);
@@ -550,19 +571,20 @@ export default function Review() {
   });
 
   const submittedAreas = Array.from(uniqueSubmittedAreasMap.values()).map(submission => {
-    const cappedScore = Number(submission.capped_score || 0);
-    const excessScore = Number(submission.excess_score || 0);
+    const bestSubmission = pickBestAreaSubmission(submission.area_id) || submission;
+    const cappedScore = Number(bestSubmission.capped_score ?? submission.capped_score ?? 0);
+    const excessScore = Number(bestSubmission.excess_score ?? submission.excess_score ?? 0);
     const max = Number(submission.area.max_possible_points || 0);
     
     return {
-      id: submission.id,
-      submission_id: submission.id,
-      part_id: submission.part_id,
-      file_path: submission.file_path,
+      id: bestSubmission.id,
+      submission_id: bestSubmission.id,
+      part_id: bestSubmission.part_id,
+      file_path: bestSubmission.file_path,
       label: submission.area.area_name,
       area_id: submission.area.area_id,
       max,
-      score: Number(submission.hr_points || 0).toFixed(2),
+      score: Number(bestSubmission.hr_points || submission.hr_points || 0).toFixed(2),
       cappedScore: cappedScore.toFixed(2),
       excessScore: excessScore > 0 ? excessScore.toFixed(2) : 0,
       criteria: []

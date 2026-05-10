@@ -33,6 +33,15 @@ export default function Login() {
 
       <aside className="login-left">
         <div className="left-content">
+          <div className="brand-mark">
+            <div className="brand-mark-badge">
+              <img src="/gclogo.png" alt="Gordon College Logo" className="brand-mark-logo" />
+            </div>
+            <div>
+              <h1>Gordon College</h1>
+              <p>Olongapo City</p>
+            </div>
+          </div>
 
           <div className="login-section">
             <div className="section-label">Vision</div>
@@ -70,19 +79,26 @@ export default function Login() {
 
       <main className="login-right">
         <div className="brand">
-          <h2>Faculty Evaluation System</h2>
+          <div className="brand-seal-wrap">
+            <img src="/gclogo.png" alt="Gordon College Logo" className="brand-seal-image" />
+          </div>
+          <h2>Gordon College</h2>
           <p>HR Admin Portal</p>
+          <span className="brand-subtitle">Faculty Advancement &amp; Ranking Evaluation System</span>
         </div>
 
-        <div className="login-card">
-          <form onSubmit={handleSubmit}>
+        <form className="login-form" onSubmit={handleSubmit}>
             <div className="form-group">
               <label htmlFor="email">GC EMAIL ADDRESS</label>
               <div className="email-input-group">
                 <input
-                  type="text" id="email"
-                  placeholder="e.g john.doe"
+                  type="text" id="email" name="email"
+                  placeholder="e.g admin"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  inputMode="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -119,7 +135,6 @@ export default function Login() {
             <button type="submit" className="btn-sign-in">Sign In</button>
             <a href="#" className="forgot">Forgot Password?</a>
           </form>
-        </div>
 
         <p className="copyright">&copy; 2026 &nbsp;&nbsp; Gordon College — Olongapo City</p>
       </main>

@@ -381,29 +381,7 @@ export function ScoringCriteriaPanel({ area, submission, criteria, onClose, area
 
       const areaRubric = RANKING_RUBRICS.find((r) => Number(r.areaId) === Number(resolvedAreaId));
       if (!areaRubric) return [];
-
-      const normalizePart = (p) => {
-        if (!p) return null;
-        const cleaned = String(p).trim();
-        const parts = cleaned.split(/[-_\s\/]+/);
-        return parts[parts.length - 1];
-      };
-
-      const partLabel = normalizePart(partId);
-      const subArea = partLabel
-        ? areaRubric.subAreas.find((sa) => sa.label === partLabel || String(sa.id).endsWith(`_${partLabel}`) || String(sa.id).includes(`_${partLabel}_`))
-        : null;
-
       const items = [];
-
-      if (subArea) {
-        if (subArea.children && subArea.children.length > 0) {
-          subArea.children.forEach((c) => items.push({ criterion_key: c.label, label: c.label, title: c.title || c.label, maxPoints: Number(c.maxPoints ?? 0), score: 0 }));
-        } else {
-          items.push({ criterion_key: subArea.label, label: subArea.label, title: subArea.title || subArea.label, maxPoints: Number(subArea.maxPoints ?? 0), score: 0 });
-        }
-        return items;
-      }
 
       // Flatten top-level subareas and children
       areaRubric.subAreas.forEach((sa) => {
