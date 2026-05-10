@@ -23,7 +23,7 @@
 // • Score breakdown removed (HR-only), Ranking Summary added.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
     Send,
     FileText,
@@ -2493,6 +2493,7 @@ export default function Home({ user }) {
         applicationLogs:
             APPLICATION_LOG_TABLE_CANDIDATES[0] || "application_logs",
     });
+    const [resolvedCycleTable, setResolvedCycleTable] = useState(CYCLE_TABLE_CANDIDATES[0] || "ranking_cycles");
 
     const getFacultyRequiredFileName = (partId) =>
         getRequiredFileName(partId, profileInfo.lastName, profileInfo.firstName);
@@ -2522,6 +2523,61 @@ export default function Home({ user }) {
     const patchPartLocal = (partId, updater) => {
         setAreasData((prev) => updatePartInAreas(prev, partId, updater));
     };
+
+    const refreshSubmissionWindow = useCallback(async () => {
+        const periodResult = await queryLatestPeriodFromCandidates(CYCLE_TABLE_CANDIDATES);
+
+        let nextSubmissionOpen = false;
+        let nextPeriodInfo = {
+            id: null,
+            label: DEFAULT_PERIOD_LABEL,
+            deadlineLabel: DEFAULT_DEADLINE_LABEL,
+            daysLeft: 0,
+        };
+
+        if (periodResult.row) {
+            const period = periodResult.row;
+            const deadline = getFirstValue(period, [
+                "deadline",
+                "deadline_at",
+                "submission_deadline",
+                "end_date",
+                "closing_date",
+            ]);
+            const periodStatus = String(getFirstValue(period, ["status", "cycle_status", "state"], "")).toLowerCase();
+
+            if (periodStatus === 'submissions_closed' || periodStatus === 'finished') {
+                nextSubmissionOpen = false;
+            } else if (periodStatus === 'open') {
+                nextSubmissionOpen = true;
+            } else {
+                nextSubmissionOpen = toBoolean(
+                    getFirstValue(period, ["submission_open", "is_open", "open"], periodStatus),
+                    false,
+                );
+            }
+
+            nextPeriodInfo = {
+                id: getFirstValue(period, ["id", "cycle_id"], null),
+                label: String(
+                    getFirstValue(
+                        period,
+                        ["cycle", "cycle_name", "name"],
+                        nextSubmissionOpen ? "Open Ranking Period" : DEFAULT_PERIOD_LABEL,
+                    ),
+                ),
+                deadlineLabel: formatLongDate(deadline, DEFAULT_DEADLINE_LABEL),
+                daysLeft: toDaysLeft(deadline, 15),
+            };
+        }
+
+        if (periodResult.table) {
+            setResolvedCycleTable(periodResult.table);
+        }
+
+        setSubmissionOpen(nextSubmissionOpen);
+        setPeriodInfo(nextPeriodInfo);
+    }, []);
 
     const openUrl = (url, downloadName = null) => {
         if (!url) return;
@@ -3414,6 +3470,10 @@ export default function Home({ user }) {
                 CYCLE_TABLE_CANDIDATES,
             );
 
+            if (periodResult.table && isActive) {
+                setResolvedCycleTable(periodResult.table);
+            }
+
             if (periodResult.row) {
                 const period = periodResult.row;
                 const deadline = getFirstValue(period, [
@@ -3781,6 +3841,31 @@ export default function Home({ user }) {
             isActive = false;
         };
     }, [userEmail, userId]);
+
+    useEffect(() => {
+        if (!resolvedCycleTable) return;
+
+        const channel = supabase
+            .channel(`faculty-home-cycles-${resolvedCycleTable}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: resolvedCycleTable,
+                },
+                () => {
+                    void refreshSubmissionWindow();
+                },
+            )
+            .subscribe();
+
+        void refreshSubmissionWindow();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [refreshSubmissionWindow, resolvedCycleTable]);
 
     const openArea = (id) => {
         setOpenAreaId(id);

@@ -1,6 +1,6 @@
 ﻿// SIA/frontend/src/pages/faculty/tabs/History.jsx
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
 // â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -207,9 +207,19 @@ function PeriodCard({ period }) {
 export default function History({ cycles }) {
     const [periodData, setPeriodData] = useState(cycles || []);
     const [isLoading, setIsLoading] = useState(!cycles);
+    const [resolvedCycleTable, setResolvedCycleTable] = useState(CYCLE_TABLE_CANDIDATES[0] || "ranking_cycles");
 
     const [showAll, setShowAll] = useState(false);
     const visiblePeriods = showAll ? periodData : periodData.slice(0, 3);
+
+    const refreshHistory = useCallback(async () => {
+        const periodResult = await queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40);
+        if (periodResult.table) {
+            setResolvedCycleTable(periodResult.table);
+        }
+        setPeriodData(toPeriodCards(periodResult.rows));
+        setIsLoading(false);
+    }, []);
 
     useEffect(() => {
         let isActive = true;
@@ -222,16 +232,7 @@ export default function History({ cycles }) {
                 return;
             }
 
-            const periodResult = await queryRowsFromTableCandidates(CYCLE_TABLE_CANDIDATES, 40);
-
-            if (!isActive) return;
-
-            const nextPeriods = cycles
-                ? cycles
-                : toPeriodCards(periodResult.rows);
-
-            setPeriodData(nextPeriods);
-            setIsLoading(false);
+            await refreshHistory();
         };
 
         void hydrateHistory();
@@ -239,7 +240,34 @@ export default function History({ cycles }) {
         return () => {
             isActive = false;
         };
-    }, [cycles]);
+    }, [cycles, refreshHistory]);
+
+    useEffect(() => {
+        if (!resolvedCycleTable) return;
+
+        const channel = supabase
+            .channel(`faculty-history-cycles-${resolvedCycleTable}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: resolvedCycleTable,
+                },
+                () => {
+                    void refreshHistory();
+                },
+            )
+            .subscribe();
+
+        if (!cycles) {
+            void refreshHistory();
+        }
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [cycles, refreshHistory, resolvedCycleTable]);
 
     return (
         <>

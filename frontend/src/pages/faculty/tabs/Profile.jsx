@@ -9,7 +9,7 @@
 // • Added last-cycle performance rating chip in the hero (read-only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import {
     User,
@@ -1396,6 +1396,7 @@ export default function Profile({ user }) {
     const [profileEditWindowResolved, setProfileEditWindowResolved] = useState(false);
     const [profileEditWindowLabel, setProfileEditWindowLabel] = useState("");
     const [activeCycleRow, setActiveCycleRow] = useState(null);
+    const [resolvedCycleTable, setResolvedCycleTable] = useState(CYCLE_TABLE_CANDIDATES[0] || "ranking_cycles");
     const [memberSince, setMemberSince] = useState(formatShortDate(user?.created_at, ""));
     const [lastName, setLastName] = useState(getFirstValue(user, PROFILE_LAST_NAME_KEYS, ""));
     const [firstName, setFirstName] = useState(getFirstValue(user, PROFILE_FIRST_NAME_KEYS, ""));
@@ -1566,6 +1567,10 @@ export default function Profile({ user }) {
 
             const [cycleResult, userRow] = await Promise.all([cyclePromise, userFetchPromise]);
 
+            if (cycleResult?.table && isActive) {
+                setResolvedCycleTable(cycleResult.table);
+            }
+
             if (isActive && cycleResult) {
                 const activeCycle = (cycleResult.rows || []).find((row) => {
                     const status = normalizeStatus(getFirstValue(row, ["status", "cycle_status"], ""));
@@ -1652,22 +1657,55 @@ export default function Profile({ user }) {
         };
     }, [userEmail, userId]);
 
-    useEffect(() => {
-        if (!activeCycleRow) return;
+    const refreshCycleWindow = useCallback(async () => {
+        const cycleResult = await queryRowsWithTableFromCandidates(CYCLE_TABLE_CANDIDATES, 50);
+        const activeCycle = (cycleResult.rows || []).find((row) => {
+            const status = normalizeStatus(getFirstValue(row, ["status", "cycle_status"], ""));
+            return ["open", "active", "in_progress", "in progress"].includes(status);
+        });
 
-        const syncEditWindow = () => {
-            const editState = resolveProfileEditWindow(activeCycleRow);
+        if (cycleResult?.table) {
+            setResolvedCycleTable(cycleResult.table);
+        }
+
+        if (activeCycle) {
+            const editState = resolveProfileEditWindow(activeCycle);
             setProfileEditOpen(editState.isOpen);
             setProfileEditWindowLabel(editState.windowLabel);
-        };
+            setActiveCycleRow(activeCycle);
+        } else {
+            setProfileEditOpen(false);
+            setProfileEditWindowLabel("");
+            setActiveCycleRow(null);
+        }
 
-        syncEditWindow();
-        const interval = window.setInterval(syncEditWindow, 30000);
+        setProfileEditWindowResolved(true);
+    }, []);
+
+    useEffect(() => {
+        if (!resolvedCycleTable) return;
+
+        const channel = supabase
+            .channel(`faculty-profile-cycles-${resolvedCycleTable}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: resolvedCycleTable,
+                },
+                () => {
+                    void refreshCycleWindow();
+                },
+            )
+            .subscribe();
+
+        void refreshCycleWindow();
 
         return () => {
-            window.clearInterval(interval);
+            supabase.removeChannel(channel);
         };
-    }, [activeCycleRow]);
+    }, [refreshCycleWindow, resolvedCycleTable]);
 
     // ── Handlers ──
 

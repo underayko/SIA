@@ -178,6 +178,42 @@ export function AuthProvider({ children }) {
 		};
 	}, [hydrateProfile]);
 
+	useEffect(() => {
+		if (!user) return;
+
+		const userId = user?.id || user?.user_id || null;
+		const userEmail = user?.email || user?.user_metadata?.email || null;
+
+		const channel = supabase
+			.channel(`faculty-users-${userId || userEmail || "current"}`)
+			.on(
+				"postgres_changes",
+				{
+					event: "*",
+					schema: "public",
+					table: "users",
+				},
+				(payload) => {
+					const changedRow = payload?.new || payload?.old || null;
+					if (!changedRow) return;
+
+					const changedUserId = changedRow.user_id || changedRow.id || null;
+					const changedEmail = changedRow.domain_email || changedRow.email || null;
+					const matchesUserId = userId !== null && String(changedUserId || "") === String(userId);
+					const matchesEmail = Boolean(userEmail) && String(changedEmail || "").toLowerCase() === String(userEmail).toLowerCase();
+
+					if (matchesUserId || matchesEmail) {
+						void hydrateProfile(user);
+					}
+				},
+			)
+			.subscribe();
+
+		return () => {
+			supabase.removeChannel(channel);
+		};
+	}, [hydrateProfile, user]);
+
 	const refreshProfile = useCallback(async () => {
 		await hydrateProfile(user);
 	}, [hydrateProfile, user]);
