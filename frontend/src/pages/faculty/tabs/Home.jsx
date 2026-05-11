@@ -2219,6 +2219,8 @@ function PartCard({
                     </ul>
                 </div>
 
+                {requiredFileChip}
+
                 {part.auto ? (
                     <div className="hm-auto-info">
                         <Lock
@@ -2239,8 +2241,6 @@ function PartCard({
                     <>
                         {/* Still allow template download and viewing submitted files when closed */}
                         <div className="hm-pc-controls">
-                            {requiredFileChip}
-
                             <button
                                 type="button"
                                 className="hm-btn-template"
@@ -2323,8 +2323,6 @@ function PartCard({
                     <>
                         {/* Controls: Template + File + Submit */}
                         <div className="hm-pc-controls">
-                            {requiredFileChip}
-
                             {/* Template download for this Part */}
                             <button
                                 type="button"
