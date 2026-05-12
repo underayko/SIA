@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import Sidebar from '../components/sidenav';
+import { RANKING_RUBRICS } from '../data/rankingRubrics';
 import './perfeval.css';
 import '../styles/layout.css';
 
@@ -328,28 +328,197 @@ export default function PerfEval() {
   const pdfRef = useRef(null);
 
   const handleDownloadPDF = async () => {
-    const element = pdfRef.current;
-    if (!element) return;
-
     try {
-      // Temporarily add a class for PDF styling if needed, or just let html2canvas do its work
-      const canvas = await html2canvas(element, {
-        scale: 2, // Higher quality
-        useCORS: true,
-        logging: false
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 35;
+      const contentWidth = pageWidth - margin * 2;
+      const tableX = margin;
+      let y = 28;
+
+      const facultyForPdf = currentFaculty || faculty;
+      const periodLabel = '1ST SEMESTER • AY 2026-2027';
+
+      const getDisplayName = (name) => {
+        const raw = String(name || '');
+        const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          const lastName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase();
+          return `${lastName}, ${parts.slice(1).join(', ')}`;
+        }
+        return raw || 'N/A';
+      };
+
+      const loadLogo = async () => {
+        try {
+          const response = await fetch('/gclogo.png');
+          if (!response.ok) return null;
+          const blob = await response.blob();
+          return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result));
+            reader.readAsDataURL(blob);
+          });
+        } catch (error) {
+          console.warn('Failed to load HR Admin logo for PDF', error);
+          return null;
+        }
+      };
+
+      const logoDataUrl = await loadLogo();
+
+      const rankedSubmissions = [...(evalData?.submissions || [])]
+        .map((submission) => {
+          const areaRubric = RANKING_RUBRICS.find((area) => Number(area.areaId) === Number(submission.area_id));
+          const score = Number(submission.hr_points ?? submission.vpaa_points ?? submission.csv_total_average_rate ?? 0);
+          const max = Number(areaRubric?.maxPoints ?? 0);
+          return {
+            areaCode: areaRubric?.areaCode || `Area ${submission.area_id}`,
+            areaName: areaRubric?.areaName || submission.area?.area_name || `Area ${submission.area_id}`,
+            score,
+            max,
+            excess: Math.max(0, score - max),
+          };
+        })
+        .sort((a, b) => {
+          const order = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+          return order.indexOf(a.areaCode) - order.indexOf(b.areaCode);
+        });
+
+      const totalScore = rankedSubmissions.reduce((sum, item) => sum + item.score, 0);
+
+      const nameValue = getDisplayName(facultyForPdf?.name);
+      const positionValue = facultyForPdf?.presentRank || facultyForPdf?.instructor || 'N/A';
+      const natureValue = facultyForPdf?.nature || facultyForPdf?.nature_of_appointment || 'N/A';
+
+      const qualifications = [
+        { label: 'Experience', value: facultyForPdf?.teachingExp || 'N/A' },
+        { label: 'Degree', value: facultyForPdf?.education?.[0]?.degree || facultyForPdf?.education || facultyForPdf?.eligibility || 'N/A' },
+        { label: 'Teaching Performance', value: facultyForPdf?.rating ? `${facultyForPdf.rating} — ${facultyForPdf.ratingDesc || ''}`.trim() : 'N/A' },
+        { label: 'Research Output', value: facultyForPdf?.industryExp || 'N/A' },
+        { label: 'Eligibility', value: facultyForPdf?.eligibility || 'N/A' },
+      ];
+
+      if (logoDataUrl) {
+        pdf.addImage(logoDataUrl, 'PNG', (pageWidth - 56) / 2, y, 56, 56);
+        y += 74;
+      }
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(18);
+      pdf.text('GORDON COLLEGE', pageWidth / 2, y, { align: 'center' });
+      y += 24;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10.5);
+      pdf.text(periodLabel, pageWidth / 2, y, { align: 'center' });
+      y += 16;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('FACULTY EVALUATION REPORT', pageWidth / 2, y, { align: 'center' });
+      y += 20;
+
+      pdf.setDrawColor(120);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 16;
+
+      pdf.setFontSize(11);
+      pdf.text('APPLICANT INFORMATION', margin, y);
+      y += 14;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`Name: ${nameValue}`, margin + 12, y);
+      y += 12;
+      pdf.text(`Position: ${positionValue}`, margin + 12, y);
+      y += 12;
+      pdf.text(`Nature of Appointment: ${natureValue}`, margin + 12, y);
+      y += 22;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('EVALUATION SCORES BY AREA', margin, y);
+      y += 18;
+
+      const rowHeight = 22;
+      const colAreaWidth = contentWidth * 0.56;
+      const colScoreWidth = contentWidth * 0.14;
+      const colMaxWidth = contentWidth * 0.14;
+      const colExcessWidth = contentWidth - colAreaWidth - colScoreWidth - colMaxWidth;
+      const cellPadding = 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setDrawColor(90);
+      pdf.rect(tableX, y, contentWidth, rowHeight);
+      const headerCenter = y + rowHeight / 2 + 1;
+      pdf.text('Area', tableX + cellPadding, headerCenter, { align: 'left' });
+      pdf.text('Score', tableX + colAreaWidth + colScoreWidth / 2, headerCenter, { align: 'center' });
+      pdf.text('Max', tableX + colAreaWidth + colScoreWidth + colMaxWidth / 2, headerCenter, { align: 'center' });
+      pdf.text('Excess', tableX + colAreaWidth + colScoreWidth + colMaxWidth + colExcessWidth / 2, headerCenter, { align: 'center' });
+      pdf.line(tableX + colAreaWidth, y, tableX + colAreaWidth, y + rowHeight);
+      pdf.line(tableX + colAreaWidth + colScoreWidth, y, tableX + colAreaWidth + colScoreWidth, y + rowHeight);
+      pdf.line(tableX + colAreaWidth + colScoreWidth + colMaxWidth, y, tableX + colAreaWidth + colScoreWidth + colMaxWidth, y + rowHeight);
+      y += rowHeight;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9.5);
+      rankedSubmissions.forEach((row) => {
+        const wrappedArea = pdf.splitTextToSize(`${row.areaCode}: ${row.areaName}`, colAreaWidth - cellPadding * 2);
+        const cellHeight = Math.max(rowHeight, wrappedArea.length * 10 + 6);
+        const rowTop = y;
+        const rowCenter = rowTop + cellHeight / 2 + 1;
+
+        pdf.rect(tableX, rowTop, contentWidth, cellHeight);
+        pdf.line(tableX + colAreaWidth, rowTop, tableX + colAreaWidth, rowTop + cellHeight);
+        pdf.line(tableX + colAreaWidth + colScoreWidth, rowTop, tableX + colAreaWidth + colScoreWidth, rowTop + cellHeight);
+        pdf.line(tableX + colAreaWidth + colScoreWidth + colMaxWidth, rowTop, tableX + colAreaWidth + colScoreWidth + colMaxWidth, rowTop + cellHeight);
+
+        pdf.text(wrappedArea, tableX + cellPadding, rowCenter - (wrappedArea.length - 1) * 4.5, { align: 'left' });
+        pdf.text(row.score.toFixed(2), tableX + colAreaWidth + colScoreWidth / 2, rowCenter, { align: 'center' });
+        pdf.text(row.max.toFixed(2), tableX + colAreaWidth + colScoreWidth + colMaxWidth / 2, rowCenter, { align: 'center' });
+        pdf.text(row.excess > 0 ? `+${row.excess.toFixed(2)}` : '—', tableX + colAreaWidth + colScoreWidth + colMaxWidth + colExcessWidth / 2, rowCenter, { align: 'center' });
+
+        y += cellHeight;
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      // If content is longer than one page, you might want to handle page breaks
-      // For a simple view, we just scale it to fit
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      
-      const fileName = currentFaculty?.name ? `${currentFaculty.name}_Evaluation.pdf` : 'Performance_Evaluation.pdf';
+      pdf.setFont('helvetica', 'bold');
+      pdf.setDrawColor(80);
+      pdf.setLineWidth(1.5);
+      pdf.rect(tableX, y, contentWidth, rowHeight);
+      pdf.line(tableX + colAreaWidth, y, tableX + colAreaWidth, y + rowHeight);
+      pdf.line(tableX + colAreaWidth + colScoreWidth, y, tableX + colAreaWidth + colScoreWidth, y + rowHeight);
+      pdf.line(tableX + colAreaWidth + colScoreWidth + colMaxWidth, y, tableX + colAreaWidth + colScoreWidth + colMaxWidth, y + rowHeight);
+      const totalCenter = y + rowHeight / 2 + 1;
+      pdf.text('TOTAL POINTS', tableX + cellPadding, totalCenter, { align: 'left' });
+      pdf.text(totalScore.toFixed(2), tableX + colAreaWidth + colScoreWidth / 2, totalCenter, { align: 'center' });
+      y += rowHeight + 18;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('QUALIFICATION SUMMARY', margin, y);
+      y += 16;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      qualifications.forEach((item) => {
+        const labelWidth = 120;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`${item.label}:`, margin + 12, y);
+        pdf.setFont('helvetica', 'normal');
+        const wrapped = pdf.splitTextToSize(String(item.value || 'N/A'), contentWidth - labelWidth - 24);
+        pdf.text(wrapped, margin + 12 + labelWidth, y);
+        y += Math.max(12, wrapped.length * 12) + 6;
+      });
+
+      pdf.setFontSize(8);
+      pdf.setTextColor(110);
+      pdf.text('This report is officially issued and contains the evaluation scores for the faculty applicant.', pageWidth / 2, pageHeight - 14, { align: 'center' });
+      pdf.setTextColor(0);
+
+      const fileName = facultyForPdf?.name ? `${facultyForPdf.name}_Evaluation.pdf` : 'Performance_Evaluation.pdf';
       pdf.save(fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.pdf');
     } catch (err) {
       console.error('Error generating PDF:', err);

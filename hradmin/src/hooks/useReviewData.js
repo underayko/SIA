@@ -40,13 +40,56 @@ export function useReviewData() {
   const [savingFinalScore, setSavingFinalScore] = useState(false);
   const realtimeChannelRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const liveApplicationsChannelRef = useRef(null);
 
   const APPLICATION_PAGE_SIZE = 10;
 
   // ─── Initial Data Fetch ──────────────────────────────────
   useEffect(() => {
-    fetchApplicationsData();
+    void fetchApplicationsData();
   }, []);
+
+  useEffect(() => {
+    if (!currentCycle?.cycle_id) return undefined;
+
+    const scheduleFullRefresh = () => {
+      void fetchApplicationsData({ showLoader: false });
+    };
+
+    const channel = supabase
+      .channel(`review-applications-live-${currentCycle.cycle_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, (payload) => {
+        const newCycleId = payload?.new?.cycle_id != null ? Number(payload.new.cycle_id) : null;
+        const oldCycleId = payload?.old?.cycle_id != null ? Number(payload.old.cycle_id) : null;
+        if (newCycleId === Number(currentCycle.cycle_id) || oldCycleId === Number(currentCycle.cycle_id)) {
+          scheduleFullRefresh();
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cycle_participants' }, (payload) => {
+        const newCycleId = payload?.new?.cycle_id != null ? Number(payload.new.cycle_id) : null;
+        const oldCycleId = payload?.old?.cycle_id != null ? Number(payload.old.cycle_id) : null;
+        if (newCycleId === Number(currentCycle.cycle_id) || oldCycleId === Number(currentCycle.cycle_id)) {
+          scheduleFullRefresh();
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ranking_cycles' }, (payload) => {
+        const newCycleId = payload?.new?.cycle_id != null ? Number(payload.new.cycle_id) : null;
+        const oldCycleId = payload?.old?.cycle_id != null ? Number(payload.old.cycle_id) : null;
+        if (newCycleId === Number(currentCycle.cycle_id) || oldCycleId === Number(currentCycle.cycle_id)) {
+          scheduleFullRefresh();
+        }
+      })
+      .subscribe();
+
+    liveApplicationsChannelRef.current = channel;
+
+    return () => {
+      if (liveApplicationsChannelRef.current) {
+        supabase.removeChannel(liveApplicationsChannelRef.current);
+        liveApplicationsChannelRef.current = null;
+      }
+    };
+  }, [currentCycle?.cycle_id]);
 
   useEffect(() => {
     if (!currentCycle?.cycle_id) return undefined;
@@ -118,9 +161,9 @@ export function useReviewData() {
    * Fetches all applications for the active cycle with filtering and deduplication
    * (~350 lines of logic consolidated here)
    */
-  const fetchApplicationsData = async () => {
+  const fetchApplicationsData = async ({ showLoader = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       console.log('📊 Fetching applications data (Supabase)...');
 
       // Get all cycles and find the active one
@@ -305,7 +348,7 @@ export function useReviewData() {
       console.error('❌ Error fetching applications:', error);
       alert('Error loading applications data');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 

@@ -481,13 +481,31 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedPastCycle?.cycle_id) return undefined;
+
+    const refreshPastCycle = () => {
+      void handleReviewCycle(selectedPastCycle.cycle_id);
+    };
+
+    const pastCycleChannel = supabase
+      .channel(`dashboard-past-cycle-${selectedPastCycle.cycle_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications', filter: `cycle_id=eq.${selectedPastCycle.cycle_id}` }, refreshPastCycle)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ranking_cycles', filter: `cycle_id=eq.${selectedPastCycle.cycle_id}` }, refreshPastCycle)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pastCycleChannel);
+    };
+  }, [selectedPastCycle?.cycle_id]);
+
   const handleCycleSaved = () => {
     setModalOpen(false);
     setModalCycle(null);
     setFocusDeadlineFields(false);
     setHistoryPage(1);
     // Always refresh dashboard after saving a cycle
-    fetchData();
+    fetchData({ showLoader: false });
   };
 
   const resetActionModal = () => {
@@ -583,7 +601,7 @@ export default function Dashboard() {
         .eq('cycle_id', currentCycle.cycle_id);
       if (error) throw error;
       console.log('âœ… Cycle reopened successfully');
-      fetchData(); // Refresh data
+      fetchData({ showLoader: false }); // Refresh data silently
     } catch (err) {
       console.error('âŒ Error updating cycle status:', err);
       alert('Failed to update cycle status: ' + err.message);
@@ -644,7 +662,7 @@ export default function Dashboard() {
       }
 
       resetActionModal();
-      fetchData();
+      fetchData({ showLoader: false });
     } catch (err) {
       console.error('âŒ Error updating cycle status:', err);
       alert('Failed to update cycle status: ' + err.message);

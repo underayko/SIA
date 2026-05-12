@@ -668,6 +668,7 @@ export default function Review() {
               totalApplicationPages={totalApplicationPages}
               setApplicationPage={reviewData.setApplicationPage}
               onReviewClick={handleReviewClick}
+              currentCycle={reviewData.currentCycle}
             />
           )}
 

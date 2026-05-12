@@ -148,7 +148,7 @@ function EditPanel({ faculty, onClose, onSaved, departments = [], selectedCycleI
     nameMiddle: '',
     email: faculty?.email ?? '',
     department: faculty?.department != null ? String(faculty.department) : '',
-    presentRank: faculty?.presentRank ?? 'Instructor I',
+    presentRank: faculty?.presentRank || 'Instructor I',
     natureOfAppointment: faculty?.natureOfAppointment ?? 'Permanent',
     teachingYears: faculty?.teachingYears ?? '',
     industryYears: faculty?.industryYears ?? '',
