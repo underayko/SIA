@@ -2074,6 +2074,16 @@ const styles = `
   .hm-btn-submit:hover:not(:disabled){opacity:0.9;}
   .hm-btn-submit:disabled{background:linear-gradient(135deg,#27ae60,#2ecc71);cursor:default;box-shadow:none;}
   .hm-pc-date{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;}
+  /* Error modal */
+  .hm-modal-backdrop{position:fixed;inset:0;background:rgba(17,24,39,.38);display:flex;align-items:center;justify-content:center;padding:18px;z-index:11000;}
+  .hm-error-modal{width:min(420px,100%);background:var(--white);border-radius:12px;border:1px solid #f5b7b1;box-shadow:0 18px 45px rgba(0,0,0,.22);overflow:hidden;animation:hmFU .18s ease both;}
+  .hm-error-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px 10px;}
+  .hm-error-modal-title{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:#c0392b;}
+  .hm-error-modal-close{width:28px;height:28px;border:none;border-radius:7px;background:#fef2f2;color:#c0392b;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .hm-error-modal-body{padding:0 18px 16px;font-size:13px;line-height:1.55;color:var(--text-mid);}
+  .hm-error-modal-file{margin-top:10px;padding:8px 10px;border-radius:8px;background:#f8f7f4;color:#1a1a1a;font-family:Consolas,'Courier New',monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hm-error-modal-actions{display:flex;justify-content:flex-end;padding:12px 18px 16px;border-top:1px solid #f0f3f1;}
+  .hm-error-modal-ok{border:none;border-radius:8px;background:#c0392b;color:#fff;font-family:'Source Sans 3',sans-serif;font-size:12px;font-weight:700;padding:8px 18px;cursor:pointer;}
     /* TOASTS */
     .hm-toast-wrap{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:10000;max-width:min(360px,92vw);}
     .hm-toast{display:flex;align-items:flex-start;gap:8px;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.4;box-shadow:0 10px 22px rgba(0,0,0,0.14);border:1px solid transparent;background:#fff;}
@@ -2557,6 +2567,7 @@ export default function Home({ user }) {
     });
     const [partActionMap, setPartActionMap] = useState({});
     const [toasts, setToasts] = useState([]);
+    const [fileTypeError, setFileTypeError] = useState(null);
     const [resolvedTables, setResolvedTables] = useState({
         applications: APPLICATION_TABLE_CANDIDATES[0] || "applications",
         areaSubmissions:
@@ -2589,6 +2600,13 @@ export default function Home({ user }) {
         window.setTimeout(() => {
             setToasts((prev) => prev.filter((toast) => toast.id !== id));
         }, TOAST_TTL_MS);
+    };
+
+    const showInvalidFileTypeModal = (file) => {
+        setFileTypeError({
+            fileName: file?.name || "Selected file",
+            message: "Area submissions only accept PDF files. Please choose a .pdf document and try again.",
+        });
     };
 
     const patchPartLocal = (partId, updater) => {
@@ -3340,7 +3358,7 @@ export default function Home({ user }) {
             if (!file) return;
 
             if (!isPdfFile(file)) {
-                pushToast("error", "Please attach a PDF file.");
+                showInvalidFileTypeModal(file);
                 return;
             }
 
@@ -3362,7 +3380,7 @@ export default function Home({ user }) {
             if (!file) return;
 
             if (!isPdfFile(file)) {
-                pushToast("error", "Please attach a PDF file.");
+                showInvalidFileTypeModal(file);
                 return;
             }
 
@@ -4216,6 +4234,49 @@ export default function Home({ user }) {
                             {toast.message}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {fileTypeError && (
+                <div className="hm-modal-backdrop" role="presentation">
+                    <div
+                        className="hm-error-modal"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="hm-file-type-error-title"
+                    >
+                        <div className="hm-error-modal-head">
+                            <div
+                                className="hm-error-modal-title"
+                                id="hm-file-type-error-title"
+                            >
+                                <Info size={16} /> Invalid file type
+                            </div>
+                            <button
+                                type="button"
+                                className="hm-error-modal-close"
+                                onClick={() => setFileTypeError(null)}
+                                aria-label="Close"
+                            >
+                                <X size={15} />
+                            </button>
+                        </div>
+                        <div className="hm-error-modal-body">
+                            <div>{fileTypeError.message}</div>
+                            <div className="hm-error-modal-file" title={fileTypeError.fileName}>
+                                {fileTypeError.fileName}
+                            </div>
+                        </div>
+                        <div className="hm-error-modal-actions">
+                            <button
+                                type="button"
+                                className="hm-error-modal-ok"
+                                onClick={() => setFileTypeError(null)}
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </>
