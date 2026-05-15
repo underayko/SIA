@@ -78,10 +78,13 @@ const getStatusStyle = (status: string) => {
   if (normalizedStatus.includes('for_publishing')) {
     return 'bg-teal-50 text-teal-700 border-teal-200';
   }
-  if (normalizedStatus.includes('vpaa') || normalizedStatus === 'under review') {
+  if (normalizedStatus.includes('pending') || normalizedStatus.includes('review')) {
     return 'bg-amber-50 text-amber-700 border-amber-200';
   }
-  if (normalizedStatus.includes('hr')) {
+  if (normalizedStatus.includes('vpaa')) {
+    return 'bg-amber-50 text-amber-700 border-amber-200';
+  }
+  if (normalizedStatus.includes('hr') && !normalizedStatus.includes('review')) {
     return 'bg-blue-50 text-blue-700 border-blue-200';
   }
   if (normalizedStatus.includes('submitted')) {
@@ -114,6 +117,26 @@ const getApplicationScore = (appData: any, computedFallback: number = 0) => {
   if (finalScore > 0) return finalScore;
   
   return Number(appData.hr_score ?? appData.display_score ?? appData.vpaa_points ?? appData.total_score ?? appData.total_points ?? computedFallback ?? 0);
+};
+
+const mapApplicationStatusLabel = (status: string) => {
+  const normalized = String(status || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+  if (normalized.includes('draft')) return 'Draft';
+  if (['approved_unpublished', 'published', 'for_publishing', 'vpaa_completed', 'approved', 'finished'].includes(normalized) || (normalized.includes('vpaa') && normalized.includes('completed'))) {
+    return 'Reviewed';
+  }
+  if (normalized === 'hr_completed') {
+    return 'Pending';
+  }
+  if (normalized.includes('pending') || normalized.includes('review')) {
+    return 'Under Review';
+  }
+  if (normalized.includes('submitted')) {
+    return 'Submitted';
+  }
+
+  return String(status || 'Pending').replace(/_/g, ' ');
 };
 
 const getDepartmentCode = (department: string) => {
@@ -228,36 +251,8 @@ const FacultyReviewPage = () => {
 
         if (appsError) throw appsError;
 
-        // If no applications were found for the selected cycle, try a fallback:
-        // find the most recent cycle that contains HR_Completed applications
-        if ((!appsSnap || appsSnap.length === 0)) {
-          console.log('VPAA DEBUG: no applications found for activeCycleId=', activeCycleId, '- searching for recent period with HR_Completed apps');
-          const { data: hrCycle, error: hrCycleError } = await supabase
-            .from('applications')
-            .select('cycle_id, hr_completed_at')
-            .ilike('status', '%hr_completed%')
-            .order('hr_completed_at', { ascending: false })
-            .limit(1);
-
-          if (!hrCycleError && hrCycle && hrCycle.length > 0) {
-            const fallbackCycleId = hrCycle[0].cycle_id;
-            console.log('VPAA DEBUG: falling back to cycle_id=', fallbackCycleId, 'based on HR_Completed rows');
-            const { data: fallbackApps, error: fallbackError } = await supabase
-              .from('applications')
-              .select('*')
-              .eq('cycle_id', fallbackCycleId)
-              .not('status', 'ilike', '%draft%');
-            if (!fallbackError) {
-              appsSnap = fallbackApps || [];
-              activeCycleId = fallbackCycleId;
-            } else {
-              console.warn('VPAA DEBUG: fallback query error', fallbackError);
-            }
-          } else if (hrCycleError) {
-            console.warn('VPAA DEBUG: error querying for HR_Completed cycles', hrCycleError);
-          } else {
-            console.log('VPAA DEBUG: no HR_Completed applications found in any cycle');
-          }
+        if (!appsSnap || appsSnap.length === 0) {
+          console.log('VPAA DEBUG: no applications found for activeCycleId=', activeCycleId, '- leaving current cycle empty');
         }
         
         // 3. Process applications and fetch relational details
@@ -290,19 +285,10 @@ const FacultyReviewPage = () => {
           console.log(`VPAA DEBUG: app[${idx}] id=${a.application_id} cycle_id=${a.cycle_id} status=${a.status} hr_completed_at=${a.hr_completed_at}`);
         });
 
-        // Show applications that HR has completed (ready for VPAA) or are already under VPAA review.
-        // Use case-insensitive matching and include a few common variants to be robust.
-        const allowedStatuses = new Set(['hr_completed', 'under_vpaa_review', 'pending_vpaa', 'submitted', 'under_hr_review']);
-        const filtered = [];
-        const excluded = [];
-        for (const a of appsData) {
-          const s = String(a.status || '').trim().toLowerCase();
-          const sameCycle = Number(a.cycle_id) === Number(activeCycleId);
-          const passes = sameCycle && (allowedStatuses.has(s) || s === 'hr_completed');
-          if (passes) filtered.push(a); else excluded.push({ application_id: a.application_id, status: a.status, cycle_id: a.cycle_id, sameCycle, normalizedStatus: s });
-        }
-        console.log('VPAA DEBUG: filtered count=', filtered.length, 'excluded count=', excluded.length);
-        if (excluded.length > 0) console.log('VPAA DEBUG: excluded samples=', excluded.slice(0,10));
+        // Only keep applications for the current active cycle.
+        // If the cycle is new and contains no applications, do not fall back to older periods.
+        const filtered = appsData.filter((a) => Number(a.cycle_id) === Number(activeCycleId));
+        console.log('VPAA DEBUG: same-cycle count=', filtered.length, 'total apps count=', appsData.length);
         appsData = filtered;
         const facultyPromises = appsData.map(async (appData) => {
           let facultyName = "UNKNOWN FACULTY";
@@ -362,13 +348,7 @@ const FacultyReviewPage = () => {
           const applyingForRaw = normalizeApplyingForField(userApplyingFor || appData.applying_for || appliedPos);
           const compressedApplyingFor = applyingForRaw ? compressRankRange(applyingForRaw) : 'Not specified';
 
-          let displayStatus = appData.status || 'Draft';
-          // Preserving your custom status overrides
-          if (['Approved_Unpublished', 'Published', 'For_Publishing'].includes(appData.status)) {
-            displayStatus = 'Reviewed';
-          } else if (appData.status === 'Pending_VPAA' || appData.status === 'Under_VPAA_Review') {
-            displayStatus = 'Under Review';
-          }
+          const displayStatus = mapApplicationStatusLabel(appData.status);
 
           return {
             id: String(userId || appData.application_id),
@@ -437,7 +417,7 @@ const FacultyReviewPage = () => {
   const stats = [
     { 
       label: 'Under Review', 
-      value: facultyData.filter(f => f.status.toLowerCase().includes('review') && f.status !== 'Reviewed').length, 
+      value: facultyData.filter(f => ['Under Review', 'Pending'].includes(f.status)).length, 
       sub: 'Pending VPAA Evaluation', 
       icon: <Users className="text-emerald-600" />, 
       color: 'emerald' 
