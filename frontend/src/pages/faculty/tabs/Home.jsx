@@ -3243,20 +3243,45 @@ export default function Home({ user }) {
     };
 
     const handleDownloadTemplate = async (part) => {
-        const templatePaths = buildTemplatePathCandidatesForPart(part);
-        if (templatePaths.length === 0) return;
-
         setPartAction(part.id, "template");
         try {
-            for (const templatePath of templatePaths) {
+            const areaId = resolvePartAreaId(part);
+            const { data: templateRow, error: templateError } = await supabase
+                .from("area_part_templates")
+                .select("*")
+                .eq("area_id", areaId)
+                .eq("part_id", part.id)
+                .eq("is_active", true)
+                .maybeSingle();
+
+            if (templateError) {
+                console.warn("handleDownloadTemplate: template lookup failed", templateError);
+            }
+
+            if (templateRow?.storage_path) {
                 const signed = await supabase.storage
-                    .from(TEMPLATE_BUCKET)
-                    .createSignedUrl(templatePath, 600);
+                    .from(templateRow.storage_bucket || TEMPLATE_BUCKET)
+                    .createSignedUrl(templateRow.storage_path, 600);
 
                 if (!signed.error && signed.data?.signedUrl) {
                     openUrl(signed.data.signedUrl);
                     pushToast("success", "Template download is ready.");
                     return;
+                }
+            }
+
+            const templatePaths = buildTemplatePathCandidatesForPart(part);
+            if (templatePaths.length > 0) {
+                for (const templatePath of templatePaths) {
+                    const signed = await supabase.storage
+                        .from(TEMPLATE_BUCKET)
+                        .createSignedUrl(templatePath, 600);
+
+                    if (!signed.error && signed.data?.signedUrl) {
+                        openUrl(signed.data.signedUrl);
+                        pushToast("success", "Template download is ready.");
+                        return;
+                    }
                 }
             }
 
