@@ -437,17 +437,16 @@ function HistoryItem({ cycle, onReview, onExport }) {
       </div>
       <div className="history-footer" onClick={(e) => e.stopPropagation()}>
         <button
-          className="btn btn-outline-primary"
-          style={{ padding: '4px 8px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          className="btn btn-outline-primary history-export-btn"
           onClick={() => onExport(cycle)}
-          title="Export CSV"
+          title="Export"
         >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 3v12" />
             <path d="m7 10 5 5 5-5" />
             <path d="M5 21h14" />
           </svg>
-          CSV
+          Export
         </button>
       </div>
     </div>
@@ -1003,6 +1002,8 @@ export default function Dashboard() {
   const [cycleHistory, setCycleHistory] = useState([]);
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 6;
+  const [pastPage, setPastPage] = useState(1);
+  const PAST_PAGE_SIZE = 10;
   const [stats, setStats] = useState({
     totalFaculty: 0,
     pendingReviews: 0,
@@ -1032,6 +1033,7 @@ export default function Dashboard() {
     const cycle = cycleHistory.find(c => c.cycle_id === cycleId);
     if (!cycle) return;
     
+    setPastPage(1);
     setSelectedPastFaculty(null);
     setSelectedPastCycle(cycle);
     setLoading(true);
@@ -1874,6 +1876,39 @@ export default function Dashboard() {
     },
   ];
 
+  const filteredPastApplications = pastApplications.filter(app => {
+    const matchesSearch = pastSearchTerm === '' ||
+      `${app.faculty?.name_last} ${app.faculty?.name_first}`.toLowerCase().includes(pastSearchTerm.toLowerCase());
+    
+    const deptCode = app.faculty?.departments?.department_code || '';
+    const deptName = app.faculty?.departments?.department_name || app.faculty?.department_id || '';
+    const matchesDept = pastDepartmentFilter === 'all' || 
+      String(deptCode || deptName).toLowerCase() === pastDepartmentFilter.toLowerCase();
+
+    return matchesSearch && matchesDept;
+  });
+  // Sort by HR score descending (match the displayed Total Points column)
+  filteredPastApplications.sort((a, b) => {
+    const aPoints = Number(a.hr_score ?? 0);
+    const bPoints = Number(b.hr_score ?? 0);
+    return bPoints - aPoints;
+  });
+
+  const totalPastPages = Math.max(1, Math.ceil(filteredPastApplications.length / PAST_PAGE_SIZE));
+  const safePastPage = Math.min(pastPage, totalPastPages);
+  const pastStartIndex = (safePastPage - 1) * PAST_PAGE_SIZE;
+  const paginatedPastApplications = filteredPastApplications.slice(pastStartIndex, pastStartIndex + PAST_PAGE_SIZE);
+
+  useEffect(() => {
+    if (pastPage > totalPastPages) {
+      setPastPage(totalPastPages);
+    }
+  }, [pastPage, totalPastPages]);
+
+  useEffect(() => {
+    setPastPage(1);
+  }, [pastSearchTerm, pastDepartmentFilter, selectedPastCycle]);
+
   if (loading) {
     return (
       <div className="app">
@@ -1889,24 +1924,6 @@ export default function Dashboard() {
   }
 
   if (selectedPastCycle) {
-    const filteredPastApplications = pastApplications.filter(app => {
-      const matchesSearch = pastSearchTerm === '' ||
-        `${app.faculty?.name_last} ${app.faculty?.name_first}`.toLowerCase().includes(pastSearchTerm.toLowerCase());
-      
-      const deptCode = app.faculty?.departments?.department_code || '';
-      const deptName = app.faculty?.departments?.department_name || app.faculty?.department_id || '';
-      const matchesDept = pastDepartmentFilter === 'all' || 
-        String(deptCode || deptName).toLowerCase() === pastDepartmentFilter.toLowerCase();
-
-      return matchesSearch && matchesDept;
-    });
-    // Sort by HR score descending (match the displayed Total Points column)
-    filteredPastApplications.sort((a, b) => {
-      const aPoints = Number(a.hr_score ?? 0);
-      const bPoints = Number(b.hr_score ?? 0);
-      return bPoints - aPoints;
-    });
-
     return (
       <div className="app">
         <Sidebar />
@@ -1963,9 +1980,9 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPastApplications.map((app, index) => (
+                    {paginatedPastApplications.map((app, index) => (
                       <tr key={app.application_id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '12px 16px', fontSize: '14px', color: '#4b5563' }}>{index + 1}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: '#4b5563' }}>{pastStartIndex + index + 1}</td>
                         <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827', fontWeight: '500' }}>{app.faculty?.name_last}, {app.faculty?.name_first}</td>
                         <td style={{ padding: '12px 16px', fontSize: '14px', color: '#4b5563' }}>{app.faculty?.departments?.department_code || app.faculty?.departments?.department_name || app.faculty?.department_id || 'N/A'}</td>
                         <td style={{ padding: '12px 16px', fontSize: '14px', color: '#4b5563' }}>{app.faculty?.current_rank || 'N/A'}</td>
@@ -1985,6 +2002,33 @@ export default function Dashboard() {
                     ))}
                   </tbody>
                 </table>
+
+                {filteredPastApplications.length > PAST_PAGE_SIZE && (
+                  <div className="history-pagination" style={{ justifyContent: 'space-between', marginTop: '16px' }}>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      Showing {filteredPastApplications.length === 0 ? 0 : pastStartIndex + 1}-{Math.min(pastStartIndex + PAST_PAGE_SIZE, filteredPastApplications.length)} of {filteredPastApplications.length}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="history-page-btn"
+                        onClick={() => setPastPage((page) => Math.max(1, page - 1))}
+                        disabled={safePastPage <= 1}
+                      >
+                        Previous
+                      </button>
+                      <span className="history-page-info">Page {safePastPage} of {totalPastPages}</span>
+                      <button
+                        type="button"
+                        className="history-page-btn"
+                        onClick={() => setPastPage((page) => Math.min(totalPastPages, page + 1))}
+                        disabled={safePastPage >= totalPastPages}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <HistoryFacultyModal
